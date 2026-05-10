@@ -78,7 +78,11 @@ Known Gazebo SDF frames:
 
 Work:
 
-- [ ] Write `scripts/inspect_aic_geometry.py`.
+- [x] Write `scripts/inspect_aic_geometry.py`.
+  - Added local script at
+    `aic_utils/aic_isaac/aic_isaaclab/scripts/inspect_aic_geometry.py`.
+    It inspects both SC and SFP semantic frame names and writes timestamped
+    logs under `logs/aic_geometry/`, which remain untracked.
 - [ ] Create `AIC-Task-v0` with `num_envs=1`.
 - [ ] Print all robot body names.
 - [ ] Print all scene asset names.
@@ -99,8 +103,8 @@ Done when:
 
 - [ ] We know whether the USD assets expose SC tip and SC port entrance frames.
 - [ ] If exposed, the plan uses those bodies directly.
-- [ ] If not exposed, we document the fixed transforms needed from the nearest
-  available body/root frame.
+- [ ] If not exposed, document the nearest available body/root frame and defer
+  fixed transform derivation to Step 1.
 - [ ] The script output is saved under `logs/aic_geometry/`.
 
 ## Step 1: Add Geometry Helpers
