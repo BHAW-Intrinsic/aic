@@ -56,7 +56,8 @@ python -m pip install -e aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task
 ```bash
 cd ~/IsaacLab
 isaaclab -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py \
-  --task AIC-Task-v0 --num_envs 64
+  --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point \
+  --num_envs 64 --headless --enable_cameras
 ```
 
 **Run teleoperation (inside container):**
