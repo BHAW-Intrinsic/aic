@@ -138,32 +138,33 @@ geometry. Do not duplicate transform math across files.
 
 Work:
 
-- [ ] Add `mdp/geometry.py`.
-- [ ] Implement helper functions for SC first:
-  - [ ] active target selection
-  - [ ] plug tip pose
-  - [ ] port entry pose
-  - [ ] port insertion axis
-  - [ ] plug-to-port vector
-  - [ ] lateral error
-  - [ ] insertion depth
-  - [ ] orientation error
-- [ ] Use Step 0's confirmed SC plug body directly:
-  - [ ] `robot.sc_tip_link` for the SC plug tip pose.
-- [ ] Derive SC port entry poses from Step 0's nearest available Isaac frames:
-  - [ ] `sc_port` root/body `sc_port_visual`
-  - [ ] `sc_port_2` root/body `sc_port_visual`
-- [ ] Compute the missing `sc_port_base_link_entrance` helper pose from fixed
+- [x] Add `mdp/geometry.py`.
+- [x] Implement helper functions for SC first:
+  - [x] active target selection
+  - [x] plug tip pose
+  - [x] port entry pose
+  - [x] port insertion axis
+  - [x] plug-to-port vector
+  - [x] lateral error
+  - [x] insertion depth
+  - [x] orientation error
+- [x] Use Step 0's confirmed SC plug body directly:
+  - [x] `robot.sc_tip_link` for the SC plug tip pose.
+- [x] Derive SC port entry poses from Step 0's nearest available Isaac frames:
+  - [x] `sc_port` root/body `sc_port_visual`
+  - [x] `sc_port_2` root/body `sc_port_visual`
+- [x] Compute the missing `sc_port_base_link_entrance` helper pose from fixed
   offsets derived from the Gazebo SDF. Do not block on finding a named SC port
   entrance body in Isaac; Step 0 confirmed it is absent.
-- [ ] Keep the geometry helper interface generic enough that SFP can later use
+- [x] Keep the geometry helper interface generic enough that SFP can later use
   either runtime bodies or USD-derived helper poses.
 
 Initial SC target selection:
 
-- [ ] Sample the active SC target per environment on reset: `sc_port` or `sc_port_2`.
-- [ ] Store the active target index on the env object as a tensor.
+- [x] Sample the active SC target per environment on reset: `sc_port` or `sc_port_2`.
+- [x] Store the active target index on the env object as a tensor.
 - [ ] Expose active target metadata to the actor as eval-compatible task information.
+  - Deferred to Step 2 with the policy observation update.
 
 Important:
 
@@ -175,12 +176,27 @@ Important:
 
 Done when:
 
-- [ ] Geometry helpers return tensors shaped `(num_envs, ...)`.
-- [ ] Geometry helpers work for both `sc_port` and `sc_port_2`.
-- [ ] `inspect_aic_geometry.py` prints sane values for plug tip pose, port entry
+- [x] Geometry helpers return tensors shaped `(num_envs, ...)`.
+- [x] Geometry helpers work for both `sc_port` and `sc_port_2`.
+- [x] `inspect_aic_geometry.py` prints sane values for plug tip pose, port entry
   pose, lateral error, orientation error, and insertion depth.
-- [ ] Insertion depth sign is verified visually or numerically: moving the plug into
+- [x] Insertion depth sign is verified visually or numerically: moving the plug into
   the port increases the chosen depth metric.
+
+Result from remote log
+`logs/aic_geometry/20260510_100156_AIC-Task-v0.log`:
+
+- Helper tensors printed with shapes `(4, 3)`, `(4, 4)`, or `(4,)` for
+  `num_envs=4`.
+- Reset sampled active target IDs `[1, 0, 1, 1]`, covering both `sc_port` and
+  `sc_port_2`.
+- The active `sc_port_2` entry pose matched the per-target `sc_port_2` helper
+  pose.
+- The SC port insertion axis in world frame was `[0, 0, -1]`; the reset plug tip
+  was above the entrance, giving negative depth, and moving along the insertion
+  axis increases the depth metric.
+- Detailed remote reproduction notes and output are in
+  `docs/bahw_docs/detailed/step1.md`.
 
 ## Step 2: Add Eval-Compatible And Privileged Observations
 
