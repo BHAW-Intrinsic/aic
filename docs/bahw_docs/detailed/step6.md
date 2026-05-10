@@ -875,9 +875,9 @@ tip helper for the SC teacher:
 
 - `mdp.geometry.sc_plug_tip_pose()` returns a helper pose composed from
   `robot.gripper_tcp` when called with the default SC plug tip body.
-- The helper offset is initially identity:
+- The helper offset places the virtual tip ahead of the TCP along local `+Z`:
   - `SC_GRIPPED_TIP_BODY = "gripper_tcp"`
-  - `SC_GRIPPED_TIP_POS_LOCAL = (0.0, 0.0, 0.0)`
+  - `SC_GRIPPED_TIP_POS_LOCAL = (0.0, 0.0, 0.05)`
   - `SC_GRIPPED_TIP_QUAT_LOCAL = (1.0, 0.0, 0.0, 0.0)`
 - `AIC-Task-v0` now targets `gripper_tcp` for differential IK.
 - The policy `eef_pose` observation now reports `gripper_tcp`.
@@ -900,3 +900,28 @@ git diff --check
 ```
 
 Result: passed locally.
+
+Remote scripted checks after `9e9bc56`:
+
+- Default helper run:
+  - command used `--num_envs 8 --max_steps 1500 --control_frame tip`
+  - interrupted at step `1050` after it stabilized near the approach plane
+  - best observed lateral stayed near `0.016` to `0.020` m
+  - depth stayed negative, around `-0.037` m
+- Relaxed helper run:
+  - command used `--num_envs 4 --max_steps 500 --align_lateral_threshold 0.05`
+  - final successes: `0/4`
+  - final lateral mean/min/max: `0.038145 / 0.035735 / 0.042264`
+  - final orientation mean/min/max: `0.041006 / 0.039839 / 0.041785`
+  - final depth mean/min/max: `-0.036927 / -0.044303 / -0.030177`
+  - helper drift from gripper/TCP stayed `0.0`, confirming the virtual helper is
+    fixed to the action body
+
+Interpretation:
+
+- The first TCP helper was controllable and stable, but it asked the gripper
+  TCP itself to reach the port interior.
+- That stalls at a near-port hover around `3` to `4` cm outside the entrance.
+- The next adjustment is to place the virtual tip ahead of the TCP along local
+  `+Z` so the TCP can remain outside the port while the helper tip inserts.
+  The first offset to test is `0.05` m.
