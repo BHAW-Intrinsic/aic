@@ -195,15 +195,41 @@ def active_sc_port_root_pose(
     return _gather_active(root_pos, target_ids), _gather_active(root_quat, target_ids)
 
 
+def sc_port_root_pose_for_target(
+    env: ManagerBasedEnv | ManagerBasedRLEnv,
+    target_name: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return a named SC port root pose in world frame."""
+    asset = env.scene[target_name]
+    return asset.data.root_pos_w, asset.data.root_quat_w
+
+
+def _sc_port_entry_pose_from_root(
+    env: ManagerBasedEnv | ManagerBasedRLEnv,
+    port_pos_w: torch.Tensor,
+    port_quat_w: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    entry_pos_local = _expand_vec(SC_PORT_ENTRY_POS_LOCAL, env)
+    entry_quat_local = _expand_quat(SC_PORT_ENTRY_QUAT_LOCAL, env)
+    return _compose_pose(port_pos_w, port_quat_w, entry_pos_local, entry_quat_local)
+
+
 def sc_port_entry_pose(
     env: ManagerBasedEnv | ManagerBasedRLEnv,
     target_names: tuple[str, ...] = SC_TARGET_NAMES,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return the active SC port entrance helper pose in world frame."""
     port_pos_w, port_quat_w = active_sc_port_root_pose(env, target_names=target_names)
-    entry_pos_local = _expand_vec(SC_PORT_ENTRY_POS_LOCAL, env)
-    entry_quat_local = _expand_quat(SC_PORT_ENTRY_QUAT_LOCAL, env)
-    return _compose_pose(port_pos_w, port_quat_w, entry_pos_local, entry_quat_local)
+    return _sc_port_entry_pose_from_root(env, port_pos_w, port_quat_w)
+
+
+def sc_port_entry_pose_for_target(
+    env: ManagerBasedEnv | ManagerBasedRLEnv,
+    target_name: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return a named SC port entrance helper pose in world frame."""
+    port_pos_w, port_quat_w = sc_port_root_pose_for_target(env, target_name)
+    return _sc_port_entry_pose_from_root(env, port_pos_w, port_quat_w)
 
 
 def sc_port_insertion_axis(
@@ -212,6 +238,17 @@ def sc_port_insertion_axis(
 ) -> torch.Tensor:
     """Return the active SC port insertion axis in world frame."""
     port_pos_w, port_quat_w = active_sc_port_root_pose(env, target_names=target_names)
+    del port_pos_w
+    local_axis = _expand_vec(SC_PORT_INSERTION_AXIS_LOCAL, env)
+    return _quat_apply(port_quat_w, local_axis)
+
+
+def sc_port_insertion_axis_for_target(
+    env: ManagerBasedEnv | ManagerBasedRLEnv,
+    target_name: str,
+) -> torch.Tensor:
+    """Return a named SC port insertion axis in world frame."""
+    port_pos_w, port_quat_w = sc_port_root_pose_for_target(env, target_name)
     del port_pos_w
     local_axis = _expand_vec(SC_PORT_INSERTION_AXIS_LOCAL, env)
     return _quat_apply(port_quat_w, local_axis)

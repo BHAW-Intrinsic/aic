@@ -402,24 +402,21 @@ def _print_geometry_helper_values(report: Reporter, env: Any) -> None:
     report.line(f"orientation_error env0:    {_format_scalar(orientation_error)}")
 
     report.line("per-target SC helper poses env0:")
-    saved_active_ids = active_ids.clone()
-    try:
-        for target_id, target_name in enumerate(aic_geometry.SC_TARGET_NAMES):
-            active_ids.fill_(target_id)
-            target_pos, target_quat = aic_geometry.sc_port_entry_pose(env)
-            target_axis = aic_geometry.sc_port_insertion_axis(env)
-            report.line(f"  {target_name}:")
-            report.line(
-                f"    port_entry_pos_w:      {_format_vector(_tensor_row(target_pos))}"
-            )
-            report.line(
-                f"    port_entry_quat_w:     {_format_vector(_tensor_row(target_quat))}"
-            )
-            report.line(
-                f"    port_insertion_axis_w: {_format_vector(_tensor_row(target_axis))}"
-            )
-    finally:
-        active_ids.copy_(saved_active_ids)
+    for target_name in aic_geometry.SC_TARGET_NAMES:
+        target_pos, target_quat = aic_geometry.sc_port_entry_pose_for_target(
+            env, target_name
+        )
+        target_axis = aic_geometry.sc_port_insertion_axis_for_target(env, target_name)
+        report.line(f"  {target_name}:")
+        report.line(
+            f"    port_entry_pos_w:      {_format_vector(_tensor_row(target_pos))}"
+        )
+        report.line(
+            f"    port_entry_quat_w:     {_format_vector(_tensor_row(target_quat))}"
+        )
+        report.line(
+            f"    port_insertion_axis_w: {_format_vector(_tensor_row(target_axis))}"
+        )
 
 
 def main() -> None:
