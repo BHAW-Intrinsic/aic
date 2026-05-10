@@ -491,10 +491,17 @@ Work:
   - Added `scripts/check_aic_scripted_insert.py` to test whether privileged
     plug-to-port geometry can drive the existing relative IK action into the SC
     success condition.
-- [ ] Run the scripted SC insertion check remotely.
+- [x] Run the scripted SC insertion check remotely.
+  - Result: `0/8` successes over `1500` steps. The scripted controller could
+    move the plug to positive depth, but lateral/orientation errors remained too
+    large for success.
 - [ ] If scripted IK succeeds, use it to derive a near-port reset/curriculum or
   demonstration seed before more PPO.
 - [ ] If scripted IK fails, fix the geometry/action convention before more PPO.
+  - Current next work: diagnose the control-frame mismatch between the IK action
+    target (`wrist_3_link`) and the measured insertion geometry (`sc_tip_link`),
+    including whether the action needs a plug-tip `body_offset` or revised axis
+    convention.
 
 Training command:
 
@@ -539,8 +546,8 @@ Current gate:
 
 - Do not start Step 7 until Step 6 produces a useful SC teacher. Baseline PPO
   and three reward-only remediation attempts did not reach insertion depth or
-  success, so the next work remains Step 6 scripted IK validation and
-  curriculum/reset design.
+  success. The first scripted IK check also failed, so the next work remains
+  Step 6 action-frame/geometry diagnosis before any SFP extension.
 
 Work:
 
@@ -636,7 +643,8 @@ Done when:
   - [x] Confirmed reward-only shaping still failed after rebalanced training to
     iteration `110`.
   - [x] Added a headless scripted SC insertion check.
-  - [ ] Run scripted SC insertion remotely and decide the reset/curriculum path.
+  - [x] Ran scripted SC insertion remotely.
+  - [ ] Fix the action-frame/geometry issue before more PPO or curriculum work.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.
 - [ ] 14. Revisit distillation only after both teachers work.

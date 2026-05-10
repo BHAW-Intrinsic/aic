@@ -33,6 +33,15 @@ parser.add_argument(
     help="Absolute raw action clip. Set <=0 to disable.",
 )
 parser.add_argument(
+    "--control_frame",
+    choices=("tip", "wrist_legacy"),
+    default="tip",
+    help=(
+        "Use 'tip' to solve the wrist target from the desired SC tip pose. "
+        "Use 'wrist_legacy' to send tip deltas directly as wrist deltas."
+    ),
+)
+parser.add_argument(
     "--approach_depth",
     type=float,
     default=-0.04,
@@ -133,6 +142,21 @@ def _quat_conjugate(quat: torch.Tensor) -> torch.Tensor:
     return torch.cat((quat[..., 0:1], -quat[..., 1:]), dim=-1)
 
 
+def _quat_mul(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
+    """Multiply quaternions in Isaac's wxyz convention."""
+    w1, x1, y1, z1 = q1.unbind(dim=-1)
+    w2, x2, y2, z2 = q2.unbind(dim=-1)
+    return torch.stack(
+        (
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ),
+        dim=-1,
+    )
+
+
 def _quat_normalize(quat: torch.Tensor) -> torch.Tensor:
     return quat / torch.clamp(torch.norm(quat, dim=-1, keepdim=True), min=1.0e-9)
 
@@ -152,6 +176,34 @@ def _clip_by_norm(vec: torch.Tensor, max_norm: float) -> torch.Tensor:
     return vec * scale
 
 
+def _quat_from_axis_angle(axis_angle: torch.Tensor) -> torch.Tensor:
+    angle = torch.norm(axis_angle, dim=-1)
+    axis = axis_angle / torch.clamp(angle.unsqueeze(-1), min=1.0e-9)
+    half_angle = 0.5 * angle
+    quat = torch.cat(
+        (
+            torch.cos(half_angle).unsqueeze(-1),
+            axis * torch.sin(half_angle).unsqueeze(-1),
+        ),
+        dim=-1,
+    )
+    identity = torch.zeros_like(quat)
+    identity[:, 0] = 1.0
+    quat = torch.where(angle.unsqueeze(-1) > 1.0e-9, quat, identity)
+    return _quat_normalize(quat)
+
+
+def _axis_angle_from_quat(quat: torch.Tensor) -> torch.Tensor:
+    quat = _quat_normalize(quat)
+    quat = torch.where(quat[:, 0:1] < 0.0, -quat, quat)
+    vec = quat[:, 1:]
+    sin_half = torch.norm(vec, dim=-1)
+    angle = 2.0 * torch.atan2(sin_half, torch.clamp(quat[:, 0], min=1.0e-9))
+    axis = vec / torch.clamp(sin_half.unsqueeze(-1), min=1.0e-9)
+    axis_angle = axis * angle.unsqueeze(-1)
+    return torch.where(sin_half.unsqueeze(-1) > 1.0e-9, axis_angle, 0.0)
+
+
 def _summary(value: torch.Tensor) -> str:
     detached = value.detach().float()
     return (
@@ -160,11 +212,52 @@ def _summary(value: torch.Tensor) -> str:
     )
 
 
+def _body_index(asset: Any, body_name: str) -> int:
+    body_names = getattr(asset, "body_names", None)
+    if body_names is None:
+        body_names = getattr(getattr(asset, "data", None), "body_names", None)
+    if body_names is None:
+        raise RuntimeError(f"Asset {asset!r} does not expose body_names.")
+    try:
+        return list(body_names).index(body_name)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Body '{body_name}' not found. Available bodies: {list(body_names)}"
+        ) from exc
+
+
+def _body_pose(env: Any, body_name: str) -> tuple[torch.Tensor, torch.Tensor]:
+    robot = env.scene["robot"]
+    body_id = _body_index(robot, body_name)
+    return robot.data.body_pos_w[:, body_id], robot.data.body_quat_w[:, body_id]
+
+
+def _wrist_to_tip_pose(env: Any) -> tuple[torch.Tensor, torch.Tensor]:
+    wrist_pos_w, wrist_quat_w = _body_pose(env, "wrist_3_link")
+    tip_pos_w, tip_quat_w = mdp.sc_plug_tip_pose(env)
+    wrist_inv = _quat_conjugate(wrist_quat_w)
+    rel_pos = _quat_apply(wrist_inv, tip_pos_w - wrist_pos_w)
+    rel_quat = _quat_mul(wrist_inv, tip_quat_w)
+    return rel_pos, _quat_normalize(rel_quat)
+
+
+def _root_frame_pose(
+    env: Any,
+    pos_w: torch.Tensor,
+    quat_w: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    robot = env.scene["robot"]
+    root_inv = _quat_conjugate(robot.data.root_quat_w)
+    pos_root = _quat_apply(root_inv, pos_w - robot.data.root_pos_w)
+    quat_root = _quat_mul(root_inv, quat_w)
+    return pos_root, _quat_normalize(quat_root)
+
+
 def _scripted_actions(env: Any, inactive: torch.Tensor) -> torch.Tensor:
     """Compute raw relative-IK actions from privileged SC insertion geometry."""
     robot = env.scene["robot"]
 
-    plug_pos_w, _ = mdp.sc_plug_tip_pose(env)
+    plug_pos_w, plug_quat_w = mdp.sc_plug_tip_pose(env)
     plug_axis_w = mdp.sc_plug_axis(env)
     entry_pos_w, _ = mdp.sc_port_entry_pose(env)
     port_axis_w = mdp.sc_port_insertion_axis(env)
@@ -196,9 +289,35 @@ def _scripted_actions(env: Any, inactive: torch.Tensor) -> torch.Tensor:
     rot_vec_w = axis_w * rot_step.unsqueeze(-1)
     rot_vec_w = torch.where(sin_angle.unsqueeze(-1) > 1.0e-6, rot_vec_w, 0.0)
 
-    root_inv = _quat_conjugate(robot.data.root_quat_w)
-    delta_pos_root = _quat_apply(root_inv, delta_pos_w)
-    rot_vec_root = _quat_apply(root_inv, rot_vec_w)
+    if args_cli.control_frame == "tip":
+        desired_tip_pos_w = plug_pos_w + delta_pos_w
+        desired_tip_quat_w = _quat_mul(_quat_from_axis_angle(rot_vec_w), plug_quat_w)
+
+        wrist_pos_w, wrist_quat_w = _body_pose(env, "wrist_3_link")
+        tip_pos_in_wrist, tip_quat_in_wrist = _wrist_to_tip_pose(env)
+        desired_wrist_quat_w = _quat_mul(
+            desired_tip_quat_w, _quat_conjugate(tip_quat_in_wrist)
+        )
+        desired_wrist_pos_w = desired_tip_pos_w - _quat_apply(
+            desired_wrist_quat_w, tip_pos_in_wrist
+        )
+
+        wrist_pos_root, wrist_quat_root = _root_frame_pose(
+            env, wrist_pos_w, wrist_quat_w
+        )
+        desired_wrist_pos_root, desired_wrist_quat_root = _root_frame_pose(
+            env, desired_wrist_pos_w, desired_wrist_quat_w
+        )
+        delta_pos_root = desired_wrist_pos_root - wrist_pos_root
+        delta_quat_root = _quat_mul(
+            desired_wrist_quat_root, _quat_conjugate(wrist_quat_root)
+        )
+        rot_vec_root = _axis_angle_from_quat(delta_quat_root)
+        rot_vec_root = _clip_by_norm(rot_vec_root, args_cli.max_rotation_step)
+    else:
+        root_inv = _quat_conjugate(robot.data.root_quat_w)
+        delta_pos_root = _quat_apply(root_inv, delta_pos_w)
+        rot_vec_root = _quat_apply(root_inv, rot_vec_w)
 
     processed = torch.cat((delta_pos_root, rot_vec_root), dim=-1)
     processed[inactive] = 0.0
@@ -253,6 +372,7 @@ def main() -> int:
         report.line(f"task: {args_cli.task}")
         report.line(f"num_envs: {args_cli.num_envs}")
         report.line(f"max_steps: {args_cli.max_steps}")
+        report.line(f"control_frame: {args_cli.control_frame}")
         if log_path is not None:
             report.line(f"log_path: {log_path}")
 
@@ -261,6 +381,15 @@ def main() -> int:
         env.reset()
 
         target_ids = mdp.active_sc_target_ids(env).detach().clone()
+        initial_tip_offset_pos, initial_tip_offset_quat = _wrist_to_tip_pose(env)
+        report.line(
+            "initial_wrist_to_sc_tip_pos env0: "
+            f"{initial_tip_offset_pos[0].detach().cpu().tolist()}"
+        )
+        report.line(
+            "initial_wrist_to_sc_tip_quat env0: "
+            f"{initial_tip_offset_quat[0].detach().cpu().tolist()}"
+        )
         first_success_step = torch.full(
             (env.num_envs,), -1, device=env.device, dtype=torch.long
         )
@@ -307,9 +436,22 @@ def main() -> int:
         final_lateral = mdp.sc_lateral_error(env)
         final_orientation = mdp.sc_orientation_error(env)
         final_depth = mdp.sc_insertion_depth(env)
+        final_tip_offset_pos, final_tip_offset_quat = _wrist_to_tip_pose(env)
+        offset_drift = torch.norm(
+            final_tip_offset_pos - initial_tip_offset_pos, dim=-1
+        )
         report.line(f"final_lateral: {_summary(final_lateral)}")
         report.line(f"final_orientation: {_summary(final_orientation)}")
         report.line(f"final_depth: {_summary(final_depth)}")
+        report.line(f"wrist_to_sc_tip_pos_drift: {_summary(offset_drift)}")
+        report.line(
+            "final_wrist_to_sc_tip_pos env0: "
+            f"{final_tip_offset_pos[0].detach().cpu().tolist()}"
+        )
+        report.line(
+            "final_wrist_to_sc_tip_quat env0: "
+            f"{final_tip_offset_quat[0].detach().cpu().tolist()}"
+        )
         return 0 if bool((first_success_step >= 0).all().item()) else 1
     finally:
         if env is not None:

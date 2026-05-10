@@ -510,9 +510,92 @@ python3 -m py_compile \
 
 Result: passed locally.
 
-Planned remote command:
+Remote sync:
 
 ```bash
-tmux new-session -d -s isaac-step6-scripted-insert \
+tmux new-session -d -s isaac-step6-pull-be9cfe4 \
+  "cd ~/IsaacLab/aic && git pull --ff-only && docker cp aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py; echo STEP6_PULL_COPY_EXIT:\$?; sleep 60"
+```
+
+Result:
+
+- Host repo updated from `2ce4c3e` to `be9cfe4`.
+- New script copied into
+  `/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/`.
+- Exit: `STEP6_PULL_COPY_EXIT:0`.
+
+Stale-process check before launch:
+
+```bash
+tmux new-session -d -s isaac-step6-check-stale-before-scripted \
+  "docker exec isaac-lab-base bash -lc 'ps -eo pid,ppid,stat,etime,pcpu,pmem,cmd | grep -E \"rsl_rl/train.py|rsl_rl/evaluate.py|check_aic_rewards.py|check_aic_scripted_insert.py\" | grep -v grep || true'; echo STEP6_STALE_CHECK_EXIT:\$?; sleep 60"
+```
+
+Result: no stale matching processes; exit `STEP6_STALE_CHECK_EXIT:0`.
+
+Remote command:
+
+```bash
+tmux new-session -d -s isaac-step6-scripted-insert-be9cfe4 \
   "docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 8 --max_steps 1500 --report_every 50 --headless --enable_cameras'; echo STEP6_SCRIPTED_INSERT_EXIT:\$?; sleep 30"
 ```
+
+Result:
+
+- Action space loaded as `Box(-inf, inf, (8, 6), float32)`.
+- Terminations were disabled in the check script so success could be measured
+  manually.
+- Initial geometry:
+  - successes: `0/8`
+  - lateral mean/min/max: `0.215460 / 0.033184 / 0.362503`
+  - orientation mean/min/max: `2.716869 / 2.512053 / 2.872937`
+  - depth mean/min/max: `-1.225927 / -1.247427 / -1.191501`
+- The script could move the plug toward and sometimes past the entrance plane:
+  - step `100` depth mean: `-0.010867`
+  - step `250` depth mean: `0.016971`
+  - step `1500` depth mean/min/max: `0.020453 / -0.038301 / 0.141677`
+- It did not solve fine alignment:
+  - step `1500` lateral mean/min/max: `0.547527 / 0.112848 / 1.191187`
+  - step `1500` orientation mean/min/max: `1.040751 / 0.192459 / 1.598559`
+- Summary:
+  - successes: `0/8`
+  - first success steps: all `-1`
+  - `sc_port`: `5` episodes, `0` successes
+  - `sc_port_2`: `3` episodes, `0` successes
+- The shell printed `STEP6_SCRIPTED_INSERT_EXIT:0`; use the explicit success
+  summary above as the run result.
+
+Log copied on the host:
+
+```text
+~/IsaacLab/aic/logs/aic_scripted_insert/20260510_124425_AIC-Task-v0.log
+```
+
+Copy command:
+
+```bash
+tmux new-session -d -s isaac-step6-copy-scripted-log \
+  "mkdir -p ~/IsaacLab/aic/logs/aic_scripted_insert && docker cp isaac-lab-base:/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_124425_AIC-Task-v0.log ~/IsaacLab/aic/logs/aic_scripted_insert/20260510_124425_AIC-Task-v0.log && docker exec isaac-lab-base bash -lc 'ps -eo pid,ppid,stat,etime,pcpu,pmem,cmd | grep -E \"rsl_rl/train.py|rsl_rl/evaluate.py|check_aic_rewards.py|check_aic_scripted_insert.py\" | grep -v grep || true'; echo STEP6_SCRIPTED_LOG_COPY_EXIT:\$?; sleep 60"
+```
+
+Result:
+
+- Log copied successfully.
+- No stale matching process remained.
+- Exit: `STEP6_SCRIPTED_LOG_COPY_EXIT:0`.
+
+Interpretation:
+
+- This is no longer just a sparse-reward problem.
+- The current controller can move the plug tip along the port axis enough to
+  satisfy depth, but it cannot keep the plug tip laterally centered or
+  orientation-aligned.
+- Do not start Step 7 and do not run more PPO yet.
+- Next Step 6 work is to diagnose the control-frame mapping:
+  - IK action target is `wrist_3_link`
+  - measured insertion point is `robot.sc_tip_link`
+  - the scripted controller currently commands wrist-frame motion from plug-tip
+    geometry without an explicit plug-tip `body_offset`
+  - likely fixes are adding the correct action `body_offset`, commanding the
+    actual plug-tip frame if Isaac Lab supports it, or correcting the plug/port
+    axis convention before curriculum design.
