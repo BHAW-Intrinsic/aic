@@ -148,9 +148,16 @@ Work:
   - [ ] lateral error
   - [ ] insertion depth
   - [ ] orientation error
-- [ ] Prefer named USD bodies if Step 0 confirms them.
-- [ ] If named bodies are missing, compute helper poses from known fixed offsets
-  derived from the Gazebo SDF.
+- [ ] Use Step 0's confirmed SC plug body directly:
+  - [ ] `robot.sc_tip_link` for the SC plug tip pose.
+- [ ] Derive SC port entry poses from Step 0's nearest available Isaac frames:
+  - [ ] `sc_port` root/body `sc_port_visual`
+  - [ ] `sc_port_2` root/body `sc_port_visual`
+- [ ] Compute the missing `sc_port_base_link_entrance` helper pose from fixed
+  offsets derived from the Gazebo SDF. Do not block on finding a named SC port
+  entrance body in Isaac; Step 0 confirmed it is absent.
+- [ ] Keep the geometry helper interface generic enough that SFP can later use
+  either runtime bodies or USD-derived helper poses.
 
 Initial SC target selection:
 
@@ -428,8 +435,13 @@ Qualification trials 1 and 2 are SFP, so SFP must be trained directly.
 Work:
 
 - [ ] Add SFP assets to Isaac scene if not already present.
-- [ ] Add or expose SFP plug tip geometry.
-- [ ] Add or expose SFP port entrance geometry.
+- [ ] Use Step 0's confirmed runtime body `robot.sfp_tip_link` for the SFP plug
+  tip geometry.
+- [ ] Add or expose SFP port entrance helper poses.
+  - Step 0 found `sfp_port_0_link_entrance` and `sfp_port_1_link_entrance` as
+    USD prims under `nic_card`, but not as runtime rigid bodies.
+  - Prefer reading those USD prim transforms if stable; otherwise derive fixed
+    offsets from `nic_card`.
 - [ ] Add active SFP target metadata for `sfp_port_0` and `sfp_port_1`.
 - [ ] Reuse the same geometry helper interface from SC.
 - [ ] Add SFP reward thresholds and insertion depth thresholds.
