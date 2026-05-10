@@ -1320,3 +1320,64 @@ Interpretation: near-port samples exist, but the initial PPO action standard
 deviation is too large for a millimeter-scale final insertion problem. The next
 SC PPO config change reduces actor `init_std` from `1.0` to `0.2` and entropy
 coefficient from `0.006` to `0.001`.
+
+Reduced-std PPO retry:
+
+```bash
+tmux new-session -d -s isaac-step6-train-near-std02-clean-524e548 \
+  "pgrep -af \"rsl_rl/train.py|isaaclab.sh\"; echo STEP6_TRAIN_STD02_CLEAN_STALE_BEFORE_EXIT:\$?; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_iterations 250 --run_name step6_sc_near_reset_std02_clean_524e548 --headless --enable_cameras\"; echo STEP6_TRAIN_STD02_CLEAN_EXIT:\$?; sleep 120"
+```
+
+Before this clean run, stale Isaac processes from earlier interrupted runs were
+holding about `20` GB of GPU memory and caused the first reduced-std launch to
+fail with PhysX/Vulkan out-of-memory errors. They were removed from inside the
+container with:
+
+```bash
+docker exec isaac-lab-base bash -lc \
+  "pkill -INT -f rsl_rl/train.py || true; sleep 5; pkill -TERM -f rsl_rl/train.py || true"
+```
+
+The clean reduced-std run was manually stopped at iteration `70/250`. It
+improved the initial signal but still plateaued:
+
+```text
+Learning iteration 0/250
+Mean action std: 0.20
+Episode_Reward/sc_insertion_depth: 0.0014
+Episode_Reward/sc_insertion_success: 0.0014
+Episode_Termination/sc_insertion_success: 0.0495
+
+Learning iteration 1/250
+Episode_Termination/sc_insertion_success: 0.1250
+
+Learning iteration 70/250
+Episode_Reward/sc_insertion_depth: 0.0015
+Episode_Reward/sc_insertion_success: 0.0000
+Episode_Termination/sc_insertion_success: 0.1250
+STEP6_TRAIN_STD02_CLEAN_EXIT:0
+```
+
+Interpretation:
+
+- Reduced exploration helped: success termination rose from about `0.05` to
+  `0.125`.
+- It did not improve beyond the initial curriculum success rate.
+- The actor is still trying to solve final insertion under randomized board/SC
+  port positions from eval-compatible observations. Next curriculum stage freezes
+  board and SC port randomization so the policy can first learn a fixed final
+  insertion behavior for the two active SC targets.
+
+## Fixed-Port Curriculum Stage
+
+Temporary Step 6 curriculum change:
+
+```python
+board_range = {"x": (0.0, 0.0), "y": (0.0, 0.0)}
+sc_port.pose_range = {"x": (0.0, 0.0)}
+sc_port_2.pose_range = {"x": (0.0, 0.0)}
+```
+
+This intentionally freezes SC port randomization while keeping active target
+sampling between `sc_port` and `sc_port_2`. After the policy learns the final
+fixed-port insertion, reintroduce board/SC port randomization gradually.

@@ -340,17 +340,17 @@ class EventCfg:
         params={
             "board_scene_name": "task_board",
             "board_default_pos": (0.2837, 0.229, 0.0),
-            "board_range": {"x": (-0.005, 0.005), "y": (-0.005, 0.005)},
+            "board_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)},
             "parts": [
                 {
                     "scene_name": "sc_port",
                     "offset": (0.0067, -0.0362, 0.005),
-                    "pose_range": {"x": (-0.005, 0.02)},
+                    "pose_range": {"x": (0.0, 0.0)},
                 },
                 {
                     "scene_name": "sc_port_2",
                     "offset": (0.0076, -0.0783, 0.005),
-                    "pose_range": {"x": (-0.005, 0.02)},
+                    "pose_range": {"x": (0.0, 0.0)},
                 },
                 {
                     "scene_name": "nic_card",

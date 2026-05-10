@@ -552,8 +552,14 @@ Work:
 - [ ] Reduce SC PPO exploration scale for the near-port curriculum.
   - Changed actor Gaussian `init_std` from `1.0` to `0.2` and entropy coefficient
     from `0.006` to `0.001`.
-  - Next: retry PPO and check whether success termination rises above the
-    initial sparse level.
+  - Reduced-std PPO rose from `0.0495` to `0.1250` success termination but
+    plateaued through iteration `70`.
+- [ ] Freeze board/SC port randomization for the first final-insertion
+  curriculum stage.
+  - Temporarily set board `x/y` randomization and SC port `x` randomization to
+    zero while keeping active target sampling between `sc_port` and `sc_port_2`.
+  - Next: smoke-test fixed-port reset, then retry PPO. If it learns, gradually
+    reintroduce randomization.
 
 Training command:
 
