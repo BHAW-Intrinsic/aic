@@ -488,37 +488,37 @@ class RewardsCfg:
     # -- SC insertion shaping --
     sc_approach = RewTerm(
         func=mdp.sc_approach_reward,
-        weight=1.0,
+        weight=3.0,
         params={"std": 1.00},
     )
     sc_distance_progress = RewTerm(
         func=mdp.sc_distance_progress_reward,
-        weight=1.0,
+        weight=2.0,
         params={"scale": 0.02, "clip": 1.0},
     )
     sc_lateral_progress = RewTerm(
         func=mdp.sc_lateral_progress_reward,
-        weight=0.5,
+        weight=1.0,
         params={"scale": 0.005, "clip": 1.0},
     )
     sc_orientation_progress = RewTerm(
         func=mdp.sc_orientation_progress_reward,
-        weight=0.25,
+        weight=0.5,
         params={"scale": 0.10, "clip": 1.0},
     )
     sc_depth_progress = RewTerm(
         func=mdp.sc_depth_progress_reward,
-        weight=0.5,
+        weight=1.0,
         params={"scale": 0.01, "clip": 1.0},
     )
     sc_coarse_lateral_alignment = RewTerm(
         func=mdp.sc_lateral_alignment_reward,
-        weight=1.0,
+        weight=10.0,
         params={"std": 0.30},
     )
     sc_coarse_orientation_alignment = RewTerm(
         func=mdp.sc_orientation_alignment_reward,
-        weight=0.5,
+        weight=2.0,
         params={"std": 2.00},
     )
     sc_lateral_alignment = RewTerm(
@@ -555,17 +555,17 @@ class RewardsCfg:
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
-        weight=-0.0001,
+        weight=-1.0e-5,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     joint_acc = RewTerm(
         func=mdp.joint_acc_l2,
-        weight=-1.0e-7,
+        weight=-1.0e-8,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     joint_torques = RewTerm(
         func=mdp.joint_torques_l2,
-        weight=-1.0e-6,
+        weight=-1.0e-7,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
