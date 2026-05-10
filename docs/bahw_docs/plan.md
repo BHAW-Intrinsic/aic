@@ -83,13 +83,26 @@ Work:
     `aic_utils/aic_isaac/aic_isaaclab/scripts/inspect_aic_geometry.py`.
     It inspects both SC and SFP semantic frame names and writes timestamped
     logs under `logs/aic_geometry/`, which remain untracked.
-- [ ] Create `AIC-Task-v0` with `num_envs=1`.
-- [ ] Print all robot body names.
-- [ ] Print all scene asset names.
-- [ ] Print all rigid body names for `sc_port`, `sc_port_2`, `nic_card`, and the
+- [x] Create `AIC-Task-v0` with `num_envs=1`.
+- [x] Print all robot body names.
+- [x] Print all scene asset names.
+- [x] Print all rigid body names for `sc_port`, `sc_port_2`, `nic_card`, and the
   robot articulation.
-- [ ] Search for tip/entrance names above.
-- [ ] Print root poses for `sc_port`, `sc_port_2`, and any available plug bodies.
+- [x] Search for tip/entrance names above.
+- [x] Print root poses for `sc_port`, `sc_port_2`, and any available plug bodies.
+
+Result from remote log
+`logs/aic_geometry/20260510_090800_AIC-Task-v0.log`:
+
+- Isaac exposes `sc_tip_link` as runtime body `robot.sc_tip_link` and USD prim
+  `/World/envs/env_0/Robot/cable/sc_plug/sc_tip_link`.
+- Isaac does not expose `sc_port_base_link_entrance` as a runtime body or USD
+  prim.
+- The nearest SC port frames available in the runtime are `sc_port` and
+  `sc_port_2`, each with body `sc_port_visual` plus root pose.
+- Isaac exposes `sfp_tip_link` as runtime body `robot.sfp_tip_link`.
+- SFP port entrances are present as USD prims under `nic_card`, but not as
+  runtime rigid bodies.
 
 Expected command, inside the Isaac Lab container:
 
@@ -99,13 +112,19 @@ isaaclab -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/inspect_aic_geometry.py
   --task AIC-Task-v0 --num_envs 1 --headless --enable_cameras
 ```
 
+Actual remote run used `./isaaclab.sh -p ...` because `isaaclab` was not on
+`PATH` in the rebuilt `isaac-lab-base` container.
+
 Done when:
 
-- [ ] We know whether the USD assets expose SC tip and SC port entrance frames.
-- [ ] If exposed, the plan uses those bodies directly.
-- [ ] If not exposed, document the nearest available body/root frame and defer
+- [x] We know whether the USD assets expose SC tip and SC port entrance frames.
+- [x] If exposed, the plan uses those bodies directly.
+  - Use `robot.sc_tip_link` directly for the SC plug tip.
+- [x] If not exposed, document the nearest available body/root frame and defer
   fixed transform derivation to Step 1.
-- [ ] The script output is saved under `logs/aic_geometry/`.
+  - Derive the SC port entrance helper pose from `sc_port` or `sc_port_2`
+    root/body `sc_port_visual` in Step 1.
+- [x] The script output is saved under `logs/aic_geometry/`.
 
 ## Step 1: Add Geometry Helpers
 
