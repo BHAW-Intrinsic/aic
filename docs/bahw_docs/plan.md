@@ -409,12 +409,12 @@ SC insertion teacher config.
 
 Work:
 
-- [ ] Add a new RSL-RL config or clearly rename the existing one:
-  - [ ] `agents/rsl_rl_ppo_sc_cfg.py`, or
+- [x] Add a new RSL-RL config or clearly rename the existing one:
+  - [x] `agents/rsl_rl_ppo_sc_cfg.py`, or
   - [ ] keep `rsl_rl_ppo_cfg.py` but set `experiment_name = "aic_sc_insert"`.
-- [ ] Prefer a separate config if we will soon add SFP.
-- [ ] Register the config entry point if adding a new config.
-- [ ] Preserve the existing `obs_groups` setting but update its critic entry
+- [x] Prefer a separate config if we will soon add SFP.
+- [x] Register the config entry point if adding a new config.
+- [x] Preserve the existing `obs_groups` setting but update its critic entry
   from `["policy"]` to `["policy", "privileged"]`.
 
 Teacher setup:
@@ -427,15 +427,31 @@ Teacher setup:
 
 Done when:
 
-- [ ] `AIC-Task-v0` loads with the SC PPO teacher config.
-- [ ] RSL-RL sees different actor and critic observation dimensions.
-- [ ] A 1 to 10 iteration smoke run starts and writes logs.
+- [x] `AIC-Task-v0` loads with the SC PPO teacher config.
+- [x] RSL-RL sees different actor and critic observation dimensions.
+- [x] A 1 to 10 iteration smoke run starts and writes logs.
+
+Result:
+
+- Commit `ab13e0a` added `agents/rsl_rl_ppo_sc_cfg.py` and registered
+  `rsl_rl_sc_cfg_entry_point`.
+- Commits `9ff42f5` and `cdec30a` made local RSL-RL train/play scripts
+  compatible with the installed RSL-RL model constructor and ensured failed
+  scripts close the Isaac app.
+- Remote smoke run used `--agent rsl_rl_sc_cfg_entry_point`, loaded
+  `experiment_name = "aic_sc_insert"`, resolved actor observations to
+  `["policy"]`, and resolved critic observations to `["policy", "privileged"]`.
+- Actor first layer used `3149` inputs; critic first layer used `3169` inputs.
+- One PPO iteration completed with `STEP5_SMOKE_EXIT:0`.
+- Smoke logs copied on the host to
+  `~/IsaacLab/aic/logs/rsl_rl/aic_sc_insert/2026-05-10_11-01-12_step5_smoke`.
 
 Smoke command:
 
 ```bash
 isaaclab -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py \
-  --task AIC-Task-v0 --num_envs 16 --headless --enable_cameras \
+  --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point \
+  --num_envs 16 --headless --enable_cameras \
   --max_iterations 10
 ```
 
@@ -456,14 +472,16 @@ Training command:
 
 ```bash
 isaaclab -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py \
-  --task AIC-Task-v0 --num_envs 64 --headless --enable_cameras
+  --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point \
+  --num_envs 64 --headless --enable_cameras
 ```
 
 Evaluation command:
 
 ```bash
 isaaclab -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/play.py \
-  --task AIC-Task-v0 --num_envs 16 --headless --enable_cameras \
+  --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point \
+  --num_envs 16 --headless --enable_cameras \
   --checkpoint <checkpoint_path>
 ```
 
@@ -571,7 +589,7 @@ Done when:
 - [x] 7. Replace command-pose rewards with insertion rewards.
 - [x] 8. Add success termination.
 - [x] 9. Add `check_aic_rewards.py`.
-- [ ] 10. Run SC smoke training.
+- [x] 10. Run SC smoke training.
 - [ ] 11. Train SC teacher.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.
