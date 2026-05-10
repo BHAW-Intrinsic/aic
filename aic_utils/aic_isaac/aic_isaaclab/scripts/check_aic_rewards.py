@@ -172,6 +172,60 @@ def _print_reward_manager_terms(report: Reporter, env: Any) -> None:
             report.line(f"  {name}: weight={weight}")
 
 
+def _print_analytic_shape_checks(report: Reporter) -> bool:
+    """Check reward kernel monotonicity without mutating simulator state."""
+    report.line("== Analytic Reward Shape Checks ==")
+    all_ok = True
+
+    distances = torch.tensor([1.25, 0.50, 0.10, 0.02, 0.0])
+    approach = 1.0 - torch.tanh(distances / 0.50)
+    approach_ok = bool(torch.all(approach[1:] >= approach[:-1]).item())
+    all_ok = all_ok and approach_ok
+    report.line(
+        "approach_reward distance "
+        f"{distances.tolist()} -> {approach.tolist()} monotonic={approach_ok}"
+    )
+
+    lateral_errors = torch.tensor([0.05, 0.02, 0.01, 0.005, 0.0])
+    lateral = 1.0 - torch.tanh(lateral_errors / 0.02)
+    lateral_ok = bool(torch.all(lateral[1:] >= lateral[:-1]).item())
+    all_ok = all_ok and lateral_ok
+    report.line(
+        "lateral_reward error "
+        f"{lateral_errors.tolist()} -> {lateral.tolist()} monotonic={lateral_ok}"
+    )
+
+    orientation_errors = torch.tensor([1.0, 0.35, 0.20, 0.10, 0.0])
+    orientation = 1.0 - torch.tanh(orientation_errors / 0.35)
+    orientation_ok = bool(torch.all(orientation[1:] >= orientation[:-1]).item())
+    all_ok = all_ok and orientation_ok
+    report.line(
+        "orientation_reward error "
+        f"{orientation_errors.tolist()} -> {orientation.tolist()} "
+        f"monotonic={orientation_ok}"
+    )
+
+    depths = torch.tensor([-0.01, 0.0, 0.006, 0.012, 0.02, 0.04])
+    aligned_depth = torch.clamp(torch.clamp(depths, min=0.0, max=0.03) / 0.02, max=1.0)
+    depth_ok = bool(torch.all(aligned_depth[1:] >= aligned_depth[:-1]).item())
+    all_ok = all_ok and depth_ok
+    report.line(
+        "depth_reward aligned depth "
+        f"{depths.tolist()} -> {aligned_depth.tolist()} monotonic={depth_ok}"
+    )
+
+    misaligned_depth = torch.zeros_like(aligned_depth)
+    misaligned_ok = bool(torch.all(misaligned_depth == 0.0).item())
+    all_ok = all_ok and misaligned_ok
+    report.line(
+        "depth_reward misaligned depth "
+        f"{depths.tolist()} -> {misaligned_depth.tolist()} zeroed={misaligned_ok}"
+    )
+
+    report.line(f"analytic_shape_checks_ok: {all_ok}")
+    return all_ok
+
+
 def main() -> int:
     log_path = None
     if not args_cli.no_log_file:
@@ -207,6 +261,7 @@ def main() -> int:
         report.line(f"gym observation space: {env.observation_space}")
         report.line(f"gym action space: {env.action_space}")
         _print_reward_manager_terms(report, base_env)
+        failed = failed or not _print_analytic_shape_checks(report)
 
         with torch.inference_mode():
             env.reset()
