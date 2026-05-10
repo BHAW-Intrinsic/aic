@@ -758,7 +758,7 @@ cause:
   whether Isaac's currently loaded SC plug is the gripped plug, and whether it
   is attached to the gripper/TCP in a controllable way.
 
-Commit in progress updates `scripts/check_aic_scripted_insert.py` again for this
+Commit `4221cf0` updated `scripts/check_aic_scripted_insert.py` again for this
 diagnosis:
 
 - adds `--action_body_name`, defaulting to `wrist_3_link`
@@ -780,17 +780,123 @@ git diff --check
 
 Result: passed locally.
 
-Next remote diagnostic:
+Remote sync:
 
 ```bash
-tmux new-session -d -s isaac-step6-scripted-gripper-diagnostic \
+tmux new-session -d -s isaac-step6-pull-4221cf0
+tmux send-keys -t isaac-step6-pull-4221cf0 \
+  'cd ~/IsaacLab/aic && git pull --ff-only && docker cp aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py && docker cp docs/bahw_docs/detailed/step6.md isaac-lab-base:/workspace/isaaclab/aic/docs/bahw_docs/detailed/step6.md && docker cp docs/bahw_docs/plan.md isaac-lab-base:/workspace/isaaclab/aic/docs/bahw_docs/plan.md; echo STEP6_PULL_COPY_4221CF0_EXIT:$?' C-m
+```
+
+Result:
+
+- Host repo updated from `f7af540` to `4221cf0`.
+- Updated scripted checker and docs copied into the Isaac Lab container.
+- Exit: `STEP6_PULL_COPY_4221CF0_EXIT:0`.
+
+Stale-process check before launch:
+
+```bash
+tmux new-session -d -s isaac-step6-stale-before-gripper-4221cf0
+tmux send-keys -t isaac-step6-stale-before-gripper-4221cf0 \
+  'pgrep -af "check_aic_scripted_insert|rsl_rl/train.py|isaaclab.sh"; echo STEP6_GRIPPER_STALE_BEFORE_EXIT:$?' C-m
+```
+
+Result: no matching process; `STEP6_GRIPPER_STALE_BEFORE_EXIT:1`.
+
+Remote diagnostic:
+
+```bash
+tmux new-session -d -s isaac-step6-scripted-gripper-4221cf0 \
   "docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 8 --max_steps 300 --report_every 50 --control_frame tip --action_body_name gripper_tcp --headless --enable_cameras'; echo STEP6_GRIPPER_DIAG_EXIT:\$?; sleep 60"
 ```
 
-Interpretation target:
+Result:
 
-- If `gripper_tcp_to_sc_tip` drift is small, the remaining issue is likely action
-  target/body-offset convention.
-- If `gripper_tcp_to_sc_tip` drift is also large, the SC plug is not rigidly
-  attached to the TCP in the current Isaac asset, and the asset/attachment must
-  be fixed before curriculum or PPO training can succeed.
+- Action body was set to `gripper_tcp`.
+- Initial env 0 relative offsets:
+  - `wrist_3_link_to_sc_tip_pos`:
+    `[0.08932173252105713, 0.42364028096199036, -0.6812333464622498]`
+  - `gripper_tcp_to_sc_tip_pos`:
+    `[0.08932200074195862, 0.4236403703689575, -0.8777335286140442]`
+  - `sc_plug_link_to_sc_tip_pos`:
+    `[0.0116500835865736, 1.9744038581848145e-07, -3.725290298461914e-09]`
+- Step `300` metrics:
+  - successes: `0/8`
+  - lateral mean/min/max: `0.297135 / 0.019377 / 0.666167`
+  - orientation mean/min/max: `1.330962 / 0.202430 / 1.571628`
+  - depth mean/min/max: `-0.001213 / -0.121757 / 0.024458`
+- Summary:
+  - first success steps: all `-1`
+  - `sc_port`: `5` episodes, `0` successes
+  - `sc_port_2`: `3` episodes, `0` successes
+  - `wrist_3_link_to_sc_tip_pos_drift`: mean `0.953258`
+  - `gripper_tcp_to_sc_tip_pos_drift`: mean `0.953258`
+  - `ati_tool_link_to_sc_tip_pos_drift`: mean `0.953258`
+  - `tool0_to_sc_tip_pos_drift`: mean `0.953258`
+  - `sc_plug_link_to_sc_tip_pos_drift`: mean `0.000000`
+- Exit: `STEP6_GRIPPER_DIAG_EXIT:0`.
+
+Log copied on the host:
+
+```text
+~/IsaacLab/aic/logs/aic_scripted_insert/20260510_130823_AIC-Task-v0.log
+```
+
+Copy result:
+
+```text
+LATEST:/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_130823_AIC-Task-v0.log
+Successfully copied 4.49kB (transferred 6.14kB) to /var/home/bahw/IsaacLab/aic/logs/aic_scripted_insert/
+STEP6_GRIPPER_LOG_COPY_EXIT:0
+```
+
+Post-run stale-process check:
+
+```text
+STEP6_GRIPPER_STALE_AFTER_EXIT:1
+```
+
+No matching stale process was listed.
+
+Interpretation:
+
+- The SC tip is rigidly fixed to `sc_plug_link`.
+- The SC plug/tip is not rigidly fixed to `wrist_3_link`, `tool0`,
+  `ati_tool_link`, or `gripper_tcp`.
+- The loaded Isaac asset behaves like an SFP-gripped cable where the SC plug is
+  on the free end. That is the wrong attachment for SC insertion training.
+
+## Virtual Gripped SC Tip Remediation
+
+Because the downloaded Isaac asset pack is ignored locally and currently exposes
+only `aic_unified_robot_cable_sdf.usd`, Step 6 now uses a temporary virtual SC
+tip helper for the SC teacher:
+
+- `mdp.geometry.sc_plug_tip_pose()` returns a helper pose composed from
+  `robot.gripper_tcp` when called with the default SC plug tip body.
+- The helper offset is initially identity:
+  - `SC_GRIPPED_TIP_BODY = "gripper_tcp"`
+  - `SC_GRIPPED_TIP_POS_LOCAL = (0.0, 0.0, 0.0)`
+  - `SC_GRIPPED_TIP_QUAT_LOCAL = (1.0, 0.0, 0.0, 0.0)`
+- `AIC-Task-v0` now targets `gripper_tcp` for differential IK.
+- The policy `eef_pose` observation now reports `gripper_tcp`.
+- `check_aic_scripted_insert.py` defaults to `--action_body_name gripper_tcp`.
+
+This is an explicit training-side workaround. It makes the insertion geometry
+controllable by the robot and is closer to Gazebo's TCP control path, but it does
+not repair the cable USD visual/physics attachment. A later asset fix should
+replace this helper with a real gripped SC plug frame or a fixed TCP-to-tip
+offset derived from Gazebo.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py
+git diff --check
+```
+
+Result: passed locally.

@@ -44,7 +44,7 @@ parser.add_argument(
 parser.add_argument(
     "--action_body_name",
     type=str,
-    default="wrist_3_link",
+    default="gripper_tcp",
     help="Articulation body controlled by the differential IK action.",
 )
 parser.add_argument(

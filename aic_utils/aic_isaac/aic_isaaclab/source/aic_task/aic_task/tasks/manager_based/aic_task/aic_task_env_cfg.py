@@ -405,7 +405,7 @@ class ObservationsCfg:
         # End-effector pose in env frame (pos xyz + quat wxyz = 7 dims)
         eef_pose = ObsTerm(
             func=mdp.body_pose_w,
-            params={"asset_cfg": SceneEntityCfg("robot", body_names="wrist_3_link")},
+            params={"asset_cfg": SceneEntityCfg("robot", body_names="gripper_tcp")},
             noise=Unoise(n_min=-0.001, n_max=0.001),
         )
 
@@ -624,7 +624,7 @@ class AICTaskEnvCfg(ManagerBasedRLEnvCfg):
                 "wrist_2_joint",
                 "wrist_3_joint",
             ],
-            body_name="wrist_3_link",
+            body_name="gripper_tcp",
             controller=DifferentialIKControllerCfg(
                 command_type="pose",
                 use_relative_mode=True,
@@ -634,8 +634,8 @@ class AICTaskEnvCfg(ManagerBasedRLEnvCfg):
             scale=0.05,
         )
 
-        # Command generator: end-effector body and pitch (wrist_3_link, EE along x)
-        self.commands.ee_pose.body_name = "wrist_3_link"
+        # Command generator: end-effector body and pitch.
+        self.commands.ee_pose.body_name = "gripper_tcp"
         self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
 
         # Teleop device configuration

@@ -509,6 +509,12 @@ Work:
   - Added the next diagnostic to the scripted checker: set the IK action body to
     `gripper_tcp` and log drift from `wrist_3_link`, `gripper_tcp`,
     `ati_tool_link`, `tool0`, and `sc_plug_link` to `sc_tip_link`.
+  - The `gripper_tcp` diagnostic confirmed the SC tip is rigid to
+    `sc_plug_link` but not to the gripper/TCP: `gripper_tcp_to_sc_tip_pos_drift`
+    mean `0.953258` m, while `sc_plug_link_to_sc_tip_pos_drift` mean `0.0`.
+  - Added a temporary virtual gripped SC tip helper from `gripper_tcp` and
+    changed the IK target/eef observation to `gripper_tcp` so the SC training
+    geometry is controllable while the USD attachment issue remains unresolved.
 
 Training command:
 

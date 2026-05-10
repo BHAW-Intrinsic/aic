@@ -19,6 +19,10 @@ SC_TARGET_NAMES = ("sc_port", "sc_port_2")
 SC_ACTIVE_TARGET_ATTR = "aic_active_sc_target_ids"
 SC_PLUG_TIP_BODY = "sc_tip_link"
 SC_PLUG_AXIS_LOCAL = (0.0, 0.0, 1.0)
+SC_USE_GRIPPED_TIP_HELPER = True
+SC_GRIPPED_TIP_BODY = "gripper_tcp"
+SC_GRIPPED_TIP_POS_LOCAL = (0.0, 0.0, 0.0)
+SC_GRIPPED_TIP_QUAT_LOCAL = (1.0, 0.0, 0.0, 0.0)
 SC_PREV_DISTANCE_ATTR = "aic_prev_sc_distance"
 SC_PREV_LATERAL_ATTR = "aic_prev_sc_lateral_error"
 SC_PREV_ORIENTATION_ATTR = "aic_prev_sc_orientation_error"
@@ -206,6 +210,17 @@ def sc_plug_tip_pose(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return the SC plug tip pose in world frame."""
     asset = env.scene[asset_name]
+    if (
+        SC_USE_GRIPPED_TIP_HELPER
+        and asset_name == "robot"
+        and body_name == SC_PLUG_TIP_BODY
+    ):
+        body_id = _body_index(asset, SC_GRIPPED_TIP_BODY)
+        body_pos_w = asset.data.body_pos_w[:, body_id]
+        body_quat_w = asset.data.body_quat_w[:, body_id]
+        tip_pos_local = _expand_vec(SC_GRIPPED_TIP_POS_LOCAL, env)
+        tip_quat_local = _expand_quat(SC_GRIPPED_TIP_QUAT_LOCAL, env)
+        return _compose_pose(body_pos_w, body_quat_w, tip_pos_local, tip_quat_local)
     body_id = _body_index(asset, body_name)
     return asset.data.body_pos_w[:, body_id], asset.data.body_quat_w[:, body_id]
 
