@@ -877,7 +877,7 @@ tip helper for the SC teacher:
   `robot.gripper_tcp` when called with the default SC plug tip body.
 - The helper offset places the virtual tip ahead of the TCP along local `+Z`:
   - `SC_GRIPPED_TIP_BODY = "gripper_tcp"`
-  - `SC_GRIPPED_TIP_POS_LOCAL = (0.0, 0.0, 0.05)`
+  - `SC_GRIPPED_TIP_POS_LOCAL = (0.0, 0.0, 0.07)`
   - `SC_GRIPPED_TIP_QUAT_LOCAL = (1.0, 0.0, 0.0, 0.0)`
 - `AIC-Task-v0` now targets `gripper_tcp` for differential IK.
 - The policy `eef_pose` observation now reports `gripper_tcp`.
@@ -922,6 +922,6 @@ Interpretation:
 - The first TCP helper was controllable and stable, but it asked the gripper
   TCP itself to reach the port interior.
 - That stalls at a near-port hover around `3` to `4` cm outside the entrance.
-- The next adjustment is to place the virtual tip ahead of the TCP along local
-  `+Z` so the TCP can remain outside the port while the helper tip inserts.
-  The first offset to test is `0.05` m.
+- The next adjustment is to place the virtual tip farther ahead of the TCP along
+  local `+Z` so the TCP can remain outside the port while the helper tip
+  inserts. The next offset to test is `0.07` m.

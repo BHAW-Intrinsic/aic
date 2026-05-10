@@ -515,8 +515,9 @@ Work:
   - Added a temporary virtual gripped SC tip helper from `gripper_tcp` and
     changed the IK target/eef observation to `gripper_tcp` so the SC training
     geometry is controllable while the USD attachment issue remains unresolved.
-  - The first identity TCP helper stalled outside the port, so the helper now
-    places the virtual tip `0.05` m ahead of `gripper_tcp` along local `+Z`.
+  - The first identity TCP helper stalled outside the port; a `0.05` m helper
+    offset reached positive but insufficient depth. The helper now places the
+    virtual tip `0.07` m ahead of `gripper_tcp` along local `+Z`.
 
 Training command:
 
