@@ -1707,3 +1707,134 @@ tmux new-session -d -s isaac-step6-bc-smoke-<commit> \
 
 If the smoke passes, run a longer BC pass, evaluate the saved checkpoint, then
 resume PPO from it.
+
+## BC Pretrain Results
+
+Remote pull/copy for the save fix:
+
+```bash
+tmux new-session -d -s isaac-step6-pull-copy-8a19d2a \
+  "cd ~/IsaacLab/aic && git status --short && git pull --ff-only && git rev-parse --short HEAD && docker cp aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py; echo STEP6_PULL_COPY_8A19D2A_EXIT:\$?; sleep 60"
+```
+
+Smoke command:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-smoke-8a19d2a-rerun \
+  "pgrep -af \"rsl_rl/train.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_SMOKE_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 16 --max_updates 10 --report_every 1 --save_every 0 --run_name step6_sc_bc_smoke_8a19d2a --headless --enable_cameras\"; echo STEP6_BC_SMOKE_EXIT:\$?; sleep 120"
+```
+
+Smoke result:
+
+```text
+update=10 loss=0.110739 pred_error_mean=0.804083 successes=0/16 lateral_mean=0.014871 orientation_mean=0.013553 depth_mean=0.007266
+final_checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-02-23_step6_sc_bc_smoke_8a19d2a/model_10.pt
+STEP6_BC_SMOKE_EXIT:0
+```
+
+Long expert-rollout BC command:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-train-8a19d2a \
+  "pgrep -af \"rsl_rl/train.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_TRAIN_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_updates 1000 --report_every 50 --save_every 250 --run_name step6_sc_bc_8a19d2a --headless --enable_cameras\"; echo STEP6_BC_TRAIN_EXIT:\$?; sleep 120"
+```
+
+Long expert-rollout BC result:
+
+```text
+update=1000 loss=0.003010 pred_error_mean=0.099506 successes=0/64 lateral_mean=0.014043 orientation_mean=0.014401 depth_mean=0.007004
+final_checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-03-31_step6_sc_bc_8a19d2a/model_1000.pt
+elapsed_seconds: 287.72
+STEP6_BC_TRAIN_EXIT:0
+```
+
+Note: the inline `successes=...` in `pretrain_sc_bc.py` is not an episode-level
+success metric. The script steps the env and then samples the geometry state, so
+success terminations and resets can make this print misleading. Use
+`scripts/rsl_rl/evaluate.py` for policy metrics.
+
+BC checkpoint evaluation command:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-eval-300-8a19d2a \
+  "pgrep -af \"rsl_rl/evaluate.py|rsl_rl/train.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_EVAL_300_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --num_eval_episodes 256 --max_episode_steps 300 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-03-31_step6_sc_bc_8a19d2a/model_1000.pt --headless --enable_cameras\"; echo STEP6_BC_EVAL_300_EXIT:\$?; sleep 120"
+```
+
+BC checkpoint evaluation result:
+
+```text
+progress: 64/256 successes=49
+progress: 128/256 successes=97
+progress: 192/256 successes=145
+progress: 256/256 successes=193
+
+episodes: 256
+successes: 193
+success_rate: 0.753906
+mean_episode_length: 79.527
+mean_episode_length_on_success: 7.560
+mean_lateral_error_at_termination: 0.009816
+mean_orientation_error_at_termination: 0.033182
+mean_insertion_depth_at_termination: 0.018228
+failure_breakdown:
+  timeout: 63
+  lateral_miss: 63
+  orientation_miss: 2
+  depth_shortfall: 9
+per_target:
+  sc_port: episodes=134 successes=95 success_rate=0.708955
+  sc_port_2: episodes=122 successes=98 success_rate=0.803279
+STEP6_BC_EVAL_300_EXIT:0
+```
+
+PPO resume attempt:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-resume-ppo-8a19d2a-v2 \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_RESUME_PPO_V2_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --resume --load_run 2026-05-10_15-03-31_step6_sc_bc_8a19d2a --checkpoint model_1000.pt --num_envs 64 --max_iterations 250 --run_name step6_sc_bc_resume_8a19d2a_v2 --headless --enable_cameras\"; echo STEP6_BC_RESUME_PPO_V2_EXIT:\$?; sleep 120"
+```
+
+Important resume detail: `train.py` uses RSL-RL `get_checkpoint_path`, so resume
+must pass `--load_run <run_dir> --checkpoint <file_name>`. Passing the absolute
+checkpoint path to `--checkpoint` failed.
+
+PPO result at the first saved checkpoint:
+
+```text
+model_1050.pt saved under:
+/workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-18-14_step6_sc_bc_resume_8a19d2a_v2/model_1050.pt
+
+training at iteration 1050:
+Episode_Reward/sc_insertion_depth: 0.0022
+Episode_Reward/sc_insertion_success: 0.0000
+Episode_Termination/time_out: 0.0814
+Episode_Termination/sc_insertion_success: 0.2500
+```
+
+Evaluation of `model_1050.pt` with the same 300-step gate started at `0/128`
+successes, so the PPO-resumed checkpoint is worse than the BC checkpoint and
+should not be preferred.
+
+## Actor-Rollout BC Remediation
+
+Reason:
+
+- Expert-rollout BC produced a useful deterministic policy, but still missed
+  laterally in `63/256` evaluation episodes.
+- PPO resume from the useful BC checkpoint quickly regressed.
+- The likely remaining BC failure is distribution shift: the actor is trained on
+  states reached by perfect scripted actions, then evaluation uses states reached
+  by the actor's own imperfect actions.
+
+Added to `pretrain_sc_bc.py`:
+
+```text
+--rollout_policy expert|actor|blend
+--rollout_actor_weight <float>
+```
+
+`expert` preserves the previous behavior. `actor` steps the environment with the
+actor's deterministic action while still labeling each visited state with the
+scripted privileged controller. `blend` linearly mixes scripted and actor
+actions. The next run should resume from the useful BC checkpoint and use
+`--rollout_policy actor`.

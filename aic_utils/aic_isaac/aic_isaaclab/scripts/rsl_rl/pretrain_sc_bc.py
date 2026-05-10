@@ -53,6 +53,22 @@ parser.add_argument(
     default=250,
     help="Save checkpoint every N updates; <=0 disables.",
 )
+parser.add_argument(
+    "--rollout_policy",
+    choices=("expert", "actor", "blend"),
+    default="expert",
+    help=(
+        "Policy used to advance the environment between BC updates. "
+        "'expert' preserves plain BC, 'actor' trains on actor-visited states, "
+        "and 'blend' mixes both."
+    ),
+)
+parser.add_argument(
+    "--rollout_actor_weight",
+    type=float,
+    default=0.5,
+    help="Actor action weight for --rollout_policy blend, clipped to [0, 1].",
+)
 parser.add_argument("--action_body_name", type=str, default="gripper_tcp")
 parser.add_argument("--action_scale", type=float, default=0.05)
 parser.add_argument("--action_clip", type=float, default=1.0)
@@ -176,6 +192,8 @@ def main(
     print(f"num_envs: {wrapped_env.num_envs}")
     print(f"max_updates: {args_cli.max_updates}")
     print(f"learning_rate: {args_cli.learning_rate}")
+    print(f"rollout_policy: {args_cli.rollout_policy}")
+    print(f"rollout_actor_weight: {args_cli.rollout_actor_weight}")
     print(f"resume_path: {resume_path}")
 
     start_time = time.time()
@@ -204,7 +222,20 @@ def main(
         last_loss = float(loss.detach().cpu().item())
 
         with torch.inference_mode():
-            obs, _, dones, _ = wrapped_env.step(labels.to(wrapped_env.device))
+            if args_cli.rollout_policy == "expert":
+                rollout_actions = labels
+            else:
+                actor_actions = actor(obs, stochastic_output=False)
+                if args_cli.rollout_policy == "actor":
+                    rollout_actions = actor_actions
+                else:
+                    actor_weight = max(0.0, min(1.0, args_cli.rollout_actor_weight))
+                    rollout_actions = torch.lerp(labels, actor_actions, actor_weight)
+                rollout_actions = torch.clamp(
+                    rollout_actions, -args_cli.action_clip, args_cli.action_clip
+                )
+
+            obs, _, dones, _ = wrapped_env.step(rollout_actions.to(wrapped_env.device))
             obs = obs.to(agent_cfg.device)
             actor.reset(dones)
 

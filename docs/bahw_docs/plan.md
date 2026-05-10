@@ -585,8 +585,13 @@ Work:
     with supervised MSE on scripted raw `arm_action` labels, then save a normal
     RSL-RL checkpoint for PPO resume.
   - Exposed `mdp.sc_scripted_raw_action` as the shared label generator.
-  - Next: smoke-test the BC script remotely, then run a short pretrain and
-    evaluate/resume PPO from the saved checkpoint.
+  - Expert-rollout BC smoke passed and `model_1000.pt` reached `193/256`
+    deterministic evaluation successes with a 300-step cap (`0.753906`).
+  - PPO resume from the BC checkpoint regressed: the first PPO checkpoint
+    evaluated at `0/128` successes, so do not prefer PPO-resumed checkpoint.
+  - Added `--rollout_policy actor|blend` support for DAgger-style BC on states
+    reached by the actor's own actions. Next: run actor-rollout BC from the
+    useful BC checkpoint and evaluate it against the `193/256` baseline.
 
 Training command:
 
