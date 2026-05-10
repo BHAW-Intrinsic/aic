@@ -196,15 +196,12 @@ def sc_insertion_success_bonus(
     depth_threshold: float = 0.012,
 ) -> torch.Tensor:
     """Sparse bonus for a plausible SC insertion state."""
-    lateral_error = geometry.sc_lateral_error(env)
-    orientation_error = geometry.sc_orientation_error(env)
-    depth = geometry.sc_insertion_depth(env)
-    success = (
-        (lateral_error < lateral_threshold)
-        & (orientation_error < orientation_threshold)
-        & (depth > depth_threshold)
-    )
-    return success.float()
+    return geometry.sc_insertion_success_mask(
+        env,
+        lateral_threshold=lateral_threshold,
+        orientation_threshold=orientation_threshold,
+        depth_threshold=depth_threshold,
+    ).float()
 
 
 # ---------------------------------------------------------------------------

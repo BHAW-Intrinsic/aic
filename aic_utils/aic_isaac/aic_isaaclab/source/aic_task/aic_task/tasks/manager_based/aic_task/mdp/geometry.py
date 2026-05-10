@@ -290,3 +290,36 @@ def sc_orientation_error(env: ManagerBasedEnv | ManagerBasedRLEnv) -> torch.Tens
     port_axis_w = sc_port_insertion_axis(env)
     dot = torch.sum(plug_axis_w * port_axis_w, dim=-1)
     return torch.acos(torch.clamp(dot, min=-1.0, max=1.0))
+
+
+def sc_insertion_success_from_errors(
+    lateral_error: torch.Tensor,
+    orientation_error: torch.Tensor,
+    insertion_depth: torch.Tensor,
+    lateral_threshold: float = 0.005,
+    orientation_threshold: float = 0.20,
+    depth_threshold: float = 0.012,
+) -> torch.Tensor:
+    """Return the SC insertion success mask from precomputed geometry errors."""
+    return (
+        (lateral_error < lateral_threshold)
+        & (orientation_error < orientation_threshold)
+        & (insertion_depth > depth_threshold)
+    )
+
+
+def sc_insertion_success_mask(
+    env: ManagerBasedEnv | ManagerBasedRLEnv,
+    lateral_threshold: float = 0.005,
+    orientation_threshold: float = 0.20,
+    depth_threshold: float = 0.012,
+) -> torch.Tensor:
+    """Return the SC insertion success mask for the active target."""
+    return sc_insertion_success_from_errors(
+        sc_lateral_error(env),
+        sc_orientation_error(env),
+        sc_insertion_depth(env),
+        lateral_threshold=lateral_threshold,
+        orientation_threshold=orientation_threshold,
+        depth_threshold=depth_threshold,
+    )

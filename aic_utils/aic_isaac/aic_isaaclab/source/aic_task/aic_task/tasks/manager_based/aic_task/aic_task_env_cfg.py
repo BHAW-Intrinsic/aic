@@ -369,6 +369,14 @@ class TerminationsCfg:
     """Termination terms for the MDP."""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    sc_insertion_success = DoneTerm(
+        func=mdp.sc_insertion_success,
+        params={
+            "lateral_threshold": 0.005,
+            "orientation_threshold": 0.20,
+            "depth_threshold": 0.012,
+        },
+    )
 
 
 @configclass
