@@ -127,6 +127,14 @@ def _reward_checks() -> tuple[tuple[str, Callable[[Any], torch.Tensor]], ...]:
             lambda env: mdp.sc_depth_progress_reward(env, scale=0.01, clip=1.0),
         ),
         (
+            "sc_coarse_lateral_alignment",
+            lambda env: mdp.sc_lateral_alignment_reward(env, std=0.30),
+        ),
+        (
+            "sc_coarse_orientation_alignment",
+            lambda env: mdp.sc_orientation_alignment_reward(env, std=2.00),
+        ),
+        (
             "sc_lateral_alignment",
             lambda env: mdp.sc_lateral_alignment_reward(env, std=0.02),
         ),

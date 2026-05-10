@@ -511,6 +511,16 @@ class RewardsCfg:
         weight=0.5,
         params={"scale": 0.01, "clip": 1.0},
     )
+    sc_coarse_lateral_alignment = RewTerm(
+        func=mdp.sc_lateral_alignment_reward,
+        weight=1.0,
+        params={"std": 0.30},
+    )
+    sc_coarse_orientation_alignment = RewTerm(
+        func=mdp.sc_orientation_alignment_reward,
+        weight=0.5,
+        params={"std": 2.00},
+    )
     sc_lateral_alignment = RewTerm(
         func=mdp.sc_lateral_alignment_reward,
         weight=1.0,
