@@ -540,7 +540,9 @@ Work:
     `sc_port` seed `[0.8142, -1.8485, -1.8316, -1.0275, 1.5704, 2.1715]`,
     `sc_port_2` seed `[0.7603, -1.8014, -1.8958, -1.0112, 1.5705, 2.1117]`.
   - Added `reset_robot_near_sc_port` as a temporary curriculum reset with
-    `blend=0.85`, `position_noise=0.015`, and `probability=1.0`.
+    `blend=0.95`, `position_noise=0.01`, and `probability=1.0`.
+  - First smoke with `blend=0.85` was wired correctly but still too far from
+    the fine corridor: lateral mean `0.058786`, depth mean `-0.025474`.
   - Next: smoke-test the reset geometry, then retry PPO.
 
 Training command:

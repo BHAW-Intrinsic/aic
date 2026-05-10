@@ -372,8 +372,8 @@ class EventCfg:
         mode="reset",
         params={
             "probability": 1.0,
-            "blend": 0.85,
-            "position_noise": 0.015,
+            "blend": 0.95,
+            "position_noise": 0.01,
             "velocity_range": (0.0, 0.0),
         },
     )

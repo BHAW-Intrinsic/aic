@@ -1248,8 +1248,8 @@ Current curriculum parameters:
 
 ```python
 probability = 1.0
-blend = 0.85
-position_noise = 0.015
+blend = 0.95
+position_noise = 0.01
 velocity_range = (0.0, 0.0)
 ```
 
@@ -1260,3 +1260,16 @@ noise, clamps to joint limits, and writes only the six UR arm joints to sim.
 This is intentionally a Step 6 curriculum. It is not the final deployment reset
 distribution. Once the policy learns final insertion, reduce curriculum strength
 or stage back toward the normal reset distribution.
+
+First reset smoke with `blend=0.85`, `position_noise=0.015`:
+
+```text
+step=0 successes=0/16
+final_lateral: mean=0.058786 min=0.048729 max=0.071984
+final_orientation: mean=0.016874 min=0.007143 max=0.030467
+final_depth: mean=-0.025474 min=-0.036422 max=-0.013701
+```
+
+Interpretation: the event was wired correctly, but the reset was still too far
+outside the fine insertion corridor. The curriculum was tightened to
+`blend=0.95`, `position_noise=0.01` before the next smoke test.
