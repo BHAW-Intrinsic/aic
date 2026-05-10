@@ -88,9 +88,44 @@ git diff --check
 
 Status: passed locally.
 
-## Remote Verification Needed
+## Remote Verification
 
-Run inside the Isaac Lab container:
+Implementation commit:
+
+- `43e88c0 Add SC insertion success termination`
+
+Pulled on the remote host:
+
+```bash
+cd ~/IsaacLab/aic
+git pull --ff-only
+```
+
+Copied the changed source files into the running Isaac Lab container:
+
+```bash
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_terminations.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_terminations.py
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/terminations.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/terminations.py
+```
+
+Ran inside the Isaac Lab container through host `tmux` session
+`isaac-step4-terminations-43e88c0`:
 
 ```bash
 cd /workspace/isaaclab
@@ -98,11 +133,49 @@ cd /workspace/isaaclab
   --task AIC-Task-v0 --num_envs 16 --num_steps 8 --headless --enable_cameras
 ```
 
-Expected checks:
+Key output:
 
-- Termination Manager contains `time_out` and `sc_insertion_success`.
-- `time_out` remains the only timeout term.
-- Analytic success checks pass.
-- Reset-state success is false for both `sc_port` and `sc_port_2`.
-- Random-policy termination tensors have the expected shape/type.
-- Termination log is copied from `logs/aic_terminations/`.
+```text
+Termination Manager contains 2 active terms:
+time_out             Time Out=True
+sc_insertion_success Time Out=False
+```
+
+Analytic threshold checks:
+
+```text
+inserted: success=True expected=True lateral=0.000000 orientation=0.000000 depth=0.020000
+hovering: success=False expected=False lateral=0.000000 orientation=0.000000 depth=0.000000
+lateral_miss: success=False expected=False lateral=0.020000 orientation=0.000000 depth=0.020000
+orientation_miss: success=False expected=False lateral=0.000000 orientation=0.500000 depth=0.020000
+depth_shortfall: success=False expected=False lateral=0.000000 orientation=0.000000 depth=0.006000
+at_thresholds: success=False expected=False lateral=0.005000 orientation=0.200000 depth=0.012000
+analytic_success_checks_ok: True
+```
+
+Reset and random-policy checks:
+
+```text
+sc_port reset success: shape=(16,) dtype=torch.bool true_count=0/16 shape_ok=True dtype_ok=True
+sc_port_2 reset success: shape=(16,) dtype=torch.bool true_count=0/16 shape_ok=True dtype_ok=True
+step 00 gym terminated: shape=(16,) dtype=torch.bool true_count=0/16
+...
+step 07 gym terminated: shape=(16,) dtype=torch.bool true_count=0/16
+overall_termination_check_ok: True
+STEP4_TERMINATION_EXIT:0
+```
+
+Copied the termination log back to the host:
+
+```bash
+mkdir -p ~/IsaacLab/aic/logs
+docker cp isaac-lab-base:/workspace/isaaclab/aic/logs/aic_terminations \
+  ~/IsaacLab/aic/logs/
+```
+
+Result:
+
+```text
+COPY_EXIT:0
+~/IsaacLab/aic/logs/aic_terminations/20260510_104604_AIC-Task-v0.log
+```

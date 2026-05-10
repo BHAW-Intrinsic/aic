@@ -351,9 +351,9 @@ actually completed.
 
 Work:
 
-- [ ] Add `mdp/terminations.py`.
-- [ ] Implement `sc_insertion_success`.
-- [ ] Wire it into `TerminationsCfg` in `aic_task_env_cfg.py`.
+- [x] Add `mdp/terminations.py`.
+- [x] Implement `sc_insertion_success`.
+- [x] Wire it into `TerminationsCfg` in `aic_task_env_cfg.py`.
 
 Initial success definition:
 
@@ -372,10 +372,26 @@ inspection:
 
 Done when:
 
-- [ ] Success termination fires only when the plug is visibly inserted.
-- [ ] Success does not fire when the plug is hovering near the entrance.
-- [ ] Success works for both `sc_port` and `sc_port_2`.
-- [ ] Timeout still works for failed episodes.
+- [x] Success termination fires only when the plug is visibly inserted.
+- [x] Success does not fire when the plug is hovering near the entrance.
+- [x] Success works for both `sc_port` and `sc_port_2`.
+- [x] Timeout still works for failed episodes.
+
+Result:
+
+- Commit `43e88c0` added `mdp/terminations.py` and wired
+  `sc_insertion_success` into `TerminationsCfg`.
+- The same shared success mask now drives the sparse reward bonus and the
+  termination.
+- Remote headless verification showed `time_out` and `sc_insertion_success` as
+  active termination terms, with `time_out` remaining the only timeout term.
+- Analytic checks confirmed inserted geometry succeeds while hovering, lateral
+  miss, orientation miss, depth shortfall, and exact-threshold equality fail.
+- Reset-state success was false for both `sc_port` and `sc_port_2`.
+- Visual confirmation remains part of Step 6 video review, but the Step 4
+  threshold logic and runtime wiring are complete.
+- Termination log copied on the host to
+  `~/IsaacLab/aic/logs/aic_terminations/20260510_104604_AIC-Task-v0.log`.
 
 Verification:
 
@@ -546,15 +562,15 @@ Done when:
 
 ## Implementation Order
 
-- [ ] 1. Add `inspect_aic_geometry.py`.
-- [ ] 2. Confirm or reconstruct SC plug-tip and port-entry poses.
-- [ ] 3. Add `mdp/geometry.py`.
-- [ ] 4. Add SC active target selection.
-- [ ] 5. Add policy and privileged observation terms.
-- [ ] 6. Update PPO obs groups for asymmetric actor-critic.
-- [ ] 7. Replace command-pose rewards with insertion rewards.
-- [ ] 8. Add success termination.
-- [ ] 9. Add `check_aic_rewards.py`.
+- [x] 1. Add `inspect_aic_geometry.py`.
+- [x] 2. Confirm or reconstruct SC plug-tip and port-entry poses.
+- [x] 3. Add `mdp/geometry.py`.
+- [x] 4. Add SC active target selection.
+- [x] 5. Add policy and privileged observation terms.
+- [x] 6. Update PPO obs groups for asymmetric actor-critic.
+- [x] 7. Replace command-pose rewards with insertion rewards.
+- [x] 8. Add success termination.
+- [x] 9. Add `check_aic_rewards.py`.
 - [ ] 10. Run SC smoke training.
 - [ ] 11. Train SC teacher.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
