@@ -1273,3 +1273,50 @@ final_depth: mean=-0.025474 min=-0.036422 max=-0.013701
 Interpretation: the event was wired correctly, but the reset was still too far
 outside the fine insertion corridor. The curriculum was tightened to
 `blend=0.95`, `position_noise=0.01` before the next smoke test.
+
+Second reset smoke with `blend=0.95`, `position_noise=0.01`:
+
+```text
+step=0 successes=0/16
+final_lateral: mean=0.023949 min=0.015067 max=0.034375
+final_orientation: mean=0.009376 min=0.002013 max=0.019501
+final_depth: mean=0.001344 min=-0.004707 max=0.005534
+```
+
+Scripted insertion from that reset:
+
+```text
+step=0 successes=0/16 lateral(mean=0.021286 min=0.014807 max=0.030629) orientation(mean=0.009376 min=0.000000 max=0.023996) depth(mean=0.001533 min=-0.009456 max=0.005629)
+step=6 successes=16/16 lateral(mean=0.003078 min=0.002238 max=0.004462) orientation(mean=0.004618 min=0.000000 max=0.012563) depth(mean=0.016588 min=0.013244 max=0.018757)
+```
+
+The curriculum reset is therefore close enough for a short final insertion
+controller, but it does not start in the success state.
+
+PPO retry from this reset:
+
+```bash
+tmux new-session -d -s isaac-step6-train-near-reset-66e3aac \
+  "pgrep -af \"rsl_rl/train.py|check_aic_scripted_insert|isaaclab.sh\"; echo STEP6_TRAIN_NEAR_STALE_BEFORE_EXIT:\$?; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_iterations 500 --run_name step6_sc_near_reset_66e3aac --headless --enable_cameras\"; echo STEP6_TRAIN_NEAR_EXIT:\$?; sleep 120"
+```
+
+The run was manually stopped at iteration `25/500`. It had nonzero insertion
+samples at the start, but the signal did not improve:
+
+```text
+Learning iteration 0/500
+Episode_Reward/sc_insertion_depth: 0.0005
+Episode_Reward/sc_insertion_success: 0.0016
+Episode_Termination/sc_insertion_success: 0.0150
+
+Learning iteration 25/500
+Mean action std: 1.00
+Episode_Reward/sc_insertion_depth: 0.0000
+Episode_Reward/sc_insertion_success: 0.0000
+Episode_Termination/sc_insertion_success: 0.0156
+```
+
+Interpretation: near-port samples exist, but the initial PPO action standard
+deviation is too large for a millimeter-scale final insertion problem. The next
+SC PPO config change reduces actor `init_std` from `1.0` to `0.2` and entropy
+coefficient from `0.006` to `0.001`.

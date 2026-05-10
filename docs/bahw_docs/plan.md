@@ -543,7 +543,17 @@ Work:
     `blend=0.95`, `position_noise=0.01`, and `probability=1.0`.
   - First smoke with `blend=0.85` was wired correctly but still too far from
     the fine corridor: lateral mean `0.058786`, depth mean `-0.025474`.
-  - Next: smoke-test the reset geometry, then retry PPO.
+  - Tightened to `blend=0.95`, `position_noise=0.01`. Reset starts outside
+    success but near the port: lateral mean `0.023949`, depth mean `0.001344`.
+  - Scripted insertion from the tightened reset reached `16/16` successes by
+    step `6`.
+  - PPO retry from the tightened reset had nonzero insertion samples at
+    iteration `0`, but stayed flat through iteration `25` with action std `1.0`.
+- [ ] Reduce SC PPO exploration scale for the near-port curriculum.
+  - Changed actor Gaussian `init_std` from `1.0` to `0.2` and entropy coefficient
+    from `0.006` to `0.001`.
+  - Next: retry PPO and check whether success termination rises above the
+    initial sparse level.
 
 Training command:
 
