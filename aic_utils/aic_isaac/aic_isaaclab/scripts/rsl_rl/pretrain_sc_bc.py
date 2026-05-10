@@ -154,6 +154,8 @@ def main(
         wrapped_env, agent_cfg_dict, log_dir=log_dir, device=agent_cfg.device
     )
     runner.add_git_repo_to_log(__file__)
+    if not hasattr(runner.logger, "writer"):
+        runner.logger.writer = None
     if resume_path is not None:
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         runner.load(resume_path)
