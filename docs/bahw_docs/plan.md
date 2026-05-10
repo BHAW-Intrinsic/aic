@@ -463,10 +463,38 @@ This is the first proof that the Isaac MDP is correct.
 
 Work:
 
-- [ ] Train with enough parallel envs for throughput.
-- [ ] Start with 64 envs if camera memory allows.
+- [x] Train with enough parallel envs for throughput.
+- [x] Start with 64 envs if camera memory allows.
+  - Baseline run `step6_sc_teacher` ran to iteration `523` before being stopped.
+    Infrastructure was stable, but learning failed: insertion-depth reward,
+    insertion-success reward, and success termination stayed at `0.0`.
 - [ ] Increase after smoke runs are stable.
 - [ ] Save videos periodically for qualitative checks.
+- [x] Add a first Step 6 remediation before SFP:
+  - added reset-initialized SC progress buffers
+  - added distance, lateral, orientation, and signed-depth progress rewards
+  - increased coarse approach reward width/weight
+- [x] Verify the remediated reward terms in Isaac.
+  - First remote reward check saw `14` active terms and exited with
+    `STEP6_REWARD_CHECK_EXIT:0`.
+  - Second remote reward check saw `16` active terms after adding coarse
+    alignment and exited with `STEP6_COARSE_REWARD_EXIT:0`.
+- [ ] Retrain the SC teacher with remediated reward shaping.
+  - Stopped `step6_sc_progress` at iteration `106`; it still had zero fine
+    lateral alignment, insertion depth, and success.
+  - Stopped `step6_sc_coarse` at iteration `45`; task rewards were active but
+    smoothness penalties dominated and insertion terms stayed zero.
+  - Stopped `step6_sc_rebalanced` at iteration `110`; reward balance improved,
+    but fine lateral alignment, insertion depth, and success stayed at zero.
+- [x] Add a headless scripted SC insertion check before changing the trainer
+  again.
+  - Added `scripts/check_aic_scripted_insert.py` to test whether privileged
+    plug-to-port geometry can drive the existing relative IK action into the SC
+    success condition.
+- [ ] Run the scripted SC insertion check remotely.
+- [ ] If scripted IK succeeds, use it to derive a near-port reset/curriculum or
+  demonstration seed before more PPO.
+- [ ] If scripted IK fails, fix the geometry/action convention before more PPO.
 
 Training command:
 
@@ -506,6 +534,13 @@ Minimum metric to record:
 Why:
 
 Qualification trials 1 and 2 are SFP, so SFP must be trained directly.
+
+Current gate:
+
+- Do not start Step 7 until Step 6 produces a useful SC teacher. Baseline PPO
+  and three reward-only remediation attempts did not reach insertion depth or
+  success, so the next work remains Step 6 scripted IK validation and
+  curriculum/reset design.
 
 Work:
 
@@ -591,6 +626,17 @@ Done when:
 - [x] 9. Add `check_aic_rewards.py`.
 - [x] 10. Run SC smoke training.
 - [ ] 11. Train SC teacher.
+  - [x] Baseline training infrastructure worked.
+  - [x] Added first progress-reward remediation after baseline learning failed.
+  - [x] Verified remediated rewards load in Isaac.
+  - [x] Added second coarse-alignment remediation after progress-only shaping
+    failed to reach the port axis by iteration `106`.
+  - [x] Rebalanced task reward scale after coarse alignment was still dominated
+    by smoothness penalties.
+  - [x] Confirmed reward-only shaping still failed after rebalanced training to
+    iteration `110`.
+  - [x] Added a headless scripted SC insertion check.
+  - [ ] Run scripted SC insertion remotely and decide the reset/curriculum path.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.
 - [ ] 14. Revisit distillation only after both teachers work.
