@@ -163,8 +163,8 @@ Initial SC target selection:
 
 - [x] Sample the active SC target per environment on reset: `sc_port` or `sc_port_2`.
 - [x] Store the active target index on the env object as a tensor.
-- [ ] Expose active target metadata to the actor as eval-compatible task information.
-  - Deferred to Step 2 with the policy observation update.
+- [x] Expose active target metadata to the actor as eval-compatible task information.
+  - Completed in Step 2 as `task_metadata` one-hot.
 
 Important:
 
@@ -207,31 +207,31 @@ can use extra simulator geometry to make PPO training easier.
 
 Work in `mdp/observations.py`:
 
-- [ ] Add policy observation terms:
-  - [ ] task metadata one-hot or small numeric vector
-  - [ ] keep joint position and velocity
-  - [ ] keep end-effector pose
-  - [ ] keep force/wrench-like robot signal
-  - [ ] keep camera features
-  - [ ] keep last action
-- [ ] Add privileged observation terms:
-  - [ ] `plug_to_port_vec`
-  - [ ] `lateral_error`
-  - [ ] `orientation_error`
-  - [ ] `insertion_depth`
-  - [ ] active port pose if useful
-  - [ ] plug tip pose if useful
+- [x] Add policy observation terms:
+  - [x] task metadata one-hot or small numeric vector
+  - [x] keep joint position and velocity
+  - [x] keep end-effector pose
+  - [x] keep force/wrench-like robot signal
+  - [x] keep camera features
+  - [x] keep last action
+- [x] Add privileged observation terms:
+  - [x] `plug_to_port_vec`
+  - [x] `lateral_error`
+  - [x] `orientation_error`
+  - [x] `insertion_depth`
+  - [x] active port pose if useful
+  - [x] plug tip pose if useful
 
 Work in `aic_task_env_cfg.py`:
 
-- [ ] Remove `pose_command` from the policy observation group.
-- [ ] Add a new `PrivilegedCfg` observation group.
-- [ ] Keep `PolicyCfg` eval-compatible.
-- [ ] Make sure term concatenation is stable and dimensions do not change by episode.
+- [x] Remove `pose_command` from the policy observation group.
+- [x] Add a new `PrivilegedCfg` observation group.
+- [x] Keep `PolicyCfg` eval-compatible.
+- [x] Make sure term concatenation is stable and dimensions do not change by episode.
 
 Work in `rsl_rl_ppo_cfg.py`:
 
-- [ ] Update the existing `obs_groups` mapping so the critic receives the new
+- [x] Update the existing `obs_groups` mapping so the critic receives the new
   privileged observation group.
 
 ```python
@@ -243,10 +243,24 @@ obs_groups = {
 
 Done when:
 
-- [ ] `policy` observation contains no privileged geometry.
-- [ ] `privileged` observation contains plug-to-port geometry.
-- [ ] Actor and critic observation dimensions are stable after reset.
-- [ ] RSL-RL config maps actor to `policy` and critic to `policy + privileged`.
+- [x] `policy` observation contains no privileged geometry.
+- [x] `privileged` observation contains plug-to-port geometry.
+- [x] Actor and critic observation dimensions are stable after reset.
+- [x] RSL-RL config maps actor to `policy` and critic to `policy + privileged`.
+
+Result from remote run `20260510_101621_AIC-Task-v0.log`:
+
+- `policy` group shape is `(3149,)` and contains `task_metadata`, joint state,
+  end-effector pose, body forces, camera features, and last action.
+- `policy` no longer contains `pose_command`.
+- `privileged` group shape is `(20,)` and contains plug-to-port vector, lateral
+  error, orientation error, insertion depth, active port pose, and plug tip pose.
+- Gym observation space is
+  `Dict('policy': Box(..., (4, 3149)), 'privileged': Box(..., (4, 20)))`.
+- RSL-RL config maps `actor` to `["policy"]` and `critic` to
+  `["policy", "privileged"]`.
+- Detailed remote reproduction notes and output are in
+  `docs/bahw_docs/detailed/step2.md`.
 
 Verification:
 
