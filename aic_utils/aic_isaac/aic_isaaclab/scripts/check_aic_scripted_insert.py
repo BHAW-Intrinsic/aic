@@ -120,6 +120,16 @@ import aic_task.tasks  # noqa: F401
 from aic_task.tasks.manager_based.aic_task import mdp
 
 
+ARM_JOINT_NAMES = (
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+)
+
+
 class Reporter:
     """Small stdout/file tee for scripted-check output."""
 
@@ -239,6 +249,25 @@ def _body_index(asset: Any, body_name: str) -> int:
         raise RuntimeError(
             f"Body '{body_name}' not found. Available bodies: {list(body_names)}"
         ) from exc
+
+
+def _joint_indices(asset: Any, joint_names: tuple[str, ...]) -> list[int]:
+    available = getattr(asset, "joint_names", None)
+    if available is None:
+        available = getattr(getattr(asset, "data", None), "joint_names", None)
+    if available is None:
+        raise RuntimeError(f"Asset {asset!r} does not expose joint_names.")
+
+    available_list = list(available)
+    indices = []
+    for joint_name in joint_names:
+        try:
+            indices.append(available_list.index(joint_name))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Joint '{joint_name}' not found. Available joints: {available_list}"
+            ) from exc
+    return indices
 
 
 def _body_pose(env: Any, body_name: str) -> tuple[torch.Tensor, torch.Tensor]:
@@ -451,6 +480,8 @@ def main() -> int:
         report.line(f"action_space: {env.action_space}")
         env.reset()
 
+        robot = env.scene["robot"]
+        arm_joint_indices = _joint_indices(robot, ARM_JOINT_NAMES)
         target_ids = mdp.active_sc_target_ids(env).detach().clone()
         diagnostic_body_names = _parse_body_names(args_cli.diagnostic_body_names)
         initial_offsets = _diagnostic_offsets(env, diagnostic_body_names, report)
@@ -458,9 +489,19 @@ def main() -> int:
         first_success_step = torch.full(
             (env.num_envs,), -1, device=env.device, dtype=torch.long
         )
+        first_success_joint_pos = torch.full(
+            (env.num_envs, len(arm_joint_indices)),
+            float("nan"),
+            device=env.device,
+            dtype=robot.data.joint_pos.dtype,
+        )
 
         success = _success_mask(env)
         first_success_step[success] = 0
+        if bool(success.any()):
+            first_success_joint_pos[success] = robot.data.joint_pos[success][
+                :, arm_joint_indices
+            ]
 
         for step in range(args_cli.max_steps + 1):
             lateral = mdp.sc_lateral_error(env)
@@ -469,6 +510,10 @@ def main() -> int:
             success = _success_mask(env)
             newly_successful = success & (first_success_step < 0)
             first_success_step[newly_successful] = step
+            if bool(newly_successful.any()):
+                first_success_joint_pos[newly_successful] = robot.data.joint_pos[
+                    newly_successful
+                ][:, arm_joint_indices]
 
             if step == 0 or step % args_cli.report_every == 0 or bool(success.all()):
                 report.line(
@@ -497,6 +542,25 @@ def main() -> int:
                 f"  {target_name}: episodes={episodes} "
                 f"successes={successes} success_rate={rate:.6f}"
             )
+        report.line(f"arm_joint_names: {list(ARM_JOINT_NAMES)}")
+        for env_id in range(env.num_envs):
+            step = int(first_success_step[env_id].detach().cpu().item())
+            if step < 0:
+                continue
+            target_name = mdp.SC_TARGET_NAMES[int(target_ids[env_id].cpu().item())]
+            values = first_success_joint_pos[env_id].detach().cpu().tolist()
+            report.line(
+                f"first_success_joint_pos env={env_id} target={target_name} "
+                f"step={step}: {values}"
+            )
+        report.line("first_success_joint_pos_mean_per_target:")
+        for target_id, target_name in enumerate(mdp.SC_TARGET_NAMES):
+            mask = (target_ids == target_id) & (first_success_step >= 0)
+            if not bool(mask.any()):
+                report.line(f"  {target_name}: unavailable")
+                continue
+            values = first_success_joint_pos[mask].mean(dim=0).detach().cpu().tolist()
+            report.line(f"  {target_name}: {values}")
 
         final_lateral = mdp.sc_lateral_error(env)
         final_orientation = mdp.sc_orientation_error(env)

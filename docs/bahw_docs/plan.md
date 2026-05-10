@@ -516,8 +516,22 @@ Work:
     changed the IK target/eef observation to `gripper_tcp` so the SC training
     geometry is controllable while the USD attachment issue remains unresolved.
   - The first identity TCP helper stalled outside the port; a `0.05` m helper
-    offset reached positive but insufficient depth. The helper now places the
-    virtual tip `0.07` m ahead of `gripper_tcp` along local `+Z`.
+    offset reached positive but insufficient depth.
+  - A `0.07` m helper offset produced `3/4` scripted successes over `500`
+    steps. The remaining miss was a strict lateral-threshold miss on one
+    `sc_port_2` episode, so the next gate is an expanded scripted validation
+    across more envs/seeds before PPO retraining.
+  - Reward smoke check after the virtual helper saw `16` active reward terms,
+    active success termination, `analytic_shape_checks_ok: True`, and
+    `overall_finite: True`.
+- [ ] Run expanded virtual-tip scripted validation.
+  - Use more envs/seeds than the first `4`-env check and inspect per-target
+    `sc_port` vs `sc_port_2` success before deciding whether to launch PPO,
+    tune the helper offset, or adjust per-target port-entry geometry.
+  - Expanded `16`-env check reached `14/16` successes: `7/8` on `sc_port` and
+    `7/8` on `sc_port_2`. The two misses were near-threshold lateral/depth
+    cases, so PPO retraining is justified; if PPO fails next, prefer curriculum
+    or lateral convergence work over another blind reward rebalance.
 
 Training command:
 
@@ -562,16 +576,20 @@ Current gate:
 
 - Do not start Step 7 until Step 6 produces a useful SC teacher. Baseline PPO
   and three reward-only remediation attempts did not reach insertion depth or
-  success. Scripted IK checks also failed, including a tip-frame run that showed
-  meter-scale drift between `wrist_3_link` and `sc_tip_link`, so the next work
-  remains Step 6 plug attachment/control-frame diagnosis before any SFP
-  extension.
+  success. Step 6 later found that the physical Isaac SC tip was not rigidly
+  attached to the controlled TCP path, and a temporary virtual `gripper_tcp`
+  tip helper reached scripted insertion in `3/4` envs. This is progress, but it
+  is not a trained SC teacher.
 
 Work:
 
 - [ ] Add SFP assets to Isaac scene if not already present.
 - [ ] Use Step 0's confirmed runtime body `robot.sfp_tip_link` for the SFP plug
   tip geometry.
+  - Before relying on it, repeat the Step 6 drift/scripted-control diagnostic
+    pattern for SFP. The SC body name existed but was not the controlled gripped
+    insertion tip, so SFP must not assume body-name presence equals controllable
+    insertion geometry.
 - [ ] Add or expose SFP port entrance helper poses.
   - Step 0 found `sfp_port_0_link_entrance` and `sfp_port_1_link_entrance` as
     USD prims under `nic_card`, but not as runtime rigid bodies.
@@ -664,7 +682,9 @@ Done when:
   - [x] Ran scripted SC insertion remotely.
   - [x] Ran the tip-frame scripted variant and confirmed `sc_tip_link` is not a
     fixed helper frame relative to `wrist_3_link`.
-  - [ ] Fix the plug attachment/control-frame issue before more PPO or
+  - [x] Added a temporary virtual gripped SC tip from `gripper_tcp` to make the
+    SC geometry controllable while the USD attachment issue remains unresolved.
+  - [ ] Validate the virtual helper across more envs/seeds before more PPO or
     curriculum work.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.

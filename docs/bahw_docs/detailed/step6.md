@@ -925,3 +925,217 @@ Interpretation:
 - The next adjustment is to place the virtual tip farther ahead of the TCP along
   local `+Z` so the TCP can remain outside the port while the helper tip
   inserts. The next offset to test is `0.07` m.
+
+## Virtual Tip Offset 0.07 Scripted Check
+
+Commit `a7144d2` extended the virtual helper offset:
+
+```python
+SC_GRIPPED_TIP_POS_LOCAL = (0.0, 0.0, 0.07)
+```
+
+Local checks before the remote run:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py
+git diff --check
+```
+
+Result: passed locally.
+
+Host-side sync command:
+
+```bash
+tmux new-session -d -s isaac-step6-pull-a7144d2
+tmux send-keys -t isaac-step6-pull-a7144d2 \
+  'cd ~/IsaacLab/aic && git pull --ff-only && docker cp aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py && docker cp docs/bahw_docs/detailed/step6.md isaac-lab-base:/workspace/isaaclab/aic/docs/bahw_docs/detailed/step6.md && docker cp docs/bahw_docs/plan.md isaac-lab-base:/workspace/isaaclab/aic/docs/bahw_docs/plan.md; echo STEP6_PULL_COPY_A7144D2_EXIT:$?; sleep 60' C-m
+```
+
+Sync result:
+
+```text
+STEP6_PULL_COPY_A7144D2_EXIT:0
+```
+
+Host-side scripted check command:
+
+```bash
+tmux new-session -d -s isaac-step6-scripted-offset7-a7144d2
+tmux send-keys -t isaac-step6-scripted-offset7-a7144d2 \
+  'pgrep -af "check_aic_scripted_insert|rsl_rl/train.py|isaaclab.sh"; echo STEP6_OFFSET7_STALE_BEFORE_EXIT:$?; docker exec isaac-lab-base bash -lc "cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 4 --max_steps 500 --report_every 25 --control_frame tip --align_lateral_threshold 0.05 --approach_depth 0.0 --target_depth 0.020 --headless --enable_cameras"; echo STEP6_OFFSET7_SCRIPTED_EXIT:$?; sleep 60' C-m
+```
+
+The run wrote this container log:
+
+```text
+/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_133301_AIC-Task-v0.log
+```
+
+Host-side log copy command:
+
+```bash
+tmux new-session -d -s isaac-step6-copy-offset7-log-a7144d2 \
+  "mkdir -p ~/IsaacLab/aic/logs/aic_scripted_insert; latest=\$(docker exec isaac-lab-base bash -lc \"ls -t /workspace/isaaclab/aic/logs/aic_scripted_insert/*_AIC-Task-v0.log | head -1\"); echo LATEST:\$latest; docker cp isaac-lab-base:\$latest ~/IsaacLab/aic/logs/aic_scripted_insert/; pgrep -af \"check_aic_scripted_insert|rsl_rl/train.py|isaaclab.sh\"; echo STEP6_OFFSET7_LOG_COPY_EXIT:\$?; sleep 60"
+```
+
+Copy result:
+
+```text
+LATEST:/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_133301_AIC-Task-v0.log
+Successfully copied 6.75kB (transferred 8.7kB) to /var/home/bahw/IsaacLab/aic/logs/aic_scripted_insert/
+STEP6_OFFSET7_LOG_COPY_EXIT:0
+```
+
+Key output:
+
+```text
+initial_gripper_tcp_to_sc_tip_pos env0: [-4.0978193283081055e-08, 8.707866072654724e-08, 0.07000000774860382]
+step=50 successes=2/4 lateral(mean=0.004040 min=0.001755 max=0.005724) orientation(mean=0.011413 min=0.000488 max=0.017592) depth(mean=0.012038 min=0.006995 max=0.016739)
+step=75 successes=3/4 lateral(mean=0.003664 min=0.002409 max=0.005399) orientation(mean=0.008536 min=0.001292 max=0.016702) depth(mean=0.015666 min=0.011833 max=0.018105)
+step=500 successes=3/4 lateral(mean=0.005460 min=0.004821 max=0.007313) orientation(mean=0.013375 min=0.009911 max=0.019822) depth(mean=0.020952 min=0.011679 max=0.025222)
+
+== Summary ==
+successes: 3/4
+first_success_steps: [45, 46, 52, -1]
+per_target:
+  sc_port: episodes=1 successes=1 success_rate=1.000000
+  sc_port_2: episodes=3 successes=2 success_rate=0.666667
+final_lateral: mean=0.005460 min=0.004821 max=0.007313
+final_orientation: mean=0.013375 min=0.009911 max=0.019822
+final_depth: mean=0.020952 min=0.011679 max=0.025222
+wrist_3_link_to_sc_tip_pos_drift: mean=0.000000 min=0.000000 max=0.000000
+gripper_tcp_to_sc_tip_pos_drift: mean=0.000000 min=0.000000 max=0.000000
+ati_tool_link_to_sc_tip_pos_drift: mean=0.000000 min=0.000000 max=0.000000
+tool0_to_sc_tip_pos_drift: mean=0.000000 min=0.000000 max=0.000000
+sc_plug_link_to_sc_tip_pos_drift: mean=0.810037 min=0.727583 max=0.868269
+STEP6_OFFSET7_SCRIPTED_EXIT:0
+```
+
+Interpretation:
+
+- The virtual helper is now rigidly attached to the controlled TCP path and can
+  be driven into the SC success condition.
+- The scripted check reached `3/4` successes quickly, so the old failure was not
+  mainly the reward formula; it was the uncontrolled SC plug/tip attachment.
+- The remaining miss is a strict lateral-threshold miss on one `sc_port_2`
+  episode. This is good enough to proceed to a short PPO smoke/retrain, but not
+  enough to mark Step 6 complete.
+- `sc_plug_link_to_sc_tip_pos_drift` is expected to be nonzero now because the
+  default SC tip pose is the virtual helper, not the physical free-end USD SC
+  plug. This is a deliberate training workaround.
+
+## Reward Smoke Check After Virtual Tip
+
+Host-side command:
+
+```bash
+tmux new-session -d -s isaac-step6-reward-smoke-a7144d2 \
+  "docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py --task AIC-Task-v0 --num_envs 8 --num_steps 2 --headless --enable_cameras\"; echo STEP6_REWARD_SMOKE_EXIT:\$?; sleep 60"
+```
+
+The run wrote this container log:
+
+```text
+/workspace/isaaclab/aic/logs/aic_rewards/20260510_133629_AIC-Task-v0.log
+```
+
+Host-side log copy command:
+
+```bash
+tmux new-session -d -s isaac-step6-copy-reward-smoke-a7144d2 \
+  "mkdir -p ~/IsaacLab/aic/logs/aic_rewards; latest=\$(docker exec isaac-lab-base bash -lc \"ls -t /workspace/isaaclab/aic/logs/aic_rewards/*_AIC-Task-v0.log | head -1\"); echo LATEST:\$latest; docker cp isaac-lab-base:\$latest ~/IsaacLab/aic/logs/aic_rewards/; echo STEP6_REWARD_LOG_COPY_EXIT:\$?; sleep 60"
+```
+
+Copy result:
+
+```text
+LATEST:/workspace/isaaclab/aic/logs/aic_rewards/20260510_133629_AIC-Task-v0.log
+Successfully copied 5.4kB (transferred 7.17kB) to /var/home/bahw/IsaacLab/aic/logs/aic_rewards/
+STEP6_REWARD_LOG_COPY_EXIT:0
+```
+
+Key output:
+
+```text
+Active Termination Terms:
+  time_out: True
+  sc_insertion_success: False
+
+Active Reward Terms: 16
+analytic_shape_checks_ok: True
+overall_finite: True
+STEP6_REWARD_SMOKE_EXIT:0
+```
+
+Interpretation:
+
+- The current reward/termination configuration is still numerically valid with
+  the virtual helper.
+- Random actions after reset do not reach insertion rewards, which is expected.
+  The scripted check is the evidence that the geometry is controllable.
+
+## Expanded Virtual Tip Scripted Validation
+
+The first `0.07` m helper check used only `4` envs, so the next check expanded
+to `16` envs and a longer horizon before restarting PPO.
+
+Host-side command:
+
+```bash
+tmux new-session -d -s isaac-step6-scripted-offset7-expanded-a7144d2 \
+  "pgrep -af \"check_aic_scripted_insert|rsl_rl/train.py|isaaclab.sh\"; echo STEP6_OFFSET7_EXPANDED_STALE_BEFORE_EXIT:\$?; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 16 --max_steps 750 --report_every 50 --control_frame tip --align_lateral_threshold 0.05 --approach_depth 0.0 --target_depth 0.020 --headless --enable_cameras\"; echo STEP6_OFFSET7_EXPANDED_SCRIPTED_EXIT:\$?; sleep 60"
+```
+
+The run wrote this container log:
+
+```text
+/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_133909_AIC-Task-v0.log
+```
+
+Host-side log copy command:
+
+```bash
+tmux new-session -d -s isaac-step6-copy-expanded-log-a7144d2 \
+  "mkdir -p ~/IsaacLab/aic/logs/aic_scripted_insert; latest=\$(docker exec isaac-lab-base bash -lc \"ls -t /workspace/isaaclab/aic/logs/aic_scripted_insert/*_AIC-Task-v0.log | head -1\"); echo LATEST:\$latest; docker cp isaac-lab-base:\$latest ~/IsaacLab/aic/logs/aic_scripted_insert/; pgrep -af \"check_aic_scripted_insert|rsl_rl/train.py|isaaclab.sh\"; echo STEP6_EXPANDED_LOG_COPY_EXIT:\$?; sleep 60"
+```
+
+Copy result:
+
+```text
+LATEST:/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_133909_AIC-Task-v0.log
+Successfully copied 5.97kB (transferred 7.68kB) to /var/home/bahw/IsaacLab/aic/logs/aic_scripted_insert/
+STEP6_EXPANDED_LOG_COPY_EXIT:0
+```
+
+Key output:
+
+```text
+step=50 successes=10/16 lateral(mean=0.007478 min=0.001788 max=0.061460) orientation(mean=0.005886 min=0.000000 max=0.023861) depth(mean=0.006869 min=-0.090911 max=0.019767)
+step=100 successes=14/16 lateral(mean=0.004173 min=0.002690 max=0.005685) orientation(mean=0.008887 min=0.003906 max=0.017069) depth(mean=0.019778 min=0.011725 max=0.023536)
+step=750 successes=14/16 lateral(mean=0.004886 min=0.003990 max=0.007156) orientation(mean=0.023637 min=0.006329 max=0.116680) depth(mean=0.022083 min=0.011652 max=0.026422)
+
+== Summary ==
+successes: 14/16
+first_success_steps: [50, 37, 51, 51, 50, 52, 48, 45, 42, 51, 45, 47, -1, 47, 48, -1]
+per_target:
+  sc_port: episodes=8 successes=7 success_rate=0.875000
+  sc_port_2: episodes=8 successes=7 success_rate=0.875000
+final_lateral: mean=0.004886 min=0.003990 max=0.007156
+final_orientation: mean=0.023637 min=0.006329 max=0.116680
+final_depth: mean=0.022083 min=0.011652 max=0.026422
+gripper_tcp_to_sc_tip_pos_drift: mean=0.000000 min=0.000000 max=0.000000
+```
+
+Interpretation:
+
+- Scripted insertion is no longer target-specific broken: both `sc_port` and
+  `sc_port_2` reached `7/8` successes.
+- The two failed envs were near-threshold cases, not gross misses. Final
+  orientation remained comfortably below `0.20` rad; the main miss was lateral
+  error slightly above the strict `0.005` m threshold, with minimum depth also
+  close to the `0.012` m threshold.
+- PPO retraining is justified now because the geometry/action path can generate
+  success under a privileged controller. If PPO still fails, the next likely
+  work is curriculum or lateral convergence shaping, not another blind reward
+  rebalance.
