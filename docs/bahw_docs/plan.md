@@ -486,6 +486,9 @@ Work:
     smoothness penalties dominated and insertion terms stayed zero.
   - Stopped `step6_sc_rebalanced` at iteration `110`; reward balance improved,
     but fine lateral alignment, insertion depth, and success stayed at zero.
+  - Stopped `step6_sc_virtual_tip_a7144d2` at iteration `65`; virtual helper
+    made the geometry controllable for scripted IK, but PPO still did not sample
+    the fine insertion corridor from the normal reset distribution.
 - [x] Add a headless scripted SC insertion check before changing the trainer
   again.
   - Added `scripts/check_aic_scripted_insert.py` to test whether privileged
@@ -532,6 +535,13 @@ Work:
     `7/8` on `sc_port_2`. The two misses were near-threshold lateral/depth
     cases, so PPO retraining is justified; if PPO fails next, prefer curriculum
     or lateral convergence work over another blind reward rebalance.
+- [ ] Add a near-port reset curriculum for Step 6.
+  - Extracted first-success arm joint seeds from scripted insertion:
+    `sc_port` seed `[0.8142, -1.8485, -1.8316, -1.0275, 1.5704, 2.1715]`,
+    `sc_port_2` seed `[0.7603, -1.8014, -1.8958, -1.0112, 1.5705, 2.1117]`.
+  - Added `reset_robot_near_sc_port` as a temporary curriculum reset with
+    `blend=0.85`, `position_noise=0.015`, and `probability=1.0`.
+  - Next: smoke-test the reset geometry, then retry PPO.
 
 Training command:
 
@@ -684,8 +694,10 @@ Done when:
     fixed helper frame relative to `wrist_3_link`.
   - [x] Added a temporary virtual gripped SC tip from `gripper_tcp` to make the
     SC geometry controllable while the USD attachment issue remains unresolved.
-  - [ ] Validate the virtual helper across more envs/seeds before more PPO or
-    curriculum work.
+  - [x] Validated the virtual helper across more envs/seeds.
+  - [x] Added first near-port reset curriculum after PPO from normal reset still
+    produced zero insertion-depth samples.
+  - [ ] Smoke-test and train with the near-port curriculum.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.
 - [ ] 14. Revisit distillation only after both teachers work.

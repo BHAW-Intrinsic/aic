@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING
 
 import omni.usd
 import torch
+from isaaclab.managers import SceneEntityCfg
 from pxr import Gf, Sdf, UsdGeom, UsdLux
+
+from . import geometry
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -19,6 +22,36 @@ _ENV_REGEX_RE = re.compile(r"env_(?:\.\*|\[\^/\]\*)")
 # subsequent reset. Holding the quaternion fixed keeps the composed child
 # transforms from referenced USDs (e.g. port frames) correctly aligned.
 _cached_orientations: dict[str, torch.Tensor] = {}
+
+SC_ARM_JOINT_NAMES = (
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+)
+
+# Mean first-success joint positions from scripted virtual-tip insertion checks.
+# These are curriculum seeds, not final deployment assumptions.
+SC_NEAR_PORT_JOINT_PRESETS = {
+    "sc_port": (
+        0.8141875863075256,
+        -1.8485052585601807,
+        -1.8315728902816772,
+        -1.0275382995605469,
+        1.5704457759857178,
+        2.171452760696411,
+    ),
+    "sc_port_2": (
+        0.7603225708007812,
+        -1.8013938665390015,
+        -1.8958141803741455,
+        -1.0111992359161377,
+        1.570515513420105,
+        2.1116960048675537,
+    ),
+}
 
 
 def randomize_dome_light(
@@ -193,3 +226,82 @@ def randomize_board_and_parts(
                 part_pos,
                 part_rot,
             )
+
+
+def _joint_indices(asset, joint_names: tuple[str, ...]) -> list[int]:
+    available = getattr(asset, "joint_names", None)
+    if available is None:
+        available = getattr(getattr(asset, "data", None), "joint_names", None)
+    if available is None:
+        raise RuntimeError(f"Asset {asset!r} does not expose joint_names.")
+
+    available_list = list(available)
+    indices = []
+    for joint_name in joint_names:
+        try:
+            indices.append(available_list.index(joint_name))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Joint '{joint_name}' not found. Available joints: {available_list}"
+            ) from exc
+    return indices
+
+
+def reset_robot_near_sc_port(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    probability: float = 1.0,
+    blend: float = 0.85,
+    position_noise: float = 0.015,
+    velocity_range: tuple[float, float] = (0.0, 0.0),
+) -> None:
+    """Reset the arm near the active SC port as a Step 6 insertion curriculum.
+
+    The presets come from successful scripted insertions with the virtual
+    gripped SC tip helper. ``blend`` keeps the reset outside the exact success
+    pose so PPO still has to learn the final alignment and insertion.
+    """
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    if len(env_ids) == 0:
+        return
+
+    asset = env.scene[asset_cfg.name]
+    joint_ids = _joint_indices(asset, SC_ARM_JOINT_NAMES)
+    iter_env_ids = env_ids[:, None]
+    device = env.device
+
+    default_joint_pos = asset.data.default_joint_pos[iter_env_ids, joint_ids].clone()
+    default_joint_vel = asset.data.default_joint_vel[iter_env_ids, joint_ids].clone()
+
+    presets = torch.tensor(
+        [SC_NEAR_PORT_JOINT_PRESETS[name] for name in geometry.SC_TARGET_NAMES],
+        device=device,
+        dtype=default_joint_pos.dtype,
+    )
+    target_ids = geometry.active_sc_target_ids(env)[env_ids]
+    preset_joint_pos = presets[target_ids]
+
+    joint_pos = default_joint_pos + blend * (preset_joint_pos - default_joint_pos)
+    if position_noise > 0.0:
+        joint_pos += torch.empty_like(joint_pos).uniform_(
+            -position_noise, position_noise
+        )
+
+    if probability < 1.0:
+        use_curriculum = torch.rand(len(env_ids), device=device) < probability
+        joint_pos = torch.where(use_curriculum[:, None], joint_pos, default_joint_pos)
+
+    joint_pos_limits = asset.data.soft_joint_pos_limits[iter_env_ids, joint_ids]
+    joint_pos = joint_pos.clamp_(joint_pos_limits[..., 0], joint_pos_limits[..., 1])
+
+    joint_vel = default_joint_vel
+    if velocity_range != (0.0, 0.0):
+        joint_vel = joint_vel + torch.empty_like(joint_vel).uniform_(*velocity_range)
+        joint_vel_limits = asset.data.soft_joint_vel_limits[iter_env_ids, joint_ids]
+        joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
+
+    asset.write_joint_state_to_sim(
+        joint_pos, joint_vel, joint_ids=joint_ids, env_ids=env_ids
+    )

@@ -1139,3 +1139,124 @@ Interpretation:
   success under a privileged controller. If PPO still fails, the next likely
   work is curriculum or lateral convergence shaping, not another blind reward
   rebalance.
+
+## PPO Smoke After Virtual Tip
+
+Host-side command:
+
+```bash
+tmux new-session -d -s isaac-step6-train-virtual-tip-a7144d2 \
+  "pgrep -af \"rsl_rl/train.py|check_aic_scripted_insert|isaaclab.sh\"; echo STEP6_TRAIN_VIRTUAL_STALE_BEFORE_EXIT:\$?; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_iterations 500 --run_name step6_sc_virtual_tip_a7144d2 --headless --enable_cameras\"; echo STEP6_TRAIN_VIRTUAL_EXIT:\$?; sleep 120"
+```
+
+Training log directory inside the container:
+
+```text
+/workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_13-43-10_step6_sc_virtual_tip_a7144d2
+```
+
+The run was manually stopped at iteration `65/500` because the insertion terms
+remained zero.
+
+Key output at stop:
+
+```text
+Learning iteration 65/500
+Episode_Reward/sc_approach: 0.4989
+Episode_Reward/sc_coarse_lateral_alignment: 0.7896
+Episode_Reward/sc_lateral_alignment: 0.0000
+Episode_Reward/sc_insertion_depth: 0.0000
+Episode_Reward/sc_insertion_success: 0.0000
+Episode_Termination/sc_insertion_success: 0.0000
+STEP6_TRAIN_VIRTUAL_EXIT:0
+```
+
+Interpretation:
+
+- The virtual tip fixed controllability for a scripted privileged controller,
+  but PPO still did not sample the fine insertion corridor from the normal reset
+  distribution.
+- The next remediation is a near-port curriculum reset, not another reward-only
+  rebalance.
+
+## First-Success Joint Seed Extraction
+
+Commit `8165aee` extended `check_aic_scripted_insert.py` to log the six UR arm
+joint positions at each environment's first scripted success and the per-target
+mean joint seed.
+
+Host-side sync command:
+
+```bash
+tmux new-session -d -s isaac-step6-pull-8165aee \
+  "cd ~/IsaacLab/aic && git pull --ff-only && docker cp aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py && docker cp docs/bahw_docs/detailed/step6.md isaac-lab-base:/workspace/isaaclab/aic/docs/bahw_docs/detailed/step6.md && docker cp docs/bahw_docs/plan.md isaac-lab-base:/workspace/isaaclab/aic/docs/bahw_docs/plan.md; echo STEP6_PULL_COPY_8165AEE_EXIT:\$?; sleep 60"
+```
+
+Sync result:
+
+```text
+STEP6_PULL_COPY_8165AEE_EXIT:0
+```
+
+Host-side seed extraction command:
+
+```bash
+tmux new-session -d -s isaac-step6-joint-seeds-8165aee \
+  "pgrep -af \"check_aic_scripted_insert|rsl_rl/train.py|isaaclab.sh\"; echo STEP6_JOINT_SEEDS_STALE_BEFORE_EXIT:\$?; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 16 --max_steps 300 --report_every 50 --control_frame tip --align_lateral_threshold 0.05 --approach_depth 0.0 --target_depth 0.020 --headless --enable_cameras\"; echo STEP6_JOINT_SEEDS_EXIT:\$?; sleep 60"
+```
+
+The run wrote this container log:
+
+```text
+/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_135208_AIC-Task-v0.log
+```
+
+Host-side log copy command:
+
+```bash
+tmux new-session -d -s isaac-step6-copy-joint-seeds-log-8165aee \
+  "mkdir -p ~/IsaacLab/aic/logs/aic_scripted_insert; latest=\$(docker exec isaac-lab-base bash -lc \"ls -t /workspace/isaaclab/aic/logs/aic_scripted_insert/*_AIC-Task-v0.log | head -1\"); echo LATEST:\$latest; docker cp isaac-lab-base:\$latest ~/IsaacLab/aic/logs/aic_scripted_insert/; echo STEP6_JOINT_SEEDS_LOG_COPY_EXIT:\$?; sleep 60"
+```
+
+Copy result:
+
+```text
+LATEST:/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_135208_AIC-Task-v0.log
+Successfully copied 7.52kB (transferred 9.22kB) to /var/home/bahw/IsaacLab/aic/logs/aic_scripted_insert/
+STEP6_JOINT_SEEDS_LOG_COPY_EXIT:0
+```
+
+Key output:
+
+```text
+successes: 15/16
+per_target:
+  sc_port: episodes=10 successes=9 success_rate=0.900000
+  sc_port_2: episodes=6 successes=6 success_rate=1.000000
+arm_joint_names: ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
+first_success_joint_pos_mean_per_target:
+  sc_port: [0.8141875863075256, -1.8485052585601807, -1.8315728902816772, -1.0275382995605469, 1.5704457759857178, 2.171452760696411]
+  sc_port_2: [0.7603225708007812, -1.8013938665390015, -1.8958141803741455, -1.0111992359161377, 1.570515513420105, 2.1116960048675537]
+```
+
+## Near-Port Reset Curriculum
+
+Added `mdp.events.reset_robot_near_sc_port` and wired it into `EventCfg` after
+`sample_active_sc_target` and before `reset_sc_progress_buffers`.
+
+Current curriculum parameters:
+
+```python
+probability = 1.0
+blend = 0.85
+position_noise = 0.015
+velocity_range = (0.0, 0.0)
+```
+
+The event selects the seed for the active SC target, blends from the normal
+default arm joints toward the scripted first-success seed, adds small joint
+noise, clamps to joint limits, and writes only the six UR arm joints to sim.
+
+This is intentionally a Step 6 curriculum. It is not the final deployment reset
+distribution. Once the policy learns final insertion, reduce curriculum strength
+or stage back toward the normal reset distribution.

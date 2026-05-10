@@ -32,7 +32,11 @@ from isaaclab.devices.spacemouse import Se3SpaceMouseCfg
 from isaaclab.devices.gamepad import Se3GamepadCfg
 
 from . import mdp
-from .mdp.events import randomize_dome_light, randomize_board_and_parts
+from .mdp.events import (
+    randomize_board_and_parts,
+    randomize_dome_light,
+    reset_robot_near_sc_port,
+)
 
 # Resolve asset directory relative to this file (portable across machines)
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -361,6 +365,17 @@ class EventCfg:
     sample_active_sc_target = EventTerm(
         func=mdp.sample_active_sc_target,
         mode="reset",
+    )
+
+    reset_robot_near_sc_port = EventTerm(
+        func=reset_robot_near_sc_port,
+        mode="reset",
+        params={
+            "probability": 1.0,
+            "blend": 0.85,
+            "position_noise": 0.015,
+            "velocity_range": (0.0, 0.0),
+        },
     )
 
     reset_sc_progress_buffers = EventTerm(
