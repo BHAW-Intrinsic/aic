@@ -43,6 +43,8 @@ remote smoke attempt:
   `DistillationRunner`.
 - This keeps the config source compatible with Isaac Lab's config class while
   matching the installed RSL-RL runner API.
+- Wrapped `simulation_app.close()` in `finally` in both scripts so failed smoke
+  runs do not leave orphaned Isaac Python processes.
 
 Training can now select the SC teacher config without creating a second Gym task
 id:
