@@ -1919,3 +1919,135 @@ Conclusion:
   samples. Use those diagnostics on the useful expert-rollout BC checkpoint to
   decide whether the remaining misses are systematic calibration bias,
   target-specific geometry bias, or recovery failure.
+
+## Diagnostic And Strict-Alignment BC Results
+
+Commit `2e5987b` added evaluator diagnostics:
+
+```text
+--action_error_diagnostics
+--failure_sample_count <N>
+```
+
+The evaluator now reports signed lateral components in the active SC port frame,
+optional terminal actor-vs-scripted action error, sample failure rows, and
+per-target terminal means.
+
+Diagnostic repeat of the useful expert-rollout BC checkpoint:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-best-diag-2e5987b \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_BEST_DIAG_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --num_eval_episodes 256 --max_episode_steps 300 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-03-31_step6_sc_bc_8a19d2a/model_1000.pt --action_error_diagnostics --failure_sample_count 12 --headless --enable_cameras\"; echo STEP6_BC_BEST_DIAG_EXIT:\$?; sleep 120"
+```
+
+Result:
+
+```text
+successes: 189/256
+success_rate: 0.738281
+mean_lateral_error_at_termination: 0.009456
+mean_signed_lateral_x_at_termination: -0.003685
+mean_signed_lateral_z_at_termination: -0.004418
+mean_terminal_action_error_vs_scripted: 0.470200
+failure_breakdown:
+  timeout: 67
+  lateral_miss: 67
+  orientation_miss: 4
+  depth_shortfall: 11
+per_target:
+  sc_port: episodes=134 successes=90 success_rate=0.671642
+  sc_port_2: episodes=122 successes=99 success_rate=0.811475
+STEP6_BC_BEST_DIAG_EXIT:0
+```
+
+Interpretation: failures were still mostly lateral misses with a consistent
+negative signed lateral bias in both port-frame axes.
+
+Blended DAgger-style BC with a gentler actor mix:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-blend-train-2e5987b \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_BLEND_TRAIN_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --resume --load_run 2026-05-10_15-03-31_step6_sc_bc_8a19d2a --checkpoint model_1000.pt --num_envs 64 --max_updates 1000 --report_every 50 --save_every 250 --learning_rate 1e-4 --rollout_policy blend --rollout_actor_weight 0.1 --run_name step6_sc_bc_blend_2e5987b --headless --enable_cameras\"; echo STEP6_BC_BLEND_TRAIN_EXIT:\$?; sleep 120"
+```
+
+Evaluation result:
+
+```text
+checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-54-03_step6_sc_bc_blend_2e5987b/model_1000.pt
+successes: 195/256
+success_rate: 0.761719
+mean_lateral_error_at_termination: 0.007967
+mean_signed_lateral_x_at_termination: -0.002007
+mean_signed_lateral_z_at_termination: -0.004785
+failure_breakdown:
+  timeout: 61
+  lateral_miss: 61
+  orientation_miss: 3
+  depth_shortfall: 6
+STEP6_BC_BLEND_EVAL_EXIT:0
+```
+
+This was only a small improvement over the original expert-rollout checkpoint.
+
+Strict scripted alignment BC:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-strict-train-2e5987b \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_STRICT_TRAIN_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --resume --load_run 2026-05-10_15-03-31_step6_sc_bc_8a19d2a --checkpoint model_1000.pt --num_envs 64 --max_updates 1000 --report_every 50 --save_every 250 --learning_rate 1e-4 --rollout_policy blend --rollout_actor_weight 0.1 --align_lateral_threshold 0.01 --align_orientation_threshold 0.20 --run_name step6_sc_bc_strict_2e5987b --headless --enable_cameras\"; echo STEP6_BC_STRICT_TRAIN_EXIT:\$?; sleep 120"
+```
+
+Evaluation result:
+
+```text
+checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/model_1000.pt
+successes: 233/256
+success_rate: 0.910156
+mean_episode_length: 35.016
+mean_episode_length_on_success: 8.858
+mean_lateral_error_at_termination: 0.004744
+mean_signed_lateral_x_at_termination: 0.001731
+mean_signed_lateral_z_at_termination: -0.002253
+mean_orientation_error_at_termination: 0.013835
+mean_insertion_depth_at_termination: 0.017545
+mean_terminal_action_error_vs_scripted: 0.359335
+failure_breakdown:
+  timeout: 23
+  lateral_miss: 23
+  orientation_miss: 0
+  depth_shortfall: 5
+per_target:
+  sc_port: episodes=134 successes=124 success_rate=0.925373
+  sc_port_2: episodes=122 successes=109 success_rate=0.893443
+STEP6_BC_STRICT_EVAL_EXIT:0
+```
+
+This is the current best SC checkpoint, but Step 7 remains gated because `23/256`
+episodes still timed out and missed laterally under the fixed 300-step gate.
+
+Failed refinement:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-refine-train-2e5987b \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_REFINE_TRAIN_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --resume --load_run 2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b --checkpoint model_1000.pt --num_envs 64 --max_updates 500 --report_every 50 --save_every 250 --learning_rate 5e-5 --rollout_policy blend --rollout_actor_weight 0.1 --align_lateral_threshold 0.005 --align_orientation_threshold 0.20 --target_depth 0.025 --run_name step6_sc_bc_strict_refine_2e5987b --headless --enable_cameras\"; echo STEP6_BC_REFINE_TRAIN_EXIT:\$?; sleep 120"
+```
+
+Evaluation result:
+
+```text
+checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-13-10_step6_sc_bc_strict_refine_2e5987b/model_500.pt
+successes: 0/256
+success_rate: 0.000000
+mean_lateral_error_at_termination: 0.027971
+mean_signed_lateral_x_at_termination: 0.007720
+mean_signed_lateral_z_at_termination: -0.026474
+mean_insertion_depth_at_termination: 0.028446
+failure_breakdown:
+  timeout: 256
+  lateral_miss: 256
+  orientation_miss: 119
+  depth_shortfall: 0
+STEP6_BC_REFINE_EVAL_EXIT:0
+```
+
+Do not prefer the refinement checkpoint. It inserts deeply but creates a large
+negative lateral-z bias.

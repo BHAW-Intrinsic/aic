@@ -598,12 +598,22 @@ Work:
     `0/256` deterministic evaluation successes, all timeouts, all lateral
     misses, `253/256` orientation misses, and `254/256` depth shortfalls.
     Do not prefer this checkpoint.
-- [ ] Add failure diagnostics before the next Step 6 training attempt.
+- [x] Add failure diagnostics before the next Step 6 training attempt.
   - Extend `evaluate.py` to report signed lateral components in the active port
     frame, optional terminal actor-vs-scripted action error, and sample failure
     rows. Use this to decide whether the useful `193/256` BC checkpoint has a
     systematic calibration bias, a target-specific issue, or a recovery-policy
     issue.
+  - Diagnostic repeat of the useful expert-rollout BC checkpoint reached
+    `189/256`; failures had mostly negative signed lateral components.
+  - Blended rollout BC with `--rollout_actor_weight 0.1` and `lr=1e-4` reached
+    `195/256`, only a small improvement.
+  - Strict scripted alignment labels with `--align_lateral_threshold 0.01` and
+    `--align_orientation_threshold 0.20` reached the current best result:
+    `233/256` (`0.910156`) over the fixed 300-step evaluation gate.
+  - A tighter/deeper refinement
+    (`--align_lateral_threshold 0.005 --target_depth 0.025`) regressed to
+    `0/256`; do not prefer it.
 
 Training command:
 
@@ -654,9 +664,10 @@ Current gate:
   tip helper reached scripted insertion. Near-port and fixed-port curricula have
   produced nonzero PPO success samples but still plateau below reliable
   insertion; scalar scripted-action-prior reward shaping also failed to improve.
-  Expert-rollout BC reached `193/256` successes and is the current best SC
-  checkpoint, but PPO resume and actor-rollout BC both regressed. This is
-  progress, but it is not a reliable SC teacher/policy.
+  Expert-rollout BC reached `193/256` successes. The current best strict-label
+  BC checkpoint reached `233/256` successes, but PPO resume, actor-rollout BC,
+  and overly tight/deep refinement all regressed. This is strong progress, but
+  it is not yet a fully reliable SC teacher/policy.
 
 Work:
 
@@ -778,10 +789,13 @@ Done when:
   - [x] Added and validated privileged scripted-action-prior reward shaping;
     PPO with this scalar prior still failed to improve.
   - [x] Added direct scripted actor bootstrap before more PPO; expert-rollout
-    BC is the current best checkpoint at `193/256`, while PPO resume and
-    actor-rollout BC regressed.
-  - [ ] Add diagnostics for the current BC failure modes before another
+    BC reached `193/256`, while PPO resume and actor-rollout BC regressed.
+  - [x] Added diagnostics for the current BC failure modes before another
     training variant.
+  - [x] Improved BC with strict scripted alignment labels; current best SC
+    checkpoint reached `233/256`.
+  - [ ] Decide whether to keep iterating SC reliability, add video validation,
+    or unblock SFP using the current best checkpoint as a provisional teacher.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher/policy.
 - [ ] 14. Revisit distillation only after both teachers work.
