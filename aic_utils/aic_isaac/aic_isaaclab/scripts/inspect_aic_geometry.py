@@ -153,6 +153,12 @@ def _format_scalar(value: torch.Tensor | None, precision: int = 6) -> str:
     return f"{row[0]:.{precision}f}"
 
 
+def _tensor_shape(value: torch.Tensor | None) -> str:
+    if not isinstance(value, torch.Tensor):
+        return "unavailable"
+    return str(tuple(value.shape))
+
+
 def _scene_collection_names(scene: Any, attr_name: str) -> list[str]:
     collection = getattr(scene, attr_name, None)
     if isinstance(collection, dict):
@@ -365,9 +371,7 @@ def _print_geometry_helper_values(report: Reporter, env: Any) -> None:
         report.line(f"Geometry helper inspection failed: {type(exc).__name__}: {exc}")
         return
 
-    report.line(
-        f"active_sc_target_ids env0: {_format_vector(_tensor_row(active_ids), 0)}"
-    )
+    report.line(f"active_sc_target_ids all envs: {active_ids.detach().cpu().tolist()}")
     report.line(f"active_sc_target_names: {active_names}")
     report.line(f"sc_port_entry_pos_local: {aic_geometry.SC_PORT_ENTRY_POS_LOCAL}")
     report.line(
@@ -375,6 +379,17 @@ def _print_geometry_helper_values(report: Reporter, env: Any) -> None:
         f"{aic_geometry.SC_PORT_INSERTION_AXIS_LOCAL}"
     )
     report.line(f"sc_plug_axis_local: {aic_geometry.SC_PLUG_AXIS_LOCAL}")
+    report.line("helper tensor shapes:")
+    report.line(f"  plug_tip_pos_w:        {_tensor_shape(plug_pos)}")
+    report.line(f"  plug_tip_quat_w:       {_tensor_shape(plug_quat)}")
+    report.line(f"  port_entry_pos_w:      {_tensor_shape(port_pos)}")
+    report.line(f"  port_entry_quat_w:     {_tensor_shape(port_quat)}")
+    report.line(f"  plug_axis_w:           {_tensor_shape(plug_axis)}")
+    report.line(f"  port_insertion_axis_w: {_tensor_shape(port_axis)}")
+    report.line(f"  plug_to_port_vec_w:    {_tensor_shape(plug_to_port)}")
+    report.line(f"  lateral_error:         {_tensor_shape(lateral_error)}")
+    report.line(f"  insertion_depth:       {_tensor_shape(insertion_depth)}")
+    report.line(f"  orientation_error:     {_tensor_shape(orientation_error)}")
     report.line(f"plug_tip_pos_w env0:       {_format_vector(_tensor_row(plug_pos))}")
     report.line(f"plug_tip_quat_w env0:      {_format_vector(_tensor_row(plug_quat))}")
     report.line(f"port_entry_pos_w env0:     {_format_vector(_tensor_row(port_pos))}")
@@ -385,6 +400,26 @@ def _print_geometry_helper_values(report: Reporter, env: Any) -> None:
     report.line(f"lateral_error env0:        {_format_scalar(lateral_error)}")
     report.line(f"insertion_depth env0:      {_format_scalar(insertion_depth)}")
     report.line(f"orientation_error env0:    {_format_scalar(orientation_error)}")
+
+    report.line("per-target SC helper poses env0:")
+    saved_active_ids = active_ids.clone()
+    try:
+        for target_id, target_name in enumerate(aic_geometry.SC_TARGET_NAMES):
+            active_ids.fill_(target_id)
+            target_pos, target_quat = aic_geometry.sc_port_entry_pose(env)
+            target_axis = aic_geometry.sc_port_insertion_axis(env)
+            report.line(f"  {target_name}:")
+            report.line(
+                f"    port_entry_pos_w:      {_format_vector(_tensor_row(target_pos))}"
+            )
+            report.line(
+                f"    port_entry_quat_w:     {_format_vector(_tensor_row(target_quat))}"
+            )
+            report.line(
+                f"    port_insertion_axis_w: {_format_vector(_tensor_row(target_axis))}"
+            )
+    finally:
+        active_ids.copy_(saved_active_ids)
 
 
 def main() -> None:
