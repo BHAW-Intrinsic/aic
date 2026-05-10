@@ -60,3 +60,42 @@ Success metrics still need an explicit evaluation pass after a checkpoint exists
 - mean insertion depth at termination
 - failure breakdown
 - video review for real insertion rather than hovering
+
+## Evaluation Script
+
+Added `scripts/rsl_rl/evaluate.py` to evaluate a checkpoint without relying on
+the free-running `play.py` loop.
+
+The evaluator:
+
+- loads the checkpoint using the same RSL-RL runner path as `play.py`
+- disables environment auto-termination before env creation
+- runs manual episode accounting
+- records terminal lateral error, orientation error, and insertion depth before
+  reset
+- reports success rate and per-target success rates for `sc_port` and
+  `sc_port_2`
+- reports failure diagnostics for timeout, lateral miss, orientation miss, and
+  depth shortfall
+- writes timestamped logs under `logs/aic_eval/`
+
+Command:
+
+```bash
+cd /workspace/isaaclab
+./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py \
+  --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point \
+  --num_envs 16 --headless --enable_cameras \
+  --checkpoint <checkpoint_path> \
+  --num_eval_episodes 256
+```
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py
+git diff --check
+```
+
+Status: passed locally.
