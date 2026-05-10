@@ -363,6 +363,11 @@ class EventCfg:
         mode="reset",
     )
 
+    reset_sc_progress_buffers = EventTerm(
+        func=mdp.reset_sc_progress_buffers,
+        mode="reset",
+    )
+
 
 @configclass
 class TerminationsCfg:
@@ -483,8 +488,28 @@ class RewardsCfg:
     # -- SC insertion shaping --
     sc_approach = RewTerm(
         func=mdp.sc_approach_reward,
+        weight=1.0,
+        params={"std": 1.00},
+    )
+    sc_distance_progress = RewTerm(
+        func=mdp.sc_distance_progress_reward,
+        weight=1.0,
+        params={"scale": 0.02, "clip": 1.0},
+    )
+    sc_lateral_progress = RewTerm(
+        func=mdp.sc_lateral_progress_reward,
         weight=0.5,
-        params={"std": 0.50},
+        params={"scale": 0.005, "clip": 1.0},
+    )
+    sc_orientation_progress = RewTerm(
+        func=mdp.sc_orientation_progress_reward,
+        weight=0.25,
+        params={"scale": 0.10, "clip": 1.0},
+    )
+    sc_depth_progress = RewTerm(
+        func=mdp.sc_depth_progress_reward,
+        weight=0.5,
+        params={"scale": 0.01, "clip": 1.0},
     )
     sc_lateral_alignment = RewTerm(
         func=mdp.sc_lateral_alignment_reward,

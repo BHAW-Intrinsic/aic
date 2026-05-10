@@ -172,6 +172,101 @@ def sc_approach_reward(
     return 1.0 - torch.tanh(distance / std)
 
 
+def _metric_progress_reward(
+    env: ManagerBasedRLEnv,
+    attr_name: str,
+    current: torch.Tensor,
+    improvement: str,
+    scale: float,
+    clip: float,
+) -> torch.Tensor:
+    """Reward one-step progress in a scalar geometry metric."""
+    previous = getattr(env, attr_name, None)
+    if (
+        not isinstance(previous, torch.Tensor)
+        or previous.shape != current.shape
+        or previous.device != current.device
+    ):
+        previous = current.detach().clone()
+        setattr(env, attr_name, previous)
+
+    if improvement == "decrease":
+        progress = previous - current
+    elif improvement == "increase":
+        progress = current - previous
+    else:
+        raise ValueError(f"Unsupported progress direction: {improvement}")
+
+    with torch.no_grad():
+        previous.copy_(current.detach())
+    return torch.clamp(progress / scale, min=-clip, max=clip)
+
+
+def sc_distance_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.02,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward reducing plug-tip distance to the active SC port entrance."""
+    distance = torch.norm(geometry.sc_plug_to_port_vector(env), dim=-1)
+    return _metric_progress_reward(
+        env,
+        geometry.SC_PREV_DISTANCE_ATTR,
+        distance,
+        improvement="decrease",
+        scale=scale,
+        clip=clip,
+    )
+
+
+def sc_lateral_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.005,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward reducing lateral error to the active SC port axis."""
+    return _metric_progress_reward(
+        env,
+        geometry.SC_PREV_LATERAL_ATTR,
+        geometry.sc_lateral_error(env),
+        improvement="decrease",
+        scale=scale,
+        clip=clip,
+    )
+
+
+def sc_orientation_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.10,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward reducing plug-to-port angular error."""
+    return _metric_progress_reward(
+        env,
+        geometry.SC_PREV_ORIENTATION_ATTR,
+        geometry.sc_orientation_error(env),
+        improvement="decrease",
+        scale=scale,
+        clip=clip,
+    )
+
+
+def sc_depth_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.01,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward increasing signed insertion depth, including pre-insertion approach."""
+    return _metric_progress_reward(
+        env,
+        geometry.SC_PREV_DEPTH_ATTR,
+        geometry.sc_insertion_depth(env),
+        improvement="increase",
+        scale=scale,
+        clip=clip,
+    )
+
+
 def sc_insertion_depth_reward(
     env: ManagerBasedRLEnv,
     depth_scale: float = 0.02,

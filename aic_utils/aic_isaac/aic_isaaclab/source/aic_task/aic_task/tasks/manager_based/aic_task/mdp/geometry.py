@@ -19,6 +19,10 @@ SC_TARGET_NAMES = ("sc_port", "sc_port_2")
 SC_ACTIVE_TARGET_ATTR = "aic_active_sc_target_ids"
 SC_PLUG_TIP_BODY = "sc_tip_link"
 SC_PLUG_AXIS_LOCAL = (0.0, 0.0, 1.0)
+SC_PREV_DISTANCE_ATTR = "aic_prev_sc_distance"
+SC_PREV_LATERAL_ATTR = "aic_prev_sc_lateral_error"
+SC_PREV_ORIENTATION_ATTR = "aic_prev_sc_orientation_error"
+SC_PREV_DEPTH_ATTR = "aic_prev_sc_insertion_depth"
 
 # Derived from aic_assets/models/SC Port/model.sdf:
 # - sc_port_base_link pose relative to sc_port_link:
@@ -156,6 +160,43 @@ def sample_active_sc_target(
         device=active_ids.device,
         dtype=active_ids.dtype,
     )
+
+
+def _reset_metric_buffer(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    attr_name: str,
+    values: torch.Tensor,
+) -> None:
+    buffer = getattr(env, attr_name, None)
+    if (
+        not isinstance(buffer, torch.Tensor)
+        or buffer.shape != (env.num_envs,)
+        or buffer.device != values.device
+    ):
+        buffer = torch.zeros(env.num_envs, device=values.device, dtype=values.dtype)
+        setattr(env, attr_name, buffer)
+    buffer[env_ids] = values[env_ids].detach()
+
+
+def reset_sc_progress_buffers(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+) -> None:
+    """Initialize stateful SC progress reward buffers for resetting envs."""
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=_device(env))
+    _reset_metric_buffer(
+        env,
+        env_ids,
+        SC_PREV_DISTANCE_ATTR,
+        torch.norm(sc_plug_to_port_vector(env), dim=-1),
+    )
+    _reset_metric_buffer(env, env_ids, SC_PREV_LATERAL_ATTR, sc_lateral_error(env))
+    _reset_metric_buffer(
+        env, env_ids, SC_PREV_ORIENTATION_ATTR, sc_orientation_error(env)
+    )
+    _reset_metric_buffer(env, env_ids, SC_PREV_DEPTH_ATTR, sc_insertion_depth(env))
 
 
 def sc_plug_tip_pose(

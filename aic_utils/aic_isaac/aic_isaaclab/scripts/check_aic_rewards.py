@@ -107,7 +107,25 @@ def _summary(value: torch.Tensor) -> tuple[bool, float, float, float]:
 
 def _reward_checks() -> tuple[tuple[str, Callable[[Any], torch.Tensor]], ...]:
     return (
-        ("sc_approach", lambda env: mdp.sc_approach_reward(env, std=0.50)),
+        ("sc_approach", lambda env: mdp.sc_approach_reward(env, std=1.00)),
+        (
+            "sc_distance_progress",
+            lambda env: mdp.sc_distance_progress_reward(env, scale=0.02, clip=1.0),
+        ),
+        (
+            "sc_lateral_progress",
+            lambda env: mdp.sc_lateral_progress_reward(env, scale=0.005, clip=1.0),
+        ),
+        (
+            "sc_orientation_progress",
+            lambda env: mdp.sc_orientation_progress_reward(
+                env, scale=0.10, clip=1.0
+            ),
+        ),
+        (
+            "sc_depth_progress",
+            lambda env: mdp.sc_depth_progress_reward(env, scale=0.01, clip=1.0),
+        ),
         (
             "sc_lateral_alignment",
             lambda env: mdp.sc_lateral_alignment_reward(env, std=0.02),
