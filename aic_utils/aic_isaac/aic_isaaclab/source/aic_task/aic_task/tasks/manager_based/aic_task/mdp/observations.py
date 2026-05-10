@@ -14,8 +14,57 @@ import torch
 
 from isaaclab.managers import SceneEntityCfg
 
+from . import geometry
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
+
+
+def _as_column(value: torch.Tensor) -> torch.Tensor:
+    """Return scalar per-env values as a concatenation-friendly column."""
+    if value.ndim == 1:
+        return value.unsqueeze(-1)
+    return value
+
+
+def active_sc_target_one_hot(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Eval-compatible SC target metadata as one-hot ``[sc_port, sc_port_2]``."""
+    target_ids = geometry.active_sc_target_ids(env)
+    return torch.nn.functional.one_hot(
+        target_ids, num_classes=len(geometry.SC_TARGET_NAMES)
+    ).to(dtype=torch.float32)
+
+
+def sc_plug_to_port_vec(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged vector from SC plug tip to active SC port entrance."""
+    return geometry.sc_plug_to_port_vector(env)
+
+
+def sc_lateral_error_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SC plug-tip lateral error as ``(num_envs, 1)``."""
+    return _as_column(geometry.sc_lateral_error(env))
+
+
+def sc_insertion_depth_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SC insertion depth as ``(num_envs, 1)``."""
+    return _as_column(geometry.sc_insertion_depth(env))
+
+
+def sc_orientation_error_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SC plug-to-port orientation error as ``(num_envs, 1)``."""
+    return _as_column(geometry.sc_orientation_error(env))
+
+
+def sc_active_port_pose(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged active SC port entrance pose, xyz + quat wxyz."""
+    pos_w, quat_w = geometry.sc_port_entry_pose(env)
+    return torch.cat((pos_w, quat_w), dim=-1)
+
+
+def sc_plug_tip_pose_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SC plug tip pose, xyz + quat wxyz."""
+    pos_w, quat_w = geometry.sc_plug_tip_pose(env)
+    return torch.cat((pos_w, quat_w), dim=-1)
 
 
 def contact_net_forces(

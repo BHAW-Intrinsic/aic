@@ -373,11 +373,14 @@ class TerminationsCfg:
 
 @configclass
 class ObservationsCfg:
-    """Observation specifications for the MDP: robot state, ee pose, pose command."""
+    """Observation specifications for eval-compatible actor and privileged critic."""
 
     @configclass
     class PolicyCfg(ObsGroup):
-        """Observations for policy: joint state, ee pose, pose command."""
+        """Eval-compatible observations for the deployed actor."""
+
+        # Task metadata from eval/task selection, not privileged geometry.
+        task_metadata = ObsTerm(func=mdp.active_sc_target_one_hot)
 
         # Robot state (joint space)
         joint_pos = ObsTerm(
@@ -391,10 +394,6 @@ class ObservationsCfg:
             func=mdp.body_pose_w,
             params={"asset_cfg": SceneEntityCfg("robot", body_names="wrist_3_link")},
             noise=Unoise(n_min=-0.001, n_max=0.001),
-        )
-        # Command (target ee pose)
-        pose_command = ObsTerm(
-            func=mdp.generated_commands, params={"command_name": "ee_pose"}
         )
 
         # Body forces
@@ -449,8 +448,24 @@ class ObservationsCfg:
             self.enable_corruption = False
             self.concatenate_terms = True
 
+    @configclass
+    class PrivilegedCfg(ObsGroup):
+        """Training-only plug-to-port geometry observations for the critic."""
+
+        plug_to_port_vec = ObsTerm(func=mdp.sc_plug_to_port_vec)
+        lateral_error = ObsTerm(func=mdp.sc_lateral_error_obs)
+        orientation_error = ObsTerm(func=mdp.sc_orientation_error_obs)
+        insertion_depth = ObsTerm(func=mdp.sc_insertion_depth_obs)
+        active_port_pose = ObsTerm(func=mdp.sc_active_port_pose)
+        plug_tip_pose = ObsTerm(func=mdp.sc_plug_tip_pose_obs)
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
     # observation groups
     policy: PolicyCfg = PolicyCfg()
+    privileged: PrivilegedCfg = PrivilegedCfg()
 
 
 @configclass

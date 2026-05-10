@@ -18,7 +18,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     max_iterations = 1500
     save_interval = 50
     experiment_name = "aic_task"
-    obs_groups = {"actor": ["policy"], "critic": ["policy"]}
+    obs_groups = {"actor": ["policy"], "critic": ["policy", "privileged"]}
     actor = RslRlMLPModelCfg(
         hidden_dims=[512, 256, 128],
         activation="elu",
