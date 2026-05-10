@@ -1381,3 +1381,136 @@ sc_port_2.pose_range = {"x": (0.0, 0.0)}
 This intentionally freezes SC port randomization while keeping active target
 sampling between `sc_port` and `sc_port_2`. After the policy learns the final
 fixed-port insertion, reintroduce board/SC port randomization gradually.
+
+Fixed-port reset smoke command:
+
+```bash
+tmux new-session -d -s isaac-step6-fixed-reset-smoke-a219974 \
+  "docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 16 --max_steps 0 --report_every 1 --control_frame tip --align_lateral_threshold 0.05 --approach_depth 0.0 --target_depth 0.020 --headless --enable_cameras\"; echo STEP6_FIXED_RESET_SMOKE_EXIT:\$?; sleep 60"
+```
+
+Reset smoke output:
+
+```text
+step=0 successes=0/16
+final_lateral: mean=0.024799 min=0.018159 max=0.037821
+final_orientation: mean=0.010348 min=0.002013 max=0.017438
+final_depth: mean=0.000837 min=-0.008100 max=0.005816
+```
+
+Fixed-port PPO command:
+
+```bash
+tmux new-session -d -s isaac-step6-train-fixed-std02-a219974 \
+  "pgrep -af \"rsl_rl/train.py|isaaclab.sh\"; echo STEP6_TRAIN_FIXED_STALE_BEFORE_EXIT:\$?; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_iterations 250 --run_name step6_sc_fixed_std02_a219974 --headless --enable_cameras\"; echo STEP6_TRAIN_FIXED_STD02_EXIT:\$?; sleep 120"
+```
+
+The fixed-port PPO run was manually stopped at iteration `110/250` because it
+plateaued:
+
+```text
+Learning iteration 0/250
+Episode_Termination/sc_insertion_success: 0.0872
+
+Learning iteration 28/250
+Episode_Termination/sc_insertion_success: 0.2656
+
+Learning iteration 110/250
+Mean action std: 0.20
+Episode_Reward/sc_insertion_depth: 0.0000
+Episode_Reward/sc_insertion_success: 0.0000
+Episode_Termination/sc_insertion_success: 0.2656
+STEP6_TRAIN_FIXED_STD02_EXIT:0
+```
+
+After stopping the tmux session, the Isaac Kit process remained alive and held
+GPU memory. It was cleaned up with a targeted stale-process kill:
+
+```bash
+tmux new-session -d -s isaac-step6-stale-kill-a219974 \
+  "docker exec isaac-lab-base bash -lc \"kill -TERM 12706 || true; sleep 5; kill -KILL 12706 2>/dev/null || true; ps -eo pid,ppid,stat,cmd | grep -E \\\"step6_sc_fixed_std02_a219974|rsl_rl/train.py|kit/python/bin/python3\\\" | grep -v grep || true\"; nvidia-smi; echo STEP6_STALE_KILL_EXIT:\$?; sleep 60"
+```
+
+Cleanup result:
+
+```text
+GPU memory after cleanup: 491MiB / 24564MiB
+Processes: gnome-shell and sunshine-kms only
+STEP6_STALE_KILL_EXIT:0
+```
+
+Interpretation:
+
+- Freezing SC port randomization improved the early success sample rate from the
+  reduced-std near-port curriculum, but PPO still did not learn reliable final
+  insertion.
+- The final step from near-port pose to successful insertion is too narrow for
+  reward-only PPO under the current actor exploration.
+- The next remediation is a privileged scripted-action-prior reward that teaches
+  the final relative-IK action without adding privileged geometry to actor
+  observations.
+
+## Privileged Scripted-Action Prior
+
+Added a Step 6 teacher/curriculum reward:
+
+```python
+sc_scripted_action_prior = RewTerm(
+    func=mdp.sc_scripted_action_prior_reward,
+    weight=5.0,
+)
+```
+
+What it does:
+
+- Computes the same raw relative-IK `arm_action` used by the successful
+  `check_aic_scripted_insert.py --control_frame tip` controller.
+- Uses privileged SC geometry only inside the reward:
+  - virtual/gripped SC tip pose
+  - active SC port entrance pose
+  - active SC port insertion axis
+  - lateral/orientation thresholds for switching from entrance approach to
+    positive insertion depth
+- Compares that desired raw action against
+  `env.action_manager.get_term("arm_action").raw_actions`.
+- Uses a dense `1 - tanh(action_error / 1.0)` kernel instead of a sparse
+  success-only signal.
+- Caches the desired scripted action at reset and after each reward call so the
+  reward compares the action just taken against the prior for the state it was
+  taken from, not the post-step state.
+
+This is intentionally train-only shaping for the Step 6 teacher. The actor
+observation group remains eval-compatible and still does not receive hidden
+plug-to-port geometry.
+
+Local checks before the remote Isaac smoke:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py
+git diff --check
+```
+
+Local result:
+
+```text
+py_compile: passed
+git diff --check: passed
+```
+
+Next remote checks:
+
+```bash
+tmux new-session -d -s isaac-step6-reward-prior-smoke-<commit> \
+  "docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py --task AIC-Task-v0 --num_envs 16 --num_steps 4 --headless --enable_cameras\"; echo STEP6_REWARD_PRIOR_SMOKE_EXIT:\$?; sleep 60"
+```
+
+If the reward smoke passes, retry PPO from the fixed-port near-reset curriculum:
+
+```bash
+tmux new-session -d -s isaac-step6-train-action-prior-<commit> \
+  "docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_iterations 250 --run_name step6_sc_action_prior_<commit> --headless --enable_cameras\"; echo STEP6_TRAIN_ACTION_PRIOR_EXIT:\$?; sleep 120"
+```

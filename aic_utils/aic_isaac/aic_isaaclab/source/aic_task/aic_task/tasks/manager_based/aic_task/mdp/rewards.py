@@ -26,7 +26,10 @@ from isaaclab.utils.math import combine_frame_transforms, quat_error_magnitude, 
 from . import geometry
 
 if TYPE_CHECKING:
-    from isaaclab.envs import ManagerBasedRLEnv
+    from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
+
+
+SC_SCRIPTED_ACTION_PRIOR_ATTR = "aic_sc_scripted_action_prior"
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +300,260 @@ def sc_insertion_success_bonus(
         orientation_threshold=orientation_threshold,
         depth_threshold=depth_threshold,
     ).float()
+
+
+def _quat_conjugate(quat: torch.Tensor) -> torch.Tensor:
+    return torch.cat((quat[..., 0:1], -quat[..., 1:]), dim=-1)
+
+
+def _clip_by_norm(vec: torch.Tensor, max_norm: float) -> torch.Tensor:
+    norm = torch.norm(vec, dim=-1, keepdim=True)
+    scale = torch.clamp(max_norm / torch.clamp(norm, min=1.0e-9), max=1.0)
+    return vec * scale
+
+
+def _quat_from_axis_angle(axis_angle: torch.Tensor) -> torch.Tensor:
+    angle = torch.norm(axis_angle, dim=-1)
+    axis = axis_angle / torch.clamp(angle.unsqueeze(-1), min=1.0e-9)
+    half_angle = 0.5 * angle
+    quat = torch.cat(
+        (
+            torch.cos(half_angle).unsqueeze(-1),
+            axis * torch.sin(half_angle).unsqueeze(-1),
+        ),
+        dim=-1,
+    )
+    identity = torch.zeros_like(quat)
+    identity[:, 0] = 1.0
+    quat = torch.where(angle.unsqueeze(-1) > 1.0e-9, quat, identity)
+    return geometry._quat_normalize(quat)
+
+
+def _axis_angle_from_quat(quat: torch.Tensor) -> torch.Tensor:
+    quat = geometry._quat_normalize(quat)
+    quat = torch.where(quat[:, 0:1] < 0.0, -quat, quat)
+    vec = quat[:, 1:]
+    sin_half = torch.norm(vec, dim=-1)
+    angle = 2.0 * torch.atan2(sin_half, torch.clamp(quat[:, 0], min=1.0e-9))
+    axis = vec / torch.clamp(sin_half.unsqueeze(-1), min=1.0e-9)
+    axis_angle = axis * angle.unsqueeze(-1)
+    return torch.where(sin_half.unsqueeze(-1) > 1.0e-9, axis_angle, 0.0)
+
+
+def _body_pose(
+    env: ManagerBasedRLEnv,
+    asset_name: str,
+    body_name: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    asset = env.scene[asset_name]
+    body_id = geometry._body_index(asset, body_name)
+    return asset.data.body_pos_w[:, body_id], asset.data.body_quat_w[:, body_id]
+
+
+def _body_to_tip_pose(
+    env: ManagerBasedRLEnv,
+    asset_name: str,
+    body_name: str,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    body_pos_w, body_quat_w = _body_pose(env, asset_name, body_name)
+    tip_pos_w, tip_quat_w = geometry.sc_plug_tip_pose(env, asset_name=asset_name)
+    body_inv = _quat_conjugate(body_quat_w)
+    rel_pos = geometry._quat_apply(body_inv, tip_pos_w - body_pos_w)
+    rel_quat = geometry._quat_mul(body_inv, tip_quat_w)
+    return rel_pos, geometry._quat_normalize(rel_quat)
+
+
+def _root_frame_pose(
+    env: ManagerBasedRLEnv,
+    asset_name: str,
+    pos_w: torch.Tensor,
+    quat_w: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    asset = env.scene[asset_name]
+    root_inv = _quat_conjugate(asset.data.root_quat_w)
+    pos_root = geometry._quat_apply(root_inv, pos_w - asset.data.root_pos_w)
+    quat_root = geometry._quat_mul(root_inv, quat_w)
+    return pos_root, geometry._quat_normalize(quat_root)
+
+
+def _scripted_sc_raw_action(
+    env: ManagerBasedRLEnv,
+    asset_name: str,
+    action_body_name: str,
+    action_scale: float,
+    action_clip: float,
+    approach_depth: float,
+    target_depth: float,
+    max_translation_step: float,
+    max_rotation_step: float,
+    align_lateral_threshold: float,
+    align_orientation_threshold: float,
+) -> torch.Tensor:
+    """Compute the same privileged relative-IK action used by the scripted check."""
+    plug_pos_w, plug_quat_w = geometry.sc_plug_tip_pose(env, asset_name=asset_name)
+    plug_axis_w = geometry.sc_plug_axis(env, asset_name=asset_name)
+    entry_pos_w, _ = geometry.sc_port_entry_pose(env)
+    port_axis_w = geometry.sc_port_insertion_axis(env)
+
+    lateral = geometry.sc_lateral_error(env)
+    orientation = geometry.sc_orientation_error(env)
+    aligned = (lateral < align_lateral_threshold) & (
+        orientation < align_orientation_threshold
+    )
+    desired_depth = torch.full(
+        (env.num_envs,),
+        approach_depth,
+        device=plug_pos_w.device,
+        dtype=plug_pos_w.dtype,
+    )
+    desired_depth[aligned] = target_depth
+    target_tip_pos_w = entry_pos_w + desired_depth.unsqueeze(-1) * port_axis_w
+
+    delta_pos_w = _clip_by_norm(
+        target_tip_pos_w - plug_pos_w,
+        max_norm=max_translation_step,
+    )
+    desired_tip_pos_w = plug_pos_w + delta_pos_w
+
+    cross = torch.cross(plug_axis_w, port_axis_w, dim=-1)
+    sin_angle = torch.norm(cross, dim=-1)
+    cos_angle = torch.sum(plug_axis_w * port_axis_w, dim=-1)
+    angle = torch.atan2(sin_angle, cos_angle)
+    axis_w = cross / torch.clamp(sin_angle.unsqueeze(-1), min=1.0e-9)
+    rot_step = torch.clamp(angle, max=max_rotation_step)
+    rot_vec_w = axis_w * rot_step.unsqueeze(-1)
+    rot_vec_w = torch.where(sin_angle.unsqueeze(-1) > 1.0e-6, rot_vec_w, 0.0)
+
+    desired_tip_quat_w = geometry._quat_mul(
+        _quat_from_axis_angle(rot_vec_w), plug_quat_w
+    )
+    body_pos_w, body_quat_w = _body_pose(env, asset_name, action_body_name)
+    tip_pos_in_body, tip_quat_in_body = _body_to_tip_pose(
+        env, asset_name, action_body_name
+    )
+    desired_body_quat_w = geometry._quat_mul(
+        desired_tip_quat_w, _quat_conjugate(tip_quat_in_body)
+    )
+    desired_body_pos_w = desired_tip_pos_w - geometry._quat_apply(
+        desired_body_quat_w, tip_pos_in_body
+    )
+
+    body_pos_root, body_quat_root = _root_frame_pose(
+        env, asset_name, body_pos_w, body_quat_w
+    )
+    desired_body_pos_root, desired_body_quat_root = _root_frame_pose(
+        env, asset_name, desired_body_pos_w, desired_body_quat_w
+    )
+    delta_pos_root = desired_body_pos_root - body_pos_root
+    delta_quat_root = geometry._quat_mul(
+        desired_body_quat_root, _quat_conjugate(body_quat_root)
+    )
+    rot_vec_root = _clip_by_norm(
+        _axis_angle_from_quat(delta_quat_root), max_rotation_step
+    )
+
+    raw_action = torch.cat((delta_pos_root, rot_vec_root), dim=-1) / action_scale
+    if action_clip > 0.0:
+        raw_action = torch.clamp(raw_action, -action_clip, action_clip)
+    return raw_action
+
+
+def reset_sc_scripted_action_prior_buffer(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    asset_name: str = "robot",
+    action_body_name: str = "gripper_tcp",
+    action_scale: float = 0.05,
+    action_clip: float = 1.0,
+    approach_depth: float = 0.0,
+    target_depth: float = 0.02,
+    max_translation_step: float = 0.025,
+    max_rotation_step: float = 0.10,
+    align_lateral_threshold: float = 0.05,
+    align_orientation_threshold: float = 0.50,
+) -> None:
+    """Cache the scripted action for reset states before the first policy step."""
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    if len(env_ids) == 0:
+        return
+
+    desired_action = _scripted_sc_raw_action(
+        env,
+        asset_name=asset_name,
+        action_body_name=action_body_name,
+        action_scale=action_scale,
+        action_clip=action_clip,
+        approach_depth=approach_depth,
+        target_depth=target_depth,
+        max_translation_step=max_translation_step,
+        max_rotation_step=max_rotation_step,
+        align_lateral_threshold=align_lateral_threshold,
+        align_orientation_threshold=align_orientation_threshold,
+    )
+    buffer = getattr(env, SC_SCRIPTED_ACTION_PRIOR_ATTR, None)
+    if (
+        not isinstance(buffer, torch.Tensor)
+        or buffer.shape != desired_action.shape
+        or buffer.device != desired_action.device
+    ):
+        buffer = torch.zeros_like(desired_action)
+        setattr(env, SC_SCRIPTED_ACTION_PRIOR_ATTR, buffer)
+    buffer[env_ids] = desired_action[env_ids].detach()
+
+
+def sc_scripted_action_prior_reward(
+    env: ManagerBasedRLEnv,
+    action_name: str = "arm_action",
+    asset_name: str = "robot",
+    action_body_name: str = "gripper_tcp",
+    action_scale: float = 0.05,
+    action_clip: float = 1.0,
+    approach_depth: float = 0.0,
+    target_depth: float = 0.02,
+    max_translation_step: float = 0.025,
+    max_rotation_step: float = 0.10,
+    align_lateral_threshold: float = 0.05,
+    align_orientation_threshold: float = 0.50,
+    std: float = 1.00,
+) -> torch.Tensor:
+    """Reward matching the privileged scripted relative-IK SC insertion action.
+
+    This is a Step 6 teacher/curriculum term. It uses privileged geometry in the
+    reward only; it does not add hidden geometry to actor observations.
+    """
+    desired_action = _scripted_sc_raw_action(
+        env,
+        asset_name=asset_name,
+        action_body_name=action_body_name,
+        action_scale=action_scale,
+        action_clip=action_clip,
+        approach_depth=approach_depth,
+        target_depth=target_depth,
+        max_translation_step=max_translation_step,
+        max_rotation_step=max_rotation_step,
+        align_lateral_threshold=align_lateral_threshold,
+        align_orientation_threshold=align_orientation_threshold,
+    )
+    cached_action = getattr(env, SC_SCRIPTED_ACTION_PRIOR_ATTR, None)
+    if (
+        not isinstance(cached_action, torch.Tensor)
+        or cached_action.shape != desired_action.shape
+        or cached_action.device != desired_action.device
+    ):
+        cached_action = desired_action.detach().clone()
+        setattr(env, SC_SCRIPTED_ACTION_PRIOR_ATTR, cached_action)
+
+    if action_name:
+        actual_action = env.action_manager.get_term(action_name).raw_actions
+    else:
+        actual_action = env.action_manager.action
+    actual_action = actual_action[:, : cached_action.shape[1]]
+    action_error = torch.norm(actual_action - cached_action, dim=-1)
+    reward = 1.0 - torch.tanh(action_error / std)
+    with torch.no_grad():
+        cached_action.copy_(desired_action.detach())
+    return reward
 
 
 # ---------------------------------------------------------------------------

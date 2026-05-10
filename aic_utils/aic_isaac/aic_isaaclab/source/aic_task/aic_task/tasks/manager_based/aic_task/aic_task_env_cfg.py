@@ -382,6 +382,22 @@ class EventCfg:
         func=mdp.reset_sc_progress_buffers,
         mode="reset",
     )
+    reset_sc_scripted_action_prior_buffer = EventTerm(
+        func=mdp.reset_sc_scripted_action_prior_buffer,
+        mode="reset",
+        params={
+            "asset_name": "robot",
+            "action_body_name": "gripper_tcp",
+            "action_scale": 0.05,
+            "action_clip": 1.0,
+            "approach_depth": 0.0,
+            "target_depth": 0.02,
+            "max_translation_step": 0.025,
+            "max_rotation_step": 0.10,
+            "align_lateral_threshold": 0.05,
+            "align_orientation_threshold": 0.50,
+        },
+    )
 
 
 @configclass
@@ -563,6 +579,24 @@ class RewardsCfg:
             "lateral_threshold": 0.005,
             "orientation_threshold": 0.20,
             "depth_threshold": 0.012,
+        },
+    )
+    sc_scripted_action_prior = RewTerm(
+        func=mdp.sc_scripted_action_prior_reward,
+        weight=5.0,
+        params={
+            "action_name": "arm_action",
+            "asset_name": "robot",
+            "action_body_name": "gripper_tcp",
+            "action_scale": 0.05,
+            "action_clip": 1.0,
+            "approach_depth": 0.0,
+            "target_depth": 0.02,
+            "max_translation_step": 0.025,
+            "max_rotation_step": 0.10,
+            "align_lateral_threshold": 0.05,
+            "align_orientation_threshold": 0.50,
+            "std": 1.00,
         },
     )
 

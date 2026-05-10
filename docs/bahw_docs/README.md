@@ -98,9 +98,9 @@ otherwise.
     any later steps in `docs/bahw_docs/plan.md`. Document the decision in the
     completed step note and update the future checklist if needed.
 
-12. Use subagents for bounded research or codebase exploration when it will
-    clarify the next implementation decision. Keep delegated tasks read-only
-    unless assigning a clearly separate code-change scope.
+12. Use subagents when needed for bounded research or codebase exploration that
+    will clarify the next implementation decision. Keep delegated tasks
+    read-only unless assigning a clearly separate code-change scope.
 
 13. Commit and push the documentation updates, then pull them on the remote host
     so local and host copies stay aligned.

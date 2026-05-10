@@ -161,6 +161,24 @@ def _reward_checks() -> tuple[tuple[str, Callable[[Any], torch.Tensor]], ...]:
                 depth_threshold=0.012,
             ),
         ),
+        (
+            "sc_scripted_action_prior",
+            lambda env: mdp.sc_scripted_action_prior_reward(
+                env,
+                action_name="arm_action",
+                asset_name="robot",
+                action_body_name="gripper_tcp",
+                action_scale=0.05,
+                action_clip=1.0,
+                approach_depth=0.0,
+                target_depth=0.02,
+                max_translation_step=0.025,
+                max_rotation_step=0.10,
+                align_lateral_threshold=0.05,
+                align_orientation_threshold=0.50,
+                std=1.00,
+            ),
+        ),
     )
 
 

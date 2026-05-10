@@ -554,12 +554,26 @@ Work:
     from `0.006` to `0.001`.
   - Reduced-std PPO rose from `0.0495` to `0.1250` success termination but
     plateaued through iteration `70`.
-- [ ] Freeze board/SC port randomization for the first final-insertion
+- [x] Freeze board/SC port randomization for the first final-insertion
   curriculum stage.
   - Temporarily set board `x/y` randomization and SC port `x` randomization to
     zero while keeping active target sampling between `sc_port` and `sc_port_2`.
-  - Next: smoke-test fixed-port reset, then retry PPO. If it learns, gradually
-    reintroduce randomization.
+  - Fixed-port reset smoke remained near the final corridor: lateral mean
+    `0.024799`, orientation mean `0.010348`, depth mean `0.000837`.
+  - Fixed-port PPO reached early nonzero success but plateaued at
+    `0.2656` success termination by iteration `110`, with insertion-depth
+    reward returning to `0.0`.
+  - Result: fixed-port reset alone is not enough for reliable final insertion.
+- [ ] Add a privileged scripted-action-prior reward for the Step 6 teacher
+  curriculum.
+  - Compare the raw `arm_action` against the successful scripted relative-IK
+    action computed from privileged SC geometry.
+  - Cache the desired scripted action on reset so the reward compares the action
+    just taken against the prior for the state it was taken from.
+  - Keep this as reward-only teacher shaping; do not add privileged geometry to
+    actor observations.
+  - Next: run reward smoke, then retry fixed-port near-reset PPO. If it learns,
+    gradually anneal/remove the action prior and reintroduce randomization.
 
 Training command:
 
@@ -606,8 +620,9 @@ Current gate:
   and three reward-only remediation attempts did not reach insertion depth or
   success. Step 6 later found that the physical Isaac SC tip was not rigidly
   attached to the controlled TCP path, and a temporary virtual `gripper_tcp`
-  tip helper reached scripted insertion in `3/4` envs. This is progress, but it
-  is not a trained SC teacher.
+  tip helper reached scripted insertion. Near-port and fixed-port curricula have
+  produced nonzero PPO success samples but still plateau below reliable
+  insertion. This is progress, but it is not a trained SC teacher.
 
 Work:
 
@@ -715,7 +730,10 @@ Done when:
   - [x] Validated the virtual helper across more envs/seeds.
   - [x] Added first near-port reset curriculum after PPO from normal reset still
     produced zero insertion-depth samples.
-  - [ ] Smoke-test and train with the near-port curriculum.
+  - [x] Smoke-tested and trained with the near-port curriculum.
+  - [x] Froze board/SC port randomization for the first final-insertion
+    curriculum stage; fixed-port PPO still plateaued.
+  - [ ] Add and validate privileged scripted-action-prior reward shaping.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.
 - [ ] 14. Revisit distillation only after both teachers work.

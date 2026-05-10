@@ -43,4 +43,6 @@ from .rewards import (  # noqa: F401
     sc_lateral_progress_reward,
     sc_orientation_alignment_reward,
     sc_orientation_progress_reward,
+    reset_sc_scripted_action_prior_buffer,
+    sc_scripted_action_prior_reward,
 )
