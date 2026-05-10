@@ -278,28 +278,28 @@ the training objective.
 
 Work in `aic_task_env_cfg.py`:
 
-- [ ] Remove or set weight to zero for:
-  - [ ] `position_command_error`
-  - [ ] `position_command_error_tanh`
-  - [ ] `position_command_error_exp`
-  - [ ] `orientation_command_error`
-  - [ ] `orientation_command_error_tanh`
-  - [ ] `ee_reaching_bonus`
-- [ ] Keep smoothness and safety penalties if still useful:
-  - [ ] action rate
-  - [ ] joint velocity
-  - [ ] joint acceleration
-  - [ ] joint torques
-  - [ ] joint position limits
+- [x] Remove or set weight to zero for:
+  - [x] `position_command_error`
+  - [x] `position_command_error_tanh`
+  - [x] `position_command_error_exp`
+  - [x] `orientation_command_error`
+  - [x] `orientation_command_error_tanh`
+  - [x] `ee_reaching_bonus`
+- [x] Keep smoothness and safety penalties if still useful:
+  - [x] action rate
+  - [x] joint velocity
+  - [x] joint acceleration
+  - [x] joint torques
+  - [x] joint position limits
 
 Work in `mdp/rewards.py`:
 
-- [ ] Add insertion-specific terms:
-  - [ ] lateral alignment reward
-  - [ ] orientation alignment reward
-  - [ ] approach reward
-  - [ ] insertion depth reward
-  - [ ] success bonus
+- [x] Add insertion-specific terms:
+  - [x] lateral alignment reward
+  - [x] orientation alignment reward
+  - [x] approach reward
+  - [x] insertion depth reward
+  - [x] success bonus
   - [ ] optional force/torque penalty near contact
 
 Initial reward shape:
@@ -318,11 +318,22 @@ Guard against bad shaping:
 
 Done when:
 
-- [ ] No nonzero reward term depends on `ee_pose`.
-- [ ] Random policy reward logs show each reward term is finite.
-- [ ] Manually moving the plug closer to the port improves lateral/approach rewards.
-- [ ] Manually increasing insertion depth improves depth reward only when alignment
+- [x] No nonzero reward term depends on `ee_pose`.
+- [x] Random policy reward logs show each reward term is finite.
+- [x] Manually moving the plug closer to the port improves lateral/approach rewards.
+- [x] Manually increasing insertion depth improves depth reward only when alignment
   is reasonable.
+
+Result:
+
+- Commit `ca3456f` verified `AIC-Task-v0` remotely with
+  `scripts/check_aic_rewards.py`.
+- Active reward terms are SC insertion shaping plus smoothness/safety penalties;
+  the command manager still creates `ee_pose`, but no reward term uses it.
+- Analytic shape checks verified approach, lateral, orientation, and depth reward
+  monotonicity, and random-policy reward tensors were finite.
+- Reward log copied on the host to
+  `~/IsaacLab/aic/logs/aic_rewards/20260510_103443_AIC-Task-v0.log`.
 
 Verification command:
 

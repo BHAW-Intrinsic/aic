@@ -104,9 +104,46 @@ git diff --check
 
 Status: passed locally.
 
-## Remote Verification Still Needed
+## Remote Verification
 
-Run inside the Isaac Lab container:
+Implementation commits:
+
+- `b2fd215 Replace command rewards with insertion rewards`
+- `ca3456f Add reward shape checks`
+
+Pulled on the remote host:
+
+```bash
+cd ~/IsaacLab/aic
+git pull --ff-only
+```
+
+Copied the changed checker into the running Isaac Lab container after the final
+shape-check update:
+
+```bash
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py
+```
+
+Earlier in the same step, the changed reward/config files were also copied into
+the container:
+
+```bash
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
+docker cp \
+  ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py
+```
+
+Ran inside the Isaac Lab container through host `tmux` session
+`isaac-step3-rewards-ca3456f`:
 
 ```bash
 cd /workspace/isaaclab
@@ -114,10 +151,54 @@ cd /workspace/isaaclab
   --task AIC-Task-v0 --num_envs 16 --num_steps 8 --headless --enable_cameras
 ```
 
-Expected checks:
+Key output:
 
-- Reward Manager contains insertion reward terms, not command-pose reward terms.
-- Total random-policy rewards are finite.
-- Direct insertion reward tensors are finite after reset and after random
-  actions.
-- Reward log is copied from `logs/aic_rewards/`.
+```text
+Reward Manager contains 10 active terms:
+sc_approach, sc_lateral_alignment, sc_orientation_alignment,
+sc_insertion_depth, sc_insertion_success, action_rate, joint_vel, joint_acc,
+joint_torques, joint_pos_limits
+```
+
+The command manager still has `ee_pose`, but no active reward term depends on it.
+
+```text
+== Analytic Reward Shape Checks ==
+approach_reward ... monotonic=True
+lateral_reward ... monotonic=True
+orientation_reward ... monotonic=True
+depth_reward aligned ... monotonic=True
+depth_reward misaligned ... zeroed=True
+analytic_shape_checks_ok: True
+```
+
+Random-policy tensor checks stayed finite:
+
+```text
+== Direct Reward Tensor Checks: after reset ==
+sc_approach: finite=True mean=0.012793 min=0.010049 max=0.016419
+sc_lateral_alignment: finite=True mean=0.002607 min=0.000000 max=0.036934
+sc_orientation_alignment: finite=True mean=0.000000 min=0.000000 max=0.000001
+sc_insertion_depth: finite=True mean=0.000000 min=0.000000 max=0.000000
+sc_insertion_success: finite=True mean=0.000000 min=0.000000 max=0.000000
+...
+step 07 total_reward: finite=True mean=-0.002038 min=-0.009877 max=-0.000344
+...
+overall_finite: True
+STEP3_REWARD_EXIT:0
+```
+
+Copied the reward log back to the host:
+
+```bash
+mkdir -p ~/IsaacLab/aic/logs
+docker cp isaac-lab-base:/workspace/isaaclab/aic/logs/aic_rewards \
+  ~/IsaacLab/aic/logs/
+```
+
+Result:
+
+```text
+COPY_EXIT:0
+~/IsaacLab/aic/logs/aic_rewards/20260510_103443_AIC-Task-v0.log
+```
