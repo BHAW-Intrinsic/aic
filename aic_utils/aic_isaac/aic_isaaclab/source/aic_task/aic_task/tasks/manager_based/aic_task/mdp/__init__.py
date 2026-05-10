@@ -33,4 +33,9 @@ from .rewards import (  # noqa: F401
     position_command_error,
     position_command_error_exp,
     position_command_error_tanh,
+    sc_approach_reward,
+    sc_insertion_depth_reward,
+    sc_insertion_success_bonus,
+    sc_lateral_alignment_reward,
+    sc_orientation_alignment_reward,
 )

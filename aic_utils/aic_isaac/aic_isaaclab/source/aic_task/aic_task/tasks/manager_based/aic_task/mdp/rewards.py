@@ -8,6 +8,7 @@
 Includes:
 - Command-tracking rewards with exponential / tanh kernels (inspired by the
   gear-assembly deploy environment).
+- SC insertion rewards using shared plug-to-port geometry helpers.
 - A sparse reaching bonus.
 - Smoothness and safety penalties (torques, joint acceleration, action rate).
 """
@@ -21,6 +22,8 @@ import torch
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms, quat_error_magnitude, quat_mul
+
+from . import geometry
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -135,6 +138,73 @@ def ee_reaching_bonus(
     curr_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0]]  # type: ignore
     distance = torch.norm(curr_pos_w - des_pos_w, dim=1)
     return (distance < threshold).float()
+
+
+# ---------------------------------------------------------------------------
+# SC insertion rewards
+# ---------------------------------------------------------------------------
+
+
+def sc_lateral_alignment_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.02,
+) -> torch.Tensor:
+    """Reward centering the SC plug tip on the active port insertion axis."""
+    lateral_error = geometry.sc_lateral_error(env)
+    return 1.0 - torch.tanh(lateral_error / std)
+
+
+def sc_orientation_alignment_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.35,
+) -> torch.Tensor:
+    """Reward aligning the SC plug axis with the active port insertion axis."""
+    orientation_error = geometry.sc_orientation_error(env)
+    return 1.0 - torch.tanh(orientation_error / std)
+
+
+def sc_approach_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.50,
+) -> torch.Tensor:
+    """Reward moving the SC plug tip toward the active port entrance."""
+    distance = torch.norm(geometry.sc_plug_to_port_vector(env), dim=-1)
+    return 1.0 - torch.tanh(distance / std)
+
+
+def sc_insertion_depth_reward(
+    env: ManagerBasedRLEnv,
+    depth_scale: float = 0.02,
+    max_depth: float = 0.03,
+    lateral_threshold: float = 0.01,
+    orientation_threshold: float = 0.35,
+) -> torch.Tensor:
+    """Reward insertion depth only when lateral and angular alignment are acceptable."""
+    lateral_error = geometry.sc_lateral_error(env)
+    orientation_error = geometry.sc_orientation_error(env)
+    depth = torch.clamp(geometry.sc_insertion_depth(env), min=0.0, max=max_depth)
+    aligned = (lateral_error < lateral_threshold) & (
+        orientation_error < orientation_threshold
+    )
+    return aligned.float() * torch.clamp(depth / depth_scale, max=1.0)
+
+
+def sc_insertion_success_bonus(
+    env: ManagerBasedRLEnv,
+    lateral_threshold: float = 0.005,
+    orientation_threshold: float = 0.20,
+    depth_threshold: float = 0.012,
+) -> torch.Tensor:
+    """Sparse bonus for a plausible SC insertion state."""
+    lateral_error = geometry.sc_lateral_error(env)
+    orientation_error = geometry.sc_orientation_error(env)
+    depth = geometry.sc_insertion_depth(env)
+    success = (
+        (lateral_error < lateral_threshold)
+        & (orientation_error < orientation_threshold)
+        & (depth > depth_threshold)
+    )
+    return success.float()
 
 
 # ---------------------------------------------------------------------------

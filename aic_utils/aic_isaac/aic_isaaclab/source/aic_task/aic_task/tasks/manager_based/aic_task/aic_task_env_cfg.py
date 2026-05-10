@@ -472,64 +472,39 @@ class ObservationsCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    # -- Position tracking (coarse): L2 penalty drives the EE toward the target --
-    end_effector_position_tracking = RewTerm(
-        func=mdp.position_command_error,
-        weight=-0.2,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "command_name": "ee_pose",
-        },
+    # -- SC insertion shaping --
+    sc_approach = RewTerm(
+        func=mdp.sc_approach_reward,
+        weight=0.5,
+        params={"std": 0.50},
     )
-    # -- Position tracking (fine): tanh kernel provides dense signal near target --
-    end_effector_position_tracking_fine_grained = RewTerm(
-        func=mdp.position_command_error_tanh,
-        weight=0.1,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "std": 0.1,
-            "command_name": "ee_pose",
-        },
-    )
-    # -- Position tracking (exponential): sharp bonus at very close range for insertion --
-    end_effector_position_tracking_exp = RewTerm(
-        func=mdp.position_command_error_exp,
-        weight=0.3,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "sigma": 0.05,
-            "command_name": "ee_pose",
-        },
-    )
-
-    # -- Orientation tracking (coarse): angular-distance penalty --
-    end_effector_orientation_tracking = RewTerm(
-        func=mdp.orientation_command_error,
-        weight=-0.1,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "command_name": "ee_pose",
-        },
-    )
-    # -- Orientation tracking (fine): tanh kernel for precise alignment --
-    end_effector_orientation_tracking_fine_grained = RewTerm(
-        func=mdp.orientation_command_error_tanh,
-        weight=0.05,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "std": 0.25,
-            "command_name": "ee_pose",
-        },
-    )
-
-    # -- Sparse reaching bonus: +1 when EE is within 2 cm of the target --
-    reaching_bonus = RewTerm(
-        func=mdp.ee_reaching_bonus,
+    sc_lateral_alignment = RewTerm(
+        func=mdp.sc_lateral_alignment_reward,
         weight=1.0,
+        params={"std": 0.02},
+    )
+    sc_orientation_alignment = RewTerm(
+        func=mdp.sc_orientation_alignment_reward,
+        weight=0.5,
+        params={"std": 0.35},
+    )
+    sc_insertion_depth = RewTerm(
+        func=mdp.sc_insertion_depth_reward,
+        weight=4.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "threshold": 0.02,
-            "command_name": "ee_pose",
+            "depth_scale": 0.02,
+            "max_depth": 0.03,
+            "lateral_threshold": 0.01,
+            "orientation_threshold": 0.35,
+        },
+    )
+    sc_insertion_success = RewTerm(
+        func=mdp.sc_insertion_success_bonus,
+        weight=10.0,
+        params={
+            "lateral_threshold": 0.005,
+            "orientation_threshold": 0.20,
+            "depth_threshold": 0.012,
         },
     )
 
@@ -589,25 +564,6 @@ class AICTaskEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 120.0
         # self.sim.gravity = (0.0, 0.0, 3)
         self.viewer.eye = (8.0, 0.0, 5.0)
-
-        # Override reward/command body to UR end-effector
-        ee_body = ["wrist_3_link"]
-        self.rewards.end_effector_position_tracking.params["asset_cfg"].body_names = (
-            ee_body
-        )
-        self.rewards.end_effector_position_tracking_fine_grained.params[
-            "asset_cfg"
-        ].body_names = ee_body
-        self.rewards.end_effector_position_tracking_exp.params[
-            "asset_cfg"
-        ].body_names = ee_body
-        self.rewards.end_effector_orientation_tracking.params[
-            "asset_cfg"
-        ].body_names = ee_body
-        self.rewards.end_effector_orientation_tracking_fine_grained.params[
-            "asset_cfg"
-        ].body_names = ee_body
-        self.rewards.reaching_bonus.params["asset_cfg"].body_names = ee_body
 
         # # Arm action: joint position control
         # self.actions.arm_action = JointPositionActionCfg(
