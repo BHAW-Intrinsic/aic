@@ -458,6 +458,35 @@ def _scripted_sc_raw_action(
     return raw_action
 
 
+def sc_scripted_raw_action(
+    env: ManagerBasedRLEnv,
+    asset_name: str = "robot",
+    action_body_name: str = "gripper_tcp",
+    action_scale: float = 0.05,
+    action_clip: float = 1.0,
+    approach_depth: float = 0.0,
+    target_depth: float = 0.02,
+    max_translation_step: float = 0.025,
+    max_rotation_step: float = 0.10,
+    align_lateral_threshold: float = 0.05,
+    align_orientation_threshold: float = 0.50,
+) -> torch.Tensor:
+    """Return the privileged scripted raw action for SC insertion."""
+    return _scripted_sc_raw_action(
+        env,
+        asset_name=asset_name,
+        action_body_name=action_body_name,
+        action_scale=action_scale,
+        action_clip=action_clip,
+        approach_depth=approach_depth,
+        target_depth=target_depth,
+        max_translation_step=max_translation_step,
+        max_rotation_step=max_rotation_step,
+        align_lateral_threshold=align_lateral_threshold,
+        align_orientation_threshold=align_orientation_threshold,
+    )
+
+
 def reset_sc_scripted_action_prior_buffer(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor | None,

@@ -1514,3 +1514,196 @@ If the reward smoke passes, retry PPO from the fixed-port near-reset curriculum:
 tmux new-session -d -s isaac-step6-train-action-prior-<commit> \
   "docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_iterations 250 --run_name step6_sc_action_prior_<commit> --headless --enable_cameras\"; echo STEP6_TRAIN_ACTION_PRIOR_EXIT:\$?; sleep 120"
 ```
+
+Reward-prior implementation commit:
+
+```text
+12462ab Add SC scripted action prior
+```
+
+Host pull:
+
+```bash
+tmux new-session -d -s isaac-step6-pull-12462ab \
+  "cd ~/IsaacLab/aic && git status --short && git pull --ff-only && git rev-parse --short HEAD; echo STEP6_PULL_12462AB_EXIT:\$?; sleep 60"
+```
+
+Pull result:
+
+```text
+Updating a219974..12462ab
+Fast-forward
+12462ab
+STEP6_PULL_12462AB_EXIT:0
+```
+
+Container copy:
+
+```bash
+tmux new-session -d -s isaac-step6-copy-12462ab \
+  "cd ~/IsaacLab/aic && for p in aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py docs/bahw_docs/README.md docs/bahw_docs/detailed/step6.md docs/bahw_docs/plan.md; do docker cp \"\$p\" isaac-lab-base:/workspace/isaaclab/aic/\"\$p\" || exit 1; echo COPIED:\$p; done; echo STEP6_COPY_12462AB_EXIT:\$?; sleep 60"
+```
+
+Copy result:
+
+```text
+STEP6_COPY_12462AB_EXIT:0
+```
+
+Reward smoke command:
+
+```bash
+tmux new-session -d -s isaac-step6-reward-prior-smoke-12462ab \
+  "pgrep -af \"rsl_rl/train.py|check_aic_rewards.py|isaaclab.sh\"; echo STEP6_REWARD_PRIOR_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py --task AIC-Task-v0 --num_envs 16 --num_steps 4 --headless --enable_cameras\"; echo STEP6_REWARD_PRIOR_SMOKE_EXIT:\$?; sleep 120"
+```
+
+Reward smoke output:
+
+```text
+Active Event Terms:
+  reset_sc_scripted_action_prior_buffer
+
+Active Reward Terms:
+  sc_scripted_action_prior weight=5.0
+
+gym observation space:
+  policy shape: (16, 3149)
+  privileged shape: (16, 20)
+
+sc_scripted_action_prior after reset:
+  finite=True mean=0.512493 min=0.477474 max=0.533042
+
+sc_scripted_action_prior after random steps:
+  step 00 finite=True mean=0.425547
+  step 01 finite=True mean=0.395623
+  step 02 finite=True mean=0.416532
+  step 03 finite=True mean=0.419703
+
+overall_finite: True
+STEP6_REWARD_PRIOR_SMOKE_EXIT:0
+```
+
+Action-prior PPO command:
+
+```bash
+tmux new-session -d -s isaac-step6-train-action-prior-12462ab \
+  "pgrep -af \"rsl_rl/train.py|check_aic_rewards.py|isaaclab.sh\"; echo STEP6_TRAIN_ACTION_PRIOR_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --max_iterations 250 --run_name step6_sc_action_prior_12462ab --headless --enable_cameras\"; echo STEP6_TRAIN_ACTION_PRIOR_EXIT:\$?; sleep 120"
+```
+
+Action-prior PPO output:
+
+```text
+Learning iteration 0/250
+Episode_Reward/sc_scripted_action_prior: 0.0019
+Episode_Reward/sc_insertion_depth: 0.0013
+Episode_Reward/sc_insertion_success: 0.0013
+Episode_Termination/sc_insertion_success: 0.0716
+
+Learning iteration 1/250
+Episode_Reward/sc_scripted_action_prior: 0.0026
+Episode_Termination/sc_insertion_success: 0.1406
+
+Learning iteration 25/250
+Episode_Reward/sc_scripted_action_prior: 0.0021
+Episode_Reward/sc_insertion_depth: 0.0000
+Episode_Reward/sc_insertion_success: 0.0000
+Episode_Termination/sc_insertion_success: 0.1406
+
+Learning iteration 30/250
+Episode_Reward/sc_scripted_action_prior: 0.0025
+Episode_Reward/sc_insertion_depth: 0.0000
+Episode_Reward/sc_insertion_success: 0.0000
+Episode_Termination/sc_insertion_success: 0.1406
+STEP6_TRAIN_ACTION_PRIOR_EXIT:0
+```
+
+Interpretation:
+
+- The action-prior reward is implemented correctly enough to load, stay finite,
+  and appear in RSL-RL logs.
+- As a scalar PPO reward, it did not teach the final insertion action. It
+  plateaued below the previous fixed-port run's `0.2656` success termination.
+- More reward-only tuning is unlikely to be the highest-leverage next step.
+- Next Step 6 work should inspect whether we can directly bootstrap the actor
+  from scripted `(policy observation, action)` pairs, then resume PPO. This keeps
+  the actor eval-compatible while using privileged geometry only as the
+  offline/training label generator.
+
+Cleanup after the interrupted run:
+
+```bash
+tmux new-session -d -s isaac-step6-action-prior-clean-final-12462ab \
+  "sleep 10; docker exec isaac-lab-base bash -lc \"pkill -TERM -f step6_sc_action_prior_12462ab || true; sleep 2; ps -eo pid,ppid,stat,cmd | grep -E \\\"step6_sc_action_prior_12462ab|rsl_rl/train.py|kit/python/bin/python3\\\" | grep -v grep || true\"; nvidia-smi; echo STEP6_ACTION_PRIOR_CLEAN_FINAL_EXIT:\$?; sleep 60"
+```
+
+Cleanup result:
+
+```text
+GPU memory after cleanup: 491MiB / 24564MiB
+Processes: gnome-shell and sunshine-kms only
+STEP6_ACTION_PRIOR_CLEAN_FINAL_EXIT:0
+```
+
+## Scripted Actor Bootstrap
+
+Reason for the next remediation:
+
+- Scripted IK can solve the final insertion from the near-port curriculum.
+- PPO reward-only attempts, including a scalar scripted-action-prior reward,
+  still do not reliably learn that narrow action sequence.
+- RSL-RL has normal checkpoint resume, but this AIC workspace does not have a
+  built-in behavior-cloning or imitation-learning hook.
+
+Added:
+
+```text
+aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py
+```
+
+The script builds the same `OnPolicyRunner` and actor architecture used by
+`rsl_rl/train.py`, trains only the actor with supervised MSE against scripted raw
+`arm_action` labels, and saves a normal RSL-RL checkpoint. PPO can then resume
+from that checkpoint with:
+
+```bash
+./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py \
+  --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point \
+  --resume --checkpoint <bc_checkpoint> \
+  --num_envs 64 --max_iterations 250 --run_name step6_sc_bc_resume_<commit> \
+  --headless --enable_cameras
+```
+
+The actor inputs remain eval-compatible because the BC loss uses the normal
+RSL-RL actor observation group, which is still `["policy"]`. Privileged geometry
+is used only to generate the supervised action labels through:
+
+```text
+mdp.sc_scripted_raw_action(...)
+```
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
+git diff --check
+```
+
+Local result:
+
+```text
+py_compile: passed
+git diff --check: passed
+```
+
+Planned smoke command:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-smoke-<commit> \
+  "docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 16 --max_updates 10 --report_every 1 --save_every 0 --run_name step6_sc_bc_smoke_<commit> --headless --enable_cameras\"; echo STEP6_BC_SMOKE_EXIT:\$?; sleep 120"
+```
+
+If the smoke passes, run a longer BC pass, evaluate the saved checkpoint, then
+resume PPO from it.

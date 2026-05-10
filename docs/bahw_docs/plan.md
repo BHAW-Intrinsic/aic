@@ -564,7 +564,7 @@ Work:
     `0.2656` success termination by iteration `110`, with insertion-depth
     reward returning to `0.0`.
   - Result: fixed-port reset alone is not enough for reliable final insertion.
-- [ ] Add a privileged scripted-action-prior reward for the Step 6 teacher
+- [x] Add a privileged scripted-action-prior reward for the Step 6 teacher
   curriculum.
   - Compare the raw `arm_action` against the successful scripted relative-IK
     action computed from privileged SC geometry.
@@ -572,8 +572,21 @@ Work:
     just taken against the prior for the state it was taken from.
   - Keep this as reward-only teacher shaping; do not add privileged geometry to
     actor observations.
-  - Next: run reward smoke, then retry fixed-port near-reset PPO. If it learns,
-    gradually anneal/remove the action prior and reintroduce randomization.
+  - Reward smoke passed with `17` active terms and `overall_finite: True`.
+  - PPO retry with the action-prior reward plateaued at `0.1406` success
+    termination by iteration `30`, worse than the previous fixed-port plateau.
+  - Result: scalar action-prior reward is not enough.
+- [ ] Investigate direct scripted actor bootstrap before more PPO.
+  - Prefer a supervised/behavior-cloning pretrain from eval-compatible
+    `policy` observations to scripted SC actions, then resume PPO.
+  - If no small RSL-RL hook exists, add a focused pretrain script rather than
+    continuing blind reward tuning.
+  - Added `scripts/rsl_rl/pretrain_sc_bc.py` to train the normal RSL-RL actor
+    with supervised MSE on scripted raw `arm_action` labels, then save a normal
+    RSL-RL checkpoint for PPO resume.
+  - Exposed `mdp.sc_scripted_raw_action` as the shared label generator.
+  - Next: smoke-test the BC script remotely, then run a short pretrain and
+    evaluate/resume PPO from the saved checkpoint.
 
 Training command:
 
@@ -622,7 +635,8 @@ Current gate:
   attached to the controlled TCP path, and a temporary virtual `gripper_tcp`
   tip helper reached scripted insertion. Near-port and fixed-port curricula have
   produced nonzero PPO success samples but still plateau below reliable
-  insertion. This is progress, but it is not a trained SC teacher.
+  insertion; scalar scripted-action-prior reward shaping also failed to improve.
+  This is progress, but it is not a trained SC teacher.
 
 Work:
 
@@ -733,7 +747,9 @@ Done when:
   - [x] Smoke-tested and trained with the near-port curriculum.
   - [x] Froze board/SC port randomization for the first final-insertion
     curriculum stage; fixed-port PPO still plateaued.
-  - [ ] Add and validate privileged scripted-action-prior reward shaping.
+  - [x] Added and validated privileged scripted-action-prior reward shaping;
+    PPO with this scalar prior still failed to improve.
+  - [ ] Add and validate direct scripted actor bootstrap before more PPO.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.
 - [ ] 14. Revisit distillation only after both teachers work.
