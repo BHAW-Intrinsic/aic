@@ -495,13 +495,20 @@ Work:
   - Result: `0/8` successes over `1500` steps. The scripted controller could
     move the plug to positive depth, but lateral/orientation errors remained too
     large for success.
+  - A second run with `--control_frame tip` also produced `0/8` successes. It
+    logged `wrist_to_sc_tip_pos_drift` mean `1.185182` m, so `sc_tip_link` is
+    not behaving like a fixed helper frame rigidly attached to the
+    `wrist_3_link` action target.
 - [ ] If scripted IK succeeds, use it to derive a near-port reset/curriculum or
   demonstration seed before more PPO.
 - [ ] If scripted IK fails, fix the geometry/action convention before more PPO.
-  - Current next work: diagnose the control-frame mismatch between the IK action
-    target (`wrist_3_link`) and the measured insertion geometry (`sc_tip_link`),
-    including whether the action needs a plug-tip `body_offset` or revised axis
-    convention.
+  - Current next work: inspect and repair the plug control path. Determine the
+    actual gripper/TCP frame, whether the SC plug is rigidly attached to it in
+    Isaac, and then set the IK action target/body offset or asset attachment so
+    `sc_tip_link` motion is controllable.
+  - Added the next diagnostic to the scripted checker: set the IK action body to
+    `gripper_tcp` and log drift from `wrist_3_link`, `gripper_tcp`,
+    `ati_tool_link`, `tool0`, and `sc_plug_link` to `sc_tip_link`.
 
 Training command:
 
@@ -546,8 +553,10 @@ Current gate:
 
 - Do not start Step 7 until Step 6 produces a useful SC teacher. Baseline PPO
   and three reward-only remediation attempts did not reach insertion depth or
-  success. The first scripted IK check also failed, so the next work remains
-  Step 6 action-frame/geometry diagnosis before any SFP extension.
+  success. Scripted IK checks also failed, including a tip-frame run that showed
+  meter-scale drift between `wrist_3_link` and `sc_tip_link`, so the next work
+  remains Step 6 plug attachment/control-frame diagnosis before any SFP
+  extension.
 
 Work:
 
@@ -644,7 +653,10 @@ Done when:
     iteration `110`.
   - [x] Added a headless scripted SC insertion check.
   - [x] Ran scripted SC insertion remotely.
-  - [ ] Fix the action-frame/geometry issue before more PPO or curriculum work.
+  - [x] Ran the tip-frame scripted variant and confirmed `sc_tip_link` is not a
+    fixed helper frame relative to `wrist_3_link`.
+  - [ ] Fix the plug attachment/control-frame issue before more PPO or
+    curriculum work.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher.
 - [ ] 14. Revisit distillation only after both teachers work.

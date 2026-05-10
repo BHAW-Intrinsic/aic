@@ -38,7 +38,22 @@ parser.add_argument(
     default="tip",
     help=(
         "Use 'tip' to solve the wrist target from the desired SC tip pose. "
-        "Use 'wrist_legacy' to send tip deltas directly as wrist deltas."
+        "Use 'wrist_legacy' to send tip deltas directly as action-body deltas."
+    ),
+)
+parser.add_argument(
+    "--action_body_name",
+    type=str,
+    default="wrist_3_link",
+    help="Articulation body controlled by the differential IK action.",
+)
+parser.add_argument(
+    "--diagnostic_body_names",
+    type=str,
+    default="wrist_3_link,gripper_tcp,ati_tool_link,tool0,sc_plug_link",
+    help=(
+        "Comma-separated body names whose relative transforms to sc_tip_link "
+        "are logged at reset and summary time."
     ),
 )
 parser.add_argument(
@@ -232,13 +247,63 @@ def _body_pose(env: Any, body_name: str) -> tuple[torch.Tensor, torch.Tensor]:
     return robot.data.body_pos_w[:, body_id], robot.data.body_quat_w[:, body_id]
 
 
-def _wrist_to_tip_pose(env: Any) -> tuple[torch.Tensor, torch.Tensor]:
-    wrist_pos_w, wrist_quat_w = _body_pose(env, "wrist_3_link")
+def _body_to_tip_pose(env: Any, body_name: str) -> tuple[torch.Tensor, torch.Tensor]:
+    body_pos_w, body_quat_w = _body_pose(env, body_name)
     tip_pos_w, tip_quat_w = mdp.sc_plug_tip_pose(env)
-    wrist_inv = _quat_conjugate(wrist_quat_w)
-    rel_pos = _quat_apply(wrist_inv, tip_pos_w - wrist_pos_w)
-    rel_quat = _quat_mul(wrist_inv, tip_quat_w)
+    body_inv = _quat_conjugate(body_quat_w)
+    rel_pos = _quat_apply(body_inv, tip_pos_w - body_pos_w)
+    rel_quat = _quat_mul(body_inv, tip_quat_w)
     return rel_pos, _quat_normalize(rel_quat)
+
+
+def _parse_body_names(names: str) -> list[str]:
+    parsed = []
+    for name in names.split(","):
+        name = name.strip()
+        if name and name not in parsed:
+            parsed.append(name)
+    if args_cli.action_body_name not in parsed:
+        parsed.insert(0, args_cli.action_body_name)
+    return parsed
+
+
+def _available_body_names(env: Any) -> list[str]:
+    robot = env.scene["robot"]
+    body_names = getattr(robot, "body_names", None)
+    if body_names is None:
+        body_names = getattr(getattr(robot, "data", None), "body_names", None)
+    return [str(name) for name in body_names] if body_names is not None else []
+
+
+def _diagnostic_offsets(
+    env: Any,
+    body_names: list[str],
+    report: Reporter,
+) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+    available = set(_available_body_names(env))
+    offsets = {}
+    for body_name in body_names:
+        if body_name not in available:
+            report.line(f"diagnostic_body_unavailable: {body_name}")
+            continue
+        offsets[body_name] = _body_to_tip_pose(env, body_name)
+    return offsets
+
+
+def _report_diagnostic_offsets(
+    report: Reporter,
+    prefix: str,
+    offsets: dict[str, tuple[torch.Tensor, torch.Tensor]],
+) -> None:
+    for body_name, (rel_pos, rel_quat) in offsets.items():
+        report.line(
+            f"{prefix}_{body_name}_to_sc_tip_pos env0: "
+            f"{rel_pos[0].detach().cpu().tolist()}"
+        )
+        report.line(
+            f"{prefix}_{body_name}_to_sc_tip_quat env0: "
+            f"{rel_quat[0].detach().cpu().tolist()}"
+        )
 
 
 def _root_frame_pose(
@@ -293,24 +358,24 @@ def _scripted_actions(env: Any, inactive: torch.Tensor) -> torch.Tensor:
         desired_tip_pos_w = plug_pos_w + delta_pos_w
         desired_tip_quat_w = _quat_mul(_quat_from_axis_angle(rot_vec_w), plug_quat_w)
 
-        wrist_pos_w, wrist_quat_w = _body_pose(env, "wrist_3_link")
-        tip_pos_in_wrist, tip_quat_in_wrist = _wrist_to_tip_pose(env)
-        desired_wrist_quat_w = _quat_mul(
-            desired_tip_quat_w, _quat_conjugate(tip_quat_in_wrist)
+        body_pos_w, body_quat_w = _body_pose(env, args_cli.action_body_name)
+        tip_pos_in_body, tip_quat_in_body = _body_to_tip_pose(
+            env, args_cli.action_body_name
         )
-        desired_wrist_pos_w = desired_tip_pos_w - _quat_apply(
-            desired_wrist_quat_w, tip_pos_in_wrist
+        desired_body_quat_w = _quat_mul(
+            desired_tip_quat_w, _quat_conjugate(tip_quat_in_body)
+        )
+        desired_body_pos_w = desired_tip_pos_w - _quat_apply(
+            desired_body_quat_w, tip_pos_in_body
         )
 
-        wrist_pos_root, wrist_quat_root = _root_frame_pose(
-            env, wrist_pos_w, wrist_quat_w
+        body_pos_root, body_quat_root = _root_frame_pose(env, body_pos_w, body_quat_w)
+        desired_body_pos_root, desired_body_quat_root = _root_frame_pose(
+            env, desired_body_pos_w, desired_body_quat_w
         )
-        desired_wrist_pos_root, desired_wrist_quat_root = _root_frame_pose(
-            env, desired_wrist_pos_w, desired_wrist_quat_w
-        )
-        delta_pos_root = desired_wrist_pos_root - wrist_pos_root
+        delta_pos_root = desired_body_pos_root - body_pos_root
         delta_quat_root = _quat_mul(
-            desired_wrist_quat_root, _quat_conjugate(wrist_quat_root)
+            desired_body_quat_root, _quat_conjugate(body_quat_root)
         )
         rot_vec_root = _axis_angle_from_quat(delta_quat_root)
         rot_vec_root = _clip_by_norm(rot_vec_root, args_cli.max_rotation_step)
@@ -355,6 +420,11 @@ def main() -> int:
         if hasattr(env_cfg.terminations, "sc_insertion_success"):
             env_cfg.terminations.sc_insertion_success = None
 
+    if hasattr(env_cfg, "actions") and hasattr(env_cfg.actions, "arm_action"):
+        env_cfg.actions.arm_action.body_name = args_cli.action_body_name
+    if hasattr(env_cfg, "commands") and hasattr(env_cfg.commands, "ee_pose"):
+        env_cfg.commands.ee_pose.body_name = args_cli.action_body_name
+
     log_path = None
     if not args_cli.no_log_file:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -373,6 +443,7 @@ def main() -> int:
         report.line(f"num_envs: {args_cli.num_envs}")
         report.line(f"max_steps: {args_cli.max_steps}")
         report.line(f"control_frame: {args_cli.control_frame}")
+        report.line(f"action_body_name: {args_cli.action_body_name}")
         if log_path is not None:
             report.line(f"log_path: {log_path}")
 
@@ -381,15 +452,9 @@ def main() -> int:
         env.reset()
 
         target_ids = mdp.active_sc_target_ids(env).detach().clone()
-        initial_tip_offset_pos, initial_tip_offset_quat = _wrist_to_tip_pose(env)
-        report.line(
-            "initial_wrist_to_sc_tip_pos env0: "
-            f"{initial_tip_offset_pos[0].detach().cpu().tolist()}"
-        )
-        report.line(
-            "initial_wrist_to_sc_tip_quat env0: "
-            f"{initial_tip_offset_quat[0].detach().cpu().tolist()}"
-        )
+        diagnostic_body_names = _parse_body_names(args_cli.diagnostic_body_names)
+        initial_offsets = _diagnostic_offsets(env, diagnostic_body_names, report)
+        _report_diagnostic_offsets(report, "initial", initial_offsets)
         first_success_step = torch.full(
             (env.num_envs,), -1, device=env.device, dtype=torch.long
         )
@@ -436,22 +501,17 @@ def main() -> int:
         final_lateral = mdp.sc_lateral_error(env)
         final_orientation = mdp.sc_orientation_error(env)
         final_depth = mdp.sc_insertion_depth(env)
-        final_tip_offset_pos, final_tip_offset_quat = _wrist_to_tip_pose(env)
-        offset_drift = torch.norm(
-            final_tip_offset_pos - initial_tip_offset_pos, dim=-1
-        )
+        final_offsets = _diagnostic_offsets(env, diagnostic_body_names, report)
         report.line(f"final_lateral: {_summary(final_lateral)}")
         report.line(f"final_orientation: {_summary(final_orientation)}")
         report.line(f"final_depth: {_summary(final_depth)}")
-        report.line(f"wrist_to_sc_tip_pos_drift: {_summary(offset_drift)}")
-        report.line(
-            "final_wrist_to_sc_tip_pos env0: "
-            f"{final_tip_offset_pos[0].detach().cpu().tolist()}"
-        )
-        report.line(
-            "final_wrist_to_sc_tip_quat env0: "
-            f"{final_tip_offset_quat[0].detach().cpu().tolist()}"
-        )
+        for body_name, (final_pos, _) in final_offsets.items():
+            if body_name not in initial_offsets:
+                continue
+            initial_pos, _ = initial_offsets[body_name]
+            offset_drift = torch.norm(final_pos - initial_pos, dim=-1)
+            report.line(f"{body_name}_to_sc_tip_pos_drift: {_summary(offset_drift)}")
+        _report_diagnostic_offsets(report, "final", final_offsets)
         return 0 if bool((first_success_step >= 0).all().item()) else 1
     finally:
         if env is not None:

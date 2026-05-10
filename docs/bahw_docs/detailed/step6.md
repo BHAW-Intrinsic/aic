@@ -599,3 +599,198 @@ Interpretation:
   - likely fixes are adding the correct action `body_offset`, commanding the
     actual plug-tip frame if Isaac Lab supports it, or correcting the plug/port
     axis convention before curriculum design.
+
+## Tip-Frame Scripted Check
+
+Commit `f7af540` updated `scripts/check_aic_scripted_insert.py` to add
+`--control_frame tip` as the default mode.
+
+The new mode:
+
+- computes a desired SC tip pose from privileged plug-to-port geometry
+- estimates the current transform from `wrist_3_link` to `sc_tip_link`
+- solves the equivalent desired `wrist_3_link` pose
+- sends the relative IK action for that wrist pose
+- logs the initial/final `wrist_to_sc_tip` transform and drift
+
+Reason:
+
+- The previous scripted controller used plug-tip errors but sent them directly
+  as wrist-frame relative IK deltas.
+- The environment action controls `wrist_3_link`, while the insertion geometry
+  and success condition measure `sc_tip_link`.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py
+git diff --check
+```
+
+Result: passed locally.
+
+Remote sync:
+
+```bash
+tmux new-session -d -s isaac-step6-pull-f7af540 \
+  "cd ~/IsaacLab/aic && git pull --ff-only && docker cp aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py; echo STEP6_PULL_COPY_F7AF540_EXIT:\$?; sleep 60"
+```
+
+Result:
+
+- Host repo updated from `be9cfe4` to `f7af540`.
+- Updated script copied into the Isaac Lab container.
+- Exit: `STEP6_PULL_COPY_F7AF540_EXIT:0`.
+
+Stale-process check before launch:
+
+```bash
+tmux new-session -d -s isaac-step6-check-stale-before-tip \
+  "docker exec isaac-lab-base bash -lc 'ps -eo pid,ppid,stat,etime,pcpu,pmem,cmd | grep -E \"rsl_rl/train.py|rsl_rl/evaluate.py|check_aic_rewards.py|check_aic_scripted_insert.py\" | grep -v grep || true'; echo STEP6_TIP_STALE_CHECK_EXIT:\$?; sleep 60"
+```
+
+Result: no stale matching processes; exit `STEP6_TIP_STALE_CHECK_EXIT:0`.
+
+Remote command:
+
+```bash
+tmux new-session -d -s isaac-step6-scripted-tip-f7af540 \
+  "docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 8 --max_steps 1500 --report_every 50 --control_frame tip --headless --enable_cameras'; echo STEP6_SCRIPTED_TIP_EXIT:\$?; sleep 60"
+```
+
+Result:
+
+- Action space loaded as `Box(-inf, inf, (8, 6), float32)`.
+- Initial `wrist_to_sc_tip_pos` for env 0:
+  `[0.09874817728996277, 0.19324107468128204, -0.7596471309661865]`
+- Initial `wrist_to_sc_tip_quat` for env 0:
+  `[-0.037868522107601166, -0.003483319655060768, -0.9961195588111877, -0.07937105745077133]`
+- The initial offset is about `0.79 m`, which is far too large for a small TCP
+  helper offset between the wrist and a rigidly held SC plug tip.
+- Step `1500` metrics:
+  - successes: `0/8`
+  - lateral mean/min/max: `0.749406 / 0.302526 / 1.156759`
+  - orientation mean/min/max: `1.420358 / 0.261339 / 1.624103`
+  - depth mean/min/max: `0.023790 / 0.014668 / 0.042206`
+- Summary:
+  - first success steps: all `-1`
+  - `sc_port`: `4` episodes, `0` successes
+  - `sc_port_2`: `4` episodes, `0` successes
+  - `wrist_to_sc_tip_pos_drift`: mean/min/max
+    `1.185182 / 0.758866 / 1.513464`
+  - final `wrist_to_sc_tip_pos` for env 0:
+    `[0.09240195155143738, -0.3479488492012024, 0.40017855167388916]`
+  - final `wrist_to_sc_tip_quat` for env 0:
+    `[0.15916739404201508, -0.3354725241661072, 0.9281059503555298, -0.0272614024579525]`
+- Exit: `STEP6_SCRIPTED_TIP_EXIT:0`.
+
+Log copied on the host:
+
+```text
+~/IsaacLab/aic/logs/aic_scripted_insert/20260510_125349_AIC-Task-v0.log
+```
+
+Copy commands used from a named host tmux session:
+
+```bash
+tmux new-session -d -s isaac-step6-copy-tip-log-f7af540b
+tmux send-keys -t isaac-step6-copy-tip-log-f7af540b \
+  'mkdir -p ~/IsaacLab/aic/logs/aic_scripted_insert' C-m
+tmux send-keys -t isaac-step6-copy-tip-log-f7af540b \
+  'latest=$(docker exec isaac-lab-base bash -lc "ls -t /workspace/isaaclab/aic/logs/aic_scripted_insert/*_AIC-Task-v0.log | head -1"); echo LATEST:$latest; docker cp isaac-lab-base:$latest ~/IsaacLab/aic/logs/aic_scripted_insert/; echo STEP6_TIP_LOG_COPY_EXIT:$?' C-m
+```
+
+Copy result:
+
+```text
+LATEST:/workspace/isaaclab/aic/logs/aic_scripted_insert/20260510_125349_AIC-Task-v0.log
+Successfully copied 6.5kB (transferred 8.19kB) to /var/home/bahw/IsaacLab/aic/logs/aic_scripted_insert/
+STEP6_TIP_LOG_COPY_EXIT:0
+```
+
+Post-run stale-process check:
+
+```bash
+tmux new-session -d -s isaac-step6-stale-check-after-tip-f7af540
+tmux send-keys -t isaac-step6-stale-check-after-tip-f7af540 \
+  'pgrep -af "check_aic_scripted_insert|rsl_rl/train.py|isaaclab.sh"; echo STEP6_TIP_STALE_CHECK_EXIT:$?' C-m
+```
+
+Result:
+
+```text
+STEP6_TIP_STALE_CHECK_EXIT:1
+```
+
+No matching stale process was listed; exit `1` is the expected `pgrep` result
+when no process matches.
+
+Interpretation:
+
+- Solving a desired wrist pose from the current tip pose did not fix scripted
+  insertion.
+- The measured transform between `wrist_3_link` and `sc_tip_link` changes by
+  roughly meter scale during the run, so `sc_tip_link` is not behaving like a
+  fixed helper frame rigidly attached to the wrist action target.
+- The failure is now primarily an action-frame/asset-attachment problem, not a
+  reward-weight problem.
+- Do not start Step 7, PPO curriculum design, or more reward-only training yet.
+- Next Step 6 work is to inspect and repair the control path: identify the
+  actual robot/gripper/TCP frame that controls the held SC plug, determine
+  whether the SC plug is rigidly attached to the gripper in Isaac, and then set
+  the IK action target/body offset or asset attachment so `sc_tip_link` motion
+  is controllable.
+
+## Attachment Diagnosis
+
+Read-only codebase exploration after the tip-frame run found the likely root
+cause:
+
+- Isaac loads a unified robot/cable USD from `aic_unified_robot_cable_sdf.usd`.
+- Runtime robot bodies include `wrist_3_link`, `tool0`, `ati_tool_link`,
+  `gripper_tcp`, cable segment bodies, `sc_plug_link`, and `sc_tip_link`.
+- The SC plug asset itself has `sc_tip_link` fixed to `sc_plug_link`, but the
+  plug/cable chain is not rigidly fixed to `wrist_3_link`.
+- Gazebo/eval control uses the TCP (`gripper/tcp`) rather than the wrist frame;
+  the Isaac body naming exposes the analogous `gripper_tcp`.
+- Therefore the first question is not another reward-weight question. It is
+  whether Isaac's currently loaded SC plug is the gripped plug, and whether it
+  is attached to the gripper/TCP in a controllable way.
+
+Commit in progress updates `scripts/check_aic_scripted_insert.py` again for this
+diagnosis:
+
+- adds `--action_body_name`, defaulting to `wrist_3_link`
+- sets the Isaac Lab differential IK action body to that value before env
+  creation
+- logs relative transforms from candidate bodies to `sc_tip_link`
+- default diagnostic bodies:
+  `wrist_3_link,gripper_tcp,ati_tool_link,tool0,sc_plug_link`
+- keeps `--control_frame tip`, but now solves the desired action-body pose rather
+  than hard-coding `wrist_3_link`
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py
+git diff --check
+```
+
+Result: passed locally.
+
+Next remote diagnostic:
+
+```bash
+tmux new-session -d -s isaac-step6-scripted-gripper-diagnostic \
+  "docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_scripted_insert.py --task AIC-Task-v0 --num_envs 8 --max_steps 300 --report_every 50 --control_frame tip --action_body_name gripper_tcp --headless --enable_cameras'; echo STEP6_GRIPPER_DIAG_EXIT:\$?; sleep 60"
+```
+
+Interpretation target:
+
+- If `gripper_tcp_to_sc_tip` drift is small, the remaining issue is likely action
+  target/body-offset convention.
+- If `gripper_tcp_to_sc_tip` drift is also large, the SC plug is not rigidly
+  attached to the TCP in the current Isaac asset, and the asset/attachment must
+  be fixed before curriculum or PPO training can succeed.
