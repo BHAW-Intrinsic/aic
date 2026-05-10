@@ -7,11 +7,13 @@ Scope:
 
 - Isaac Lab training path only
 - SC first, then SFP
-- PPO with asymmetric actor-critic
+- PPO with asymmetric actor-critic when RL fine-tuning is useful
+- supervised BC/DAgger bootstraps when scripted insertion is the only reliable
+  signal
 - eval-compatible actor from the start
 - privileged critic during training
 - direct plug-to-port rewards, not `ee_pose` command rewards
-- high-level distillation only after PPO teachers work
+- high-level distillation only after reliable specialist teachers/policies work
 
 ## Current Decisions
 
@@ -21,10 +23,11 @@ Scope:
   current `ee_pose` command rewards as the learning objective.
 - Train the actor with eval-compatible observations from day one. The critic gets
   privileged geometry.
-- Train separate SC and SFP teachers first. A single submitted `aic_model` can
-  later route to the right checkpoint using eval-provided `Task` metadata.
-- Treat distillation as a later phase. Do not implement it before the privileged
-  PPO teacher can solve insertion.
+- Train separate SC and SFP teachers or specialist policies first. A single
+  submitted `aic_model` can later route to the right checkpoint using
+  eval-provided `Task` metadata.
+- Treat distillation as a later phase. Do not implement it before a reliable
+  teacher/policy can solve insertion.
 
 ## Relevant Files
 
@@ -590,8 +593,17 @@ Work:
   - PPO resume from the BC checkpoint regressed: the first PPO checkpoint
     evaluated at `0/128` successes, so do not prefer PPO-resumed checkpoint.
   - Added `--rollout_policy actor|blend` support for DAgger-style BC on states
-    reached by the actor's own actions. Next: run actor-rollout BC from the
-    useful BC checkpoint and evaluate it against the `193/256` baseline.
+    reached by the actor's own actions.
+  - Actor-rollout BC from the useful checkpoint completed, but regressed hard:
+    `0/256` deterministic evaluation successes, all timeouts, all lateral
+    misses, `253/256` orientation misses, and `254/256` depth shortfalls.
+    Do not prefer this checkpoint.
+- [ ] Add failure diagnostics before the next Step 6 training attempt.
+  - Extend `evaluate.py` to report signed lateral components in the active port
+    frame, optional terminal actor-vs-scripted action error, and sample failure
+    rows. Use this to decide whether the useful `193/256` BC checkpoint has a
+    systematic calibration bias, a target-specific issue, or a recovery-policy
+    issue.
 
 Training command:
 
@@ -634,14 +646,17 @@ Qualification trials 1 and 2 are SFP, so SFP must be trained directly.
 
 Current gate:
 
-- Do not start Step 7 until Step 6 produces a useful SC teacher. Baseline PPO
+- Do not start Step 7 until Step 6 produces a reliable SC teacher/policy.
+  Baseline PPO
   and three reward-only remediation attempts did not reach insertion depth or
   success. Step 6 later found that the physical Isaac SC tip was not rigidly
   attached to the controlled TCP path, and a temporary virtual `gripper_tcp`
   tip helper reached scripted insertion. Near-port and fixed-port curricula have
   produced nonzero PPO success samples but still plateau below reliable
   insertion; scalar scripted-action-prior reward shaping also failed to improve.
-  This is progress, but it is not a trained SC teacher.
+  Expert-rollout BC reached `193/256` successes and is the current best SC
+  checkpoint, but PPO resume and actor-rollout BC both regressed. This is
+  progress, but it is not a reliable SC teacher/policy.
 
 Work:
 
@@ -671,8 +686,10 @@ Done when:
 
 - [ ] The same observation/reward/termination API works for SFP.
 - [ ] SFP target can switch between port 0 and port 1.
-- [ ] SFP PPO teacher smoke run starts.
-- [ ] SFP teacher learns insertion in simulation.
+- [ ] SFP teacher/policy smoke run starts.
+  - Carry over the Step 6 scripted-control plus BC/DAgger bootstrap path if
+    reward-only PPO remains unreliable.
+- [ ] SFP teacher/policy learns insertion in simulation.
 
 ## Step 8: Keep Separate Specialist Checkpoints
 
@@ -685,6 +702,10 @@ Output checkpoints:
 
 - `sc_teacher.pt`
 - `sfp_teacher.pt`
+
+These may be PPO checkpoints or BC/DAgger specialist policy checkpoints. Record
+the training provenance with each checkpoint instead of assuming PPO is the only
+valid teacher source.
 
 Later distilled outputs:
 
@@ -699,15 +720,17 @@ Done when:
 
 ## Step 9: Distillation, High Level Only
 
-Do not start this until the PPO teacher is useful.
+Do not start this until reliable specialist teachers/policies exist.
 
 High-level work later:
 
 - [ ] Create RSL-RL distillation config for SC.
 - [ ] Create RSL-RL distillation config for SFP.
-- [ ] Load trained PPO teacher checkpoints.
+- [ ] Load trained teacher checkpoints, whether PPO or BC/DAgger.
 - [ ] Train students using eval-compatible observations only.
 - [ ] Export student policies.
+  - If the reliable specialist policy already uses only eval-compatible actor
+    observations, direct export may be valid and distillation may be unnecessary.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
   - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
   - [ ] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
@@ -754,9 +777,13 @@ Done when:
     curriculum stage; fixed-port PPO still plateaued.
   - [x] Added and validated privileged scripted-action-prior reward shaping;
     PPO with this scalar prior still failed to improve.
-  - [ ] Add and validate direct scripted actor bootstrap before more PPO.
+  - [x] Added direct scripted actor bootstrap before more PPO; expert-rollout
+    BC is the current best checkpoint at `193/256`, while PPO resume and
+    actor-rollout BC regressed.
+  - [ ] Add diagnostics for the current BC failure modes before another
+    training variant.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
-- [ ] 13. Train SFP teacher.
+- [ ] 13. Train SFP teacher/policy.
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria
@@ -767,13 +794,13 @@ The SC implementation is done when:
 - [ ] Actor observations are eval-compatible.
 - [ ] Critic observations include privileged insertion geometry.
 - [ ] SC plug-to-port geometry is correct for both SC ports.
-- [ ] SC PPO teacher inserts in randomized simulation.
+- [ ] SC teacher/policy inserts in randomized simulation.
 
 The SFP implementation is done when:
 
 - [ ] The same MDP structure supports SFP.
 - [ ] SFP plug and port entrance geometry are correct.
-- [ ] SFP PPO teacher inserts in randomized simulation.
+- [ ] SFP teacher/policy inserts in randomized simulation.
 
 The training path is ready for distillation when:
 

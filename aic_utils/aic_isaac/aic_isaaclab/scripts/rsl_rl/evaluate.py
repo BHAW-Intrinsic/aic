@@ -53,6 +53,18 @@ parser.add_argument("--lateral_threshold", type=float, default=0.005)
 parser.add_argument("--orientation_threshold", type=float, default=0.20)
 parser.add_argument("--depth_threshold", type=float, default=0.012)
 parser.add_argument(
+    "--action_error_diagnostics",
+    action="store_true",
+    default=False,
+    help="Also compare terminal actor actions against scripted SC labels.",
+)
+parser.add_argument(
+    "--failure_sample_count",
+    type=int,
+    default=0,
+    help="Print this many terminal failure samples with signed lateral diagnostics.",
+)
+parser.add_argument(
     "--output_dir",
     type=str,
     default=None,
@@ -150,6 +162,62 @@ def _target_name(target_id: int) -> str:
     return f"unknown_{target_id}"
 
 
+def _quat_normalize(quat: torch.Tensor) -> torch.Tensor:
+    return quat / torch.clamp(torch.norm(quat, dim=-1, keepdim=True), min=1.0e-9)
+
+
+def _quat_apply(quat: torch.Tensor, vec: torch.Tensor) -> torch.Tensor:
+    """Rotate vectors by quaternions in Isaac's wxyz convention."""
+    quat = _quat_normalize(quat)
+    q_vec = quat[..., 1:]
+    q_w = quat[..., 0:1]
+    uv = torch.cross(q_vec, vec, dim=-1)
+    uuv = torch.cross(q_vec, uv, dim=-1)
+    return vec + 2.0 * (q_w * uv + uuv)
+
+
+def _axis_from_port_quat(
+    port_quat_w: torch.Tensor, local_axis: tuple[float, float, float]
+) -> torch.Tensor:
+    axis = torch.tensor(
+        local_axis, device=port_quat_w.device, dtype=port_quat_w.dtype
+    ).unsqueeze(0)
+    return _quat_apply(port_quat_w, axis.expand(port_quat_w.shape[0], -1))
+
+
+def _sc_signed_lateral_components(
+    env,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return signed lateral error components in the active SC port root frame."""
+    plug_pos_w, _ = mdp.sc_plug_tip_pose(env)
+    entry_pos_w, _ = mdp.sc_port_entry_pose(env)
+    _, port_quat_w = mdp.active_sc_port_root_pose(env)
+    insertion_axis_w = mdp.sc_port_insertion_axis(env)
+
+    delta = plug_pos_w - entry_pos_w
+    depth = torch.sum(delta * insertion_axis_w, dim=-1, keepdim=True)
+    lateral = delta - depth * insertion_axis_w
+
+    port_x_w = _axis_from_port_quat(port_quat_w, (1.0, 0.0, 0.0))
+    port_z_w = _axis_from_port_quat(port_quat_w, (0.0, 0.0, 1.0))
+    return (
+        torch.sum(lateral * port_x_w, dim=-1),
+        torch.sum(lateral * port_z_w, dim=-1),
+    )
+
+
+def _new_target_stats() -> dict[str, float | int]:
+    return {
+        "episodes": 0,
+        "successes": 0,
+        "sum_lateral": 0.0,
+        "sum_lateral_x": 0.0,
+        "sum_lateral_z": 0.0,
+        "sum_orientation": 0.0,
+        "sum_depth": 0.0,
+    }
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(
     env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg,
@@ -231,13 +299,16 @@ def main(
         episode_lengths: list[int] = []
         success_lengths: list[int] = []
         terminal_lateral: list[float] = []
+        terminal_lateral_x: list[float] = []
+        terminal_lateral_z: list[float] = []
         terminal_orientation: list[float] = []
         terminal_depth: list[float] = []
         success_lateral: list[float] = []
         success_depth: list[float] = []
+        terminal_action_error: list[float] = []
+        failure_samples: list[str] = []
         per_target = {
-            target_name: {"episodes": 0, "successes": 0}
-            for target_name in mdp.SC_TARGET_NAMES
+            target_name: _new_target_stats() for target_name in mdp.SC_TARGET_NAMES
         }
         last_progress_report = 0
 
@@ -265,6 +336,11 @@ def main(
                     lateral = mdp.sc_lateral_error(base_env)
                     orientation = mdp.sc_orientation_error(base_env)
                     depth = mdp.sc_insertion_depth(base_env)
+                    lateral_x, lateral_z = _sc_signed_lateral_components(base_env)
+                    action_error = None
+                    if args_cli.action_error_diagnostics:
+                        scripted_actions = mdp.sc_scripted_raw_action(base_env)
+                        action_error = torch.norm(actions - scripted_actions, dim=-1)
                     success = mdp.sc_insertion_success(
                         base_env,
                         lateral_threshold=args_cli.lateral_threshold,
@@ -280,20 +356,35 @@ def main(
                     completed += 1
                     active[env_id] = False
 
-                    target_name = _target_name(int(target_ids[env_id].detach().cpu().item()))
-                    per_target.setdefault(target_name, {"episodes": 0, "successes": 0})
+                    target_name = _target_name(
+                        int(target_ids[env_id].detach().cpu().item())
+                    )
+                    per_target.setdefault(target_name, _new_target_stats())
                     per_target[target_name]["episodes"] += 1
 
                     step_count = int(episode_steps[env_id].detach().cpu().item())
                     lat = float(lateral[env_id].detach().cpu().item())
+                    lat_x = float(lateral_x[env_id].detach().cpu().item())
+                    lat_z = float(lateral_z[env_id].detach().cpu().item())
                     ori = float(orientation[env_id].detach().cpu().item())
                     dep = float(depth[env_id].detach().cpu().item())
                     succeeded = bool(success[env_id].detach().cpu().item())
+                    act_err = float("nan")
+                    if action_error is not None:
+                        act_err = float(action_error[env_id].detach().cpu().item())
+                        terminal_action_error.append(act_err)
 
                     episode_lengths.append(step_count)
                     terminal_lateral.append(lat)
+                    terminal_lateral_x.append(lat_x)
+                    terminal_lateral_z.append(lat_z)
                     terminal_orientation.append(ori)
                     terminal_depth.append(dep)
+                    per_target[target_name]["sum_lateral"] += lat
+                    per_target[target_name]["sum_lateral_x"] += lat_x
+                    per_target[target_name]["sum_lateral_z"] += lat_z
+                    per_target[target_name]["sum_orientation"] += ori
+                    per_target[target_name]["sum_depth"] += dep
 
                     if succeeded:
                         success_count += 1
@@ -310,6 +401,15 @@ def main(
                             orientation_miss_count += 1
                         if dep <= args_cli.depth_threshold:
                             depth_shortfall_count += 1
+                        if len(failure_samples) < args_cli.failure_sample_count:
+                            failure_samples.append(
+                                "  "
+                                f"episode={completed} target={target_name} "
+                                f"steps={step_count} lateral={lat:.6f} "
+                                f"lateral_x={lat_x:.6f} lateral_z={lat_z:.6f} "
+                                f"orientation={ori:.6f} depth={dep:.6f} "
+                                f"action_error={act_err:.6f}"
+                            )
 
                 if (
                     completed > last_progress_report
@@ -331,25 +431,57 @@ def main(
         report.line(f"mean_episode_length_on_success: {_mean_or_nan(success_lengths):.3f}")
         report.line(f"mean_lateral_error_at_termination: {_mean_or_nan(terminal_lateral):.6f}")
         report.line(
+            "mean_signed_lateral_x_at_termination: "
+            f"{_mean_or_nan(terminal_lateral_x):.6f}"
+        )
+        report.line(
+            "mean_signed_lateral_z_at_termination: "
+            f"{_mean_or_nan(terminal_lateral_z):.6f}"
+        )
+        report.line(
             "mean_orientation_error_at_termination: "
             f"{_mean_or_nan(terminal_orientation):.6f}"
         )
         report.line(f"mean_insertion_depth_at_termination: {_mean_or_nan(terminal_depth):.6f}")
         report.line(f"mean_success_lateral_error: {_mean_or_nan(success_lateral):.6f}")
         report.line(f"mean_success_insertion_depth: {_mean_or_nan(success_depth):.6f}")
+        if args_cli.action_error_diagnostics:
+            report.line(
+                "mean_terminal_action_error_vs_scripted: "
+                f"{_mean_or_nan(terminal_action_error):.6f}"
+            )
         report.line("failure_breakdown:")
         report.line(f"  timeout: {timeout_count}")
         report.line(f"  lateral_miss: {lateral_miss_count}")
         report.line(f"  orientation_miss: {orientation_miss_count}")
         report.line(f"  depth_shortfall: {depth_shortfall_count}")
+        if failure_samples:
+            report.line("failure_samples:")
+            for sample in failure_samples:
+                report.line(sample)
         report.line("per_target:")
         for target_name, stats in per_target.items():
-            episodes = stats["episodes"]
-            successes = stats["successes"]
+            episodes = int(stats["episodes"])
+            successes = int(stats["successes"])
             rate = successes / episodes if episodes else float("nan")
+            mean_lat = float(stats["sum_lateral"]) / episodes if episodes else float("nan")
+            mean_lat_x = (
+                float(stats["sum_lateral_x"]) / episodes if episodes else float("nan")
+            )
+            mean_lat_z = (
+                float(stats["sum_lateral_z"]) / episodes if episodes else float("nan")
+            )
+            mean_ori = (
+                float(stats["sum_orientation"]) / episodes if episodes else float("nan")
+            )
+            mean_depth = float(stats["sum_depth"]) / episodes if episodes else float("nan")
             report.line(
                 f"  {target_name}: episodes={episodes} "
-                f"successes={successes} success_rate={rate:.6f}"
+                f"successes={successes} success_rate={rate:.6f} "
+                f"mean_lateral={mean_lat:.6f} "
+                f"mean_lateral_x={mean_lat_x:.6f} "
+                f"mean_lateral_z={mean_lat_z:.6f} "
+                f"mean_orientation={mean_ori:.6f} mean_depth={mean_depth:.6f}"
             )
     finally:
         if wrapped_env is not None:

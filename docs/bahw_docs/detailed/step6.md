@@ -1838,3 +1838,84 @@ actor's deterministic action while still labeling each visited state with the
 scripted privileged controller. `blend` linearly mixes scripted and actor
 actions. The next run should resume from the useful BC checkpoint and use
 `--rollout_policy actor`.
+
+Actor-rollout smoke command:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-actor-smoke-e88ad49 \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_ACTOR_SMOKE_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --resume --load_run 2026-05-10_15-03-31_step6_sc_bc_8a19d2a --checkpoint model_1000.pt --num_envs 16 --max_updates 20 --report_every 5 --save_every 0 --learning_rate 3e-4 --rollout_policy actor --run_name step6_sc_bc_actor_smoke_e88ad49 --headless --enable_cameras\"; echo STEP6_BC_ACTOR_SMOKE_EXIT:\$?; sleep 120"
+```
+
+Actor-rollout smoke result:
+
+```text
+rollout_policy: actor
+resume_path: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-03-31_step6_sc_bc_8a19d2a/model_1000.pt
+update=20 loss=0.039893 pred_error_mean=0.470724 successes=0/16 lateral_mean=0.013944 orientation_mean=0.018623 depth_mean=0.017231
+final_checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-32-05_step6_sc_bc_actor_smoke_e88ad49/model_20.pt
+STEP6_BC_ACTOR_SMOKE_EXIT:0
+```
+
+Long actor-rollout BC command:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-actor-train-e88ad49 \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_ACTOR_TRAIN_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/pretrain_sc_bc.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --resume --load_run 2026-05-10_15-03-31_step6_sc_bc_8a19d2a --checkpoint model_1000.pt --num_envs 64 --max_updates 1000 --report_every 50 --save_every 250 --learning_rate 3e-4 --rollout_policy actor --run_name step6_sc_bc_actor_e88ad49 --headless --enable_cameras\"; echo STEP6_BC_ACTOR_TRAIN_EXIT:\$?; sleep 120"
+```
+
+Long actor-rollout BC result:
+
+```text
+log_dir: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-34-12_step6_sc_bc_actor_e88ad49
+rollout_policy: actor
+update=1000 loss=0.234899 pred_error_mean=1.129753 successes=0/64 lateral_mean=0.031516 orientation_mean=0.112044 depth_mean=0.013553
+final_checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-34-12_step6_sc_bc_actor_e88ad49/model_1000.pt
+elapsed_seconds: 189.65
+STEP6_BC_ACTOR_TRAIN_EXIT:0
+```
+
+Actor-rollout BC evaluation command:
+
+```bash
+tmux new-session -d -s isaac-step6-bc-actor-eval-e88ad49 \
+  "pgrep -af \"rsl_rl/train.py|rsl_rl/evaluate.py|pretrain_sc_bc.py|isaaclab.sh\"; echo STEP6_BC_ACTOR_EVAL_STALE_BEFORE_EXIT:\$?; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 64 --num_eval_episodes 256 --max_episode_steps 300 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-34-12_step6_sc_bc_actor_e88ad49/model_1000.pt --headless --enable_cameras\"; echo STEP6_BC_ACTOR_EVAL_EXIT:\$?; sleep 120"
+```
+
+Actor-rollout BC evaluation result:
+
+```text
+progress: 64/256 successes=0
+progress: 128/256 successes=0
+progress: 192/256 successes=0
+progress: 256/256 successes=0
+
+episodes: 256
+successes: 0
+success_rate: 0.000000
+mean_episode_length: 300.000
+mean_lateral_error_at_termination: 0.307786
+mean_orientation_error_at_termination: 1.494016
+mean_insertion_depth_at_termination: -0.383904
+failure_breakdown:
+  timeout: 256
+  lateral_miss: 256
+  orientation_miss: 253
+  depth_shortfall: 254
+per_target:
+  sc_port: episodes=134 successes=0 success_rate=0.000000
+  sc_port_2: episodes=122 successes=0 success_rate=0.000000
+STEP6_BC_ACTOR_EVAL_EXIT:0
+```
+
+Conclusion:
+
+- Actor-rollout BC at learning rate `3e-4` is not an improvement over the
+  expert-rollout BC checkpoint. It pushes the policy far outside the insertion
+  corridor and should not be preferred.
+- The current best checkpoint remains:
+  `/workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_15-03-31_step6_sc_bc_8a19d2a/model_1000.pt`.
+- Before another training run, add evaluator diagnostics for signed lateral
+  components, optional terminal actor-vs-scripted action error, and failure
+  samples. Use those diagnostics on the useful expert-rollout BC checkpoint to
+  decide whether the remaining misses are systematic calibration bias,
+  target-specific geometry bias, or recovery failure.
