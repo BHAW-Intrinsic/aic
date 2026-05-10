@@ -83,6 +83,7 @@ import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
 import aic_task.tasks  # noqa: F401
+from aic_task.tasks.manager_based.aic_task.mdp import geometry as aic_geometry
 
 
 class Reporter:
@@ -143,6 +144,13 @@ def _format_vector(value: list[float] | None, precision: int = 6) -> str:
     if value is None:
         return "unavailable"
     return "[" + ", ".join(f"{v:.{precision}f}" for v in value) + "]"
+
+
+def _format_scalar(value: torch.Tensor | None, precision: int = 6) -> str:
+    row = _tensor_row(value)
+    if not row:
+        return "unavailable"
+    return f"{row[0]:.{precision}f}"
 
 
 def _scene_collection_names(scene: Any, attr_name: str) -> list[str]:
@@ -339,6 +347,46 @@ def _print_broad_usd_search(report: Reporter, stage: Any, max_matches: int) -> N
         report.line(f"... stopped after --max_usd_matches={max_matches}")
 
 
+def _print_geometry_helper_values(report: Reporter, env: Any) -> None:
+    report.line()
+    report.line("== AIC Geometry Helper Values ==")
+    try:
+        active_ids = aic_geometry.active_sc_target_ids(env)
+        active_names = aic_geometry.active_sc_target_names(env)
+        plug_pos, plug_quat = aic_geometry.sc_plug_tip_pose(env)
+        port_pos, port_quat = aic_geometry.sc_port_entry_pose(env)
+        plug_axis = aic_geometry.sc_plug_axis(env)
+        port_axis = aic_geometry.sc_port_insertion_axis(env)
+        plug_to_port = aic_geometry.sc_plug_to_port_vector(env)
+        lateral_error = aic_geometry.sc_lateral_error(env)
+        insertion_depth = aic_geometry.sc_insertion_depth(env)
+        orientation_error = aic_geometry.sc_orientation_error(env)
+    except Exception as exc:
+        report.line(f"Geometry helper inspection failed: {type(exc).__name__}: {exc}")
+        return
+
+    report.line(
+        f"active_sc_target_ids env0: {_format_vector(_tensor_row(active_ids), 0)}"
+    )
+    report.line(f"active_sc_target_names: {active_names}")
+    report.line(f"sc_port_entry_pos_local: {aic_geometry.SC_PORT_ENTRY_POS_LOCAL}")
+    report.line(
+        "sc_port_insertion_axis_local: "
+        f"{aic_geometry.SC_PORT_INSERTION_AXIS_LOCAL}"
+    )
+    report.line(f"sc_plug_axis_local: {aic_geometry.SC_PLUG_AXIS_LOCAL}")
+    report.line(f"plug_tip_pos_w env0:       {_format_vector(_tensor_row(plug_pos))}")
+    report.line(f"plug_tip_quat_w env0:      {_format_vector(_tensor_row(plug_quat))}")
+    report.line(f"port_entry_pos_w env0:     {_format_vector(_tensor_row(port_pos))}")
+    report.line(f"port_entry_quat_w env0:    {_format_vector(_tensor_row(port_quat))}")
+    report.line(f"plug_axis_w env0:          {_format_vector(_tensor_row(plug_axis))}")
+    report.line(f"port_insertion_axis_w env0:{_format_vector(_tensor_row(port_axis))}")
+    report.line(f"plug_to_port_vec_w env0:   {_format_vector(_tensor_row(plug_to_port))}")
+    report.line(f"lateral_error env0:        {_format_scalar(lateral_error)}")
+    report.line(f"insertion_depth env0:      {_format_scalar(insertion_depth)}")
+    report.line(f"orientation_error env0:    {_format_scalar(orientation_error)}")
+
+
 def main() -> None:
     """Create the task and print geometry names/poses needed by stage 0."""
     log_path = None
@@ -386,6 +434,7 @@ def main() -> None:
         _print_asset_details(report, scene, asset_names)
         _print_body_pose_matches(report, scene, asset_names)
         _print_semantic_search(report, scene, asset_names, stage)
+        _print_geometry_helper_values(report, base_env)
         _print_broad_usd_search(report, stage, args_cli.max_usd_matches)
 
         report.line()

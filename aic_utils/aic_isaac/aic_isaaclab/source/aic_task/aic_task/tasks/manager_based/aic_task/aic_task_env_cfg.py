@@ -358,6 +358,11 @@ class EventCfg:
         },
     )
 
+    sample_active_sc_target = EventTerm(
+        func=mdp.sample_active_sc_target,
+        mode="reset",
+    )
+
 
 @configclass
 class TerminationsCfg:
