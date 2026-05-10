@@ -179,13 +179,14 @@ def main(
 
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     # load previously trained model
+    agent_cfg_dict = cli_args.runner_cfg_to_dict(agent_cfg)
     if agent_cfg.class_name == "OnPolicyRunner":
         runner = OnPolicyRunner(
-            env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device
+            env, agent_cfg_dict, log_dir=None, device=agent_cfg.device
         )
     elif agent_cfg.class_name == "DistillationRunner":
         runner = DistillationRunner(
-            env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device
+            env, agent_cfg_dict, log_dir=None, device=agent_cfg.device
         )
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")

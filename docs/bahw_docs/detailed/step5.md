@@ -33,6 +33,17 @@ Changed `aic_task/__init__.py`:
 - Registered `rsl_rl_sc_cfg_entry_point`.
 - Kept the existing default `rsl_rl_cfg_entry_point` unchanged.
 
+Changed `scripts/rsl_rl/cli_args.py`, `train.py`, and `play.py` after the first
+remote smoke attempt:
+
+- Added `runner_cfg_to_dict`.
+- Removed model config keys that the installed RSL-RL `MLPModel` does not
+  accept (`stochastic`, `init_noise_std`, `noise_std_type`,
+  `state_dependent_std`) before constructing `OnPolicyRunner` or
+  `DistillationRunner`.
+- This keeps the config source compatible with Isaac Lab's config class while
+  matching the installed RSL-RL runner API.
+
 Training can now select the SC teacher config without creating a second Gym task
 id:
 
@@ -48,6 +59,9 @@ Syntax checks:
 
 ```bash
 python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/cli_args.py \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/play.py \
   aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sc_cfg.py \
   aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/__init__.py
 ```

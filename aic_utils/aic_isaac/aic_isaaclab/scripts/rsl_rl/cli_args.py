@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import random
+from typing import Any
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -122,3 +123,20 @@ def update_rsl_rl_cfg(agent_cfg: RslRlBaseRunnerCfg, args_cli: argparse.Namespac
         agent_cfg.neptune_project = args_cli.log_project_name
 
     return agent_cfg
+
+
+def runner_cfg_to_dict(agent_cfg: RslRlBaseRunnerCfg) -> dict[str, Any]:
+    """Convert an RSL-RL config to a runner dict accepted by the installed RSL-RL."""
+    cfg = agent_cfg.to_dict()
+    unsupported_mlp_keys = (
+        "stochastic",
+        "init_noise_std",
+        "noise_std_type",
+        "state_dependent_std",
+    )
+    for model_key in ("actor", "critic", "student", "teacher"):
+        model_cfg = cfg.get(model_key)
+        if isinstance(model_cfg, dict):
+            for key in unsupported_mlp_keys:
+                model_cfg.pop(key, None)
+    return cfg
