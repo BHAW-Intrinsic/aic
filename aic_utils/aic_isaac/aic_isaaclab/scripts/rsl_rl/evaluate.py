@@ -156,9 +156,18 @@ def _mean_or_nan(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
+def _is_sfp_task() -> bool:
+    return args_cli.task is not None and "SFP" in args_cli.task.upper()
+
+
+def _target_names() -> tuple[str, ...]:
+    return mdp.SFP_TARGET_NAMES if _is_sfp_task() else mdp.SC_TARGET_NAMES
+
+
 def _target_name(target_id: int) -> str:
-    if 0 <= target_id < len(mdp.SC_TARGET_NAMES):
-        return mdp.SC_TARGET_NAMES[target_id]
+    target_names = _target_names()
+    if 0 <= target_id < len(target_names):
+        return target_names[target_id]
     return f"unknown_{target_id}"
 
 
@@ -206,6 +215,26 @@ def _sc_signed_lateral_components(
     )
 
 
+def _sfp_signed_lateral_components(
+    env,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return signed lateral error components in the active SFP entry frame."""
+    plug_pos_w, _ = mdp.sfp_plug_tip_pose(env)
+    entry_pos_w, entry_quat_w = mdp.sfp_port_entry_pose(env)
+    insertion_axis_w = mdp.sfp_port_insertion_axis(env)
+
+    delta = plug_pos_w - entry_pos_w
+    depth = torch.sum(delta * insertion_axis_w, dim=-1, keepdim=True)
+    lateral = delta - depth * insertion_axis_w
+
+    port_x_w = _axis_from_port_quat(entry_quat_w, (1.0, 0.0, 0.0))
+    port_y_w = _axis_from_port_quat(entry_quat_w, (0.0, 1.0, 0.0))
+    return (
+        torch.sum(lateral * port_x_w, dim=-1),
+        torch.sum(lateral * port_y_w, dim=-1),
+    )
+
+
 def _new_target_stats() -> dict[str, float | int]:
     return {
         "episodes": 0,
@@ -241,6 +270,8 @@ def main(
             env_cfg.terminations.time_out = None
         if hasattr(env_cfg.terminations, "sc_insertion_success"):
             env_cfg.terminations.sc_insertion_success = None
+        if hasattr(env_cfg.terminations, "sfp_insertion_success"):
+            env_cfg.terminations.sfp_insertion_success = None
 
     resume_path = _resolve_checkpoint(agent_cfg)
     log_path = None
@@ -307,9 +338,7 @@ def main(
         success_depth: list[float] = []
         terminal_action_error: list[float] = []
         failure_samples: list[str] = []
-        per_target = {
-            target_name: _new_target_stats() for target_name in mdp.SC_TARGET_NAMES
-        }
+        per_target = {target_name: _new_target_stats() for target_name in _target_names()}
         last_progress_report = 0
 
         while completed < args_cli.num_eval_episodes:
@@ -321,7 +350,10 @@ def main(
             episode_steps = torch.zeros(
                 base_env.num_envs, device=base_env.device, dtype=torch.long
             )
-            target_ids = mdp.active_sc_target_ids(base_env).detach().clone()
+            if _is_sfp_task():
+                target_ids = mdp.active_sfp_target_ids(base_env).detach().clone()
+            else:
+                target_ids = mdp.active_sc_target_ids(base_env).detach().clone()
 
             while bool(active.any().item()) and completed < args_cli.num_eval_episodes:
                 with torch.inference_mode():
@@ -333,20 +365,34 @@ def main(
                         policy_nn.reset(~active)
 
                     episode_steps[active] += 1
-                    lateral = mdp.sc_lateral_error(base_env)
-                    orientation = mdp.sc_orientation_error(base_env)
-                    depth = mdp.sc_insertion_depth(base_env)
-                    lateral_x, lateral_z = _sc_signed_lateral_components(base_env)
+                    if _is_sfp_task():
+                        lateral = mdp.sfp_lateral_error(base_env)
+                        orientation = mdp.sfp_orientation_error(base_env)
+                        depth = mdp.sfp_insertion_depth(base_env)
+                        lateral_x, lateral_z = _sfp_signed_lateral_components(base_env)
+                    else:
+                        lateral = mdp.sc_lateral_error(base_env)
+                        orientation = mdp.sc_orientation_error(base_env)
+                        depth = mdp.sc_insertion_depth(base_env)
+                        lateral_x, lateral_z = _sc_signed_lateral_components(base_env)
                     action_error = None
-                    if args_cli.action_error_diagnostics:
+                    if args_cli.action_error_diagnostics and not _is_sfp_task():
                         scripted_actions = mdp.sc_scripted_raw_action(base_env)
                         action_error = torch.norm(actions - scripted_actions, dim=-1)
-                    success = mdp.sc_insertion_success(
-                        base_env,
-                        lateral_threshold=args_cli.lateral_threshold,
-                        orientation_threshold=args_cli.orientation_threshold,
-                        depth_threshold=args_cli.depth_threshold,
-                    )
+                    if _is_sfp_task():
+                        success = mdp.sfp_insertion_success(
+                            base_env,
+                            lateral_threshold=args_cli.lateral_threshold,
+                            orientation_threshold=args_cli.orientation_threshold,
+                            depth_threshold=args_cli.depth_threshold,
+                        )
+                    else:
+                        success = mdp.sc_insertion_success(
+                            base_env,
+                            lateral_threshold=args_cli.lateral_threshold,
+                            orientation_threshold=args_cli.orientation_threshold,
+                            depth_threshold=args_cli.depth_threshold,
+                        )
                     timeout = episode_steps >= max_episode_steps
                     done = active & (success | timeout)
 
