@@ -3056,3 +3056,137 @@ Follow-up code change:
 - Loosen depth-shaping lateral gates to `<0.030` for
   `sfp_port_frame_depth_action` and `sfp_insertion_depth`; the terminal success
   gate remains `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
+
+## Revised Lateral-Action Shaping
+
+Commit:
+
+```text
+3d533a4 Revise SFP lateral reward shaping
+```
+
+Smoke command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-shaping-smoke3-3d533a4 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./_isaac_sim/python.sh -m py_compile aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 16 --max_iterations 1 --run_name step8_sfp_shaping_smoke_3d533a4 --headless --enable_cameras\"; echo STEP8_SFP_SHAPING_SMOKE3_3D533A4_EXIT:\$?; sleep 120'"
+```
+
+Smoke output:
+
+```text
+Episode_Reward/sfp_lateral_error: -1.0191
+Episode_Reward/sfp_port_frame_lateral_action: 0.0591
+Episode_Reward/sfp_port_frame_depth_action: 0.6106
+STEP8_SFP_SHAPING_SMOKE3_3D533A4_EXIT:0
+```
+
+Interpretation:
+
+- The lateral penalty is no longer clipped at `-60`.
+- `sfp_port_frame_lateral_action` no longer saturates unless measured lateral
+  error improves.
+- Depth-action shaping is active before the exact terminal lateral gate.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-realizedlat-3d533a4 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1000 --resume --load_run 2026-05-11_15-49-50_step8_sfp_ppo_precorr_54b5879 --checkpoint model_50.pt --run_name step8_sfp_ppo_realizedlat_3d533a4 --headless --enable_cameras\"; echo STEP8_SFP_PPO_REALIZEDLAT_3D533A4_EXIT:\$?; sleep 120'"
+```
+
+The run was stopped after `model_100.pt`; live success stayed low:
+
+```text
+iteration 82:
+  Episode_Termination/sfp_insertion_success: 0.0781
+
+iteration 106:
+  Episode_Termination/sfp_insertion_success: 0.0404
+```
+
+Detached evaluation:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-realizedlat100-3d533a4 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_16-28-33_step8_sfp_ppo_realizedlat_3d533a4/model_100.pt --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_REALIZEDLAT100_3D533A4_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 2
+success_rate: 0.031250
+mean_lateral_error_at_termination: 0.016442
+mean_orientation_error_at_termination: 0.296399
+mean_insertion_depth_at_termination: 0.021180
+per_target:
+  sfp_port_0: episodes=37 successes=0 mean_depth=0.008048
+  sfp_port_1: episodes=27 successes=2 mean_depth=0.039176
+```
+
+Interpretation:
+
+- The reward conflict was reduced, but PPO still does not discover the staged
+  positive x/y pre-correction needed for the intermediate gate.
+- Port 0 remains depth-short; both ports remain just outside the lateral gate.
+
+## Positive Pre-Correction Search
+
+Intermediate-gate action grid:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-intermediate-grid-3d533a4
+tmux new-session -d -s isaac-step8-sfp-posgrid-3d533a4
+```
+
+Best useful sequences:
+
+```text
+0,0,-1@140:
+  successes=2/32
+  after_lateral_mean=0.016163
+  after_depth_mean=0.025770
+  after_orientation_mean=0.287404
+
+0.5,0.5,0@10;0,0,-1@130:
+  successes=22/32
+  after_lateral_mean=0.013602
+  after_depth_mean=0.069268
+  after_orientation_mean=0.216036
+
+0.5,0.75,0@10;0,0,-1@130:
+  successes=23/32
+  ever_successes=28/32
+  after_lateral_mean=0.012473
+  after_depth_mean=0.070884
+  after_orientation_mean=0.225548
+```
+
+Interpretation:
+
+- The intermediate gate is physically reachable from the deterministic reset.
+- A short positive raw x/y pre-correction before z insertion is much better than
+  pure z, but still not reliable enough to count as a specialist.
+- Update the deterministic reset presets to the state after
+  `0.5,0.75,0@10`, then train/evaluate from that curriculum.
+
+Joint-preset extraction command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-posreset-joints-3d533a4 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 64 --custom_only --custom_sequence=\\\"0.5,0.75,0@10\\\" --print_joint_positions --headless --enable_cameras\"; echo STEP8_SFP_POSRESET_JOINTS_3D533A4_EXIT:\$?; sleep 120'"
+```
+
+New per-target reset presets:
+
+```text
+sfp_port_0:
+  (0.8327597380, -1.5545032024, -1.8837299347,
+   -1.0963498354, 1.8376724720, 2.1044800282)
+
+sfp_port_1:
+  (0.8004823923, -1.5945894718, -1.8431059122,
+   -1.1004146338, 1.8384238482, 2.1075541973)
+```

@@ -932,6 +932,15 @@ Immediate Step 8 note from Step 7:
 	    informative across the corridor, requires realized lateral improvement
 	    for the lateral-action reward, and loosens depth-shaping gates to
 	    lateral `<0.030` while keeping terminal success at `<0.015`.
+	  - The realized-lateral-action retry also evaluated at `2/64` under the
+	    intermediate gate (`mean_lateral=0.016442`,
+	    `mean_orientation=0.296399`, `mean_depth=0.021180`).
+	  - Action-sequence search showed the intermediate gate is reachable:
+	    pure `z-` reached only `2/32`, while
+	    `0.5,0.75,0@10;0,0,-1@130` reached `23/32` final successes and `28/32`
+	    ever-successes. The next curriculum reset uses the joint state after the
+	    `0.5,0.75,0@10` pre-correction so PPO does not have to discover that
+	    first phase from scratch.
 
 Later distilled outputs:
 
@@ -1092,8 +1101,12 @@ Done when:
 	    `0.020` lateral gate.
 	  - [x] Train/evaluate first intermediate-gate SFP PPO
 	    (`2/64`; not sufficient).
-	  - [ ] Retry intermediate-gate SFP PPO with realized-lateral-action shaping
-	    and widened lateral-error scale.
+	  - [x] Retry intermediate-gate SFP PPO with realized-lateral-action shaping
+	    and widened lateral-error scale (`2/64`; not sufficient).
+	  - [x] Run positive-precorrection action grid and derive new deterministic
+	    SFP reset presets.
+	  - [ ] Validate pure `z-` insertion from the positive-precorrected reset.
+	  - [ ] Retry intermediate-gate PPO from the positive-precorrected reset.
 	  - [ ] Reintroduce SFP reset/NIC randomization after the deterministic
 	    final-stage checkpoint is reliable under the tighter gate.
 - [ ] 14. Revisit distillation only after both teachers work.

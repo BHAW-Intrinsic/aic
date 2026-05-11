@@ -52,6 +52,11 @@ Current Step 8 best result:
   `step8_sfp_ppo_gateddepth_777d095/model_100.pt`, reached only `2/64`
   detached successes at `lateral <0.015`, `orientation <0.25`,
   `depth >0.015`.
+- The realized-lateral-action retry,
+  `step8_sfp_ppo_realizedlat_3d533a4/model_100.pt`, also reached only `2/64`.
+- A positive pre-correction action sequence,
+  `0.5,0.75,0@10;0,0,-1@130`, reached `23/32` final successes and `28/32`
+  ever-successes under the intermediate gate.
 
 Current blocker:
 
@@ -63,8 +68,9 @@ Current blocker:
   `orientation <0.25`, `depth >0.015`.
 - The first intermediate-gate retry exposed a reward-shaping conflict: the raw
   lateral-action reward could saturate while measured lateral error stayed poor.
-  The next retry uses a wider lateral-error scale, realized lateral improvement
-  gating, and looser depth-shaping gates before the terminal success gate.
+- The reward-shaping fix removed that saturation, but PPO still did not
+  discover the staged positive x/y pre-correction. The current retry direction
+  is a new deterministic reset taken after that pre-correction.
 - After lateral centering improves, reset noise and NIC randomization must be
   reintroduced without losing success.
 - Step 9 remains blocked until both SC and SFP have reliable specialist
@@ -73,7 +79,8 @@ Current blocker:
 Next recommended work:
 
 - Improve the SFP final-stage lateral centering from the pre-corrected reset.
-- Train and evaluate the revised intermediate-gate SFP PPO stage.
+- Validate pure `z-` insertion from the positive-precorrected SFP reset.
+- Train and evaluate PPO from that positive-precorrected reset.
 - Then gradually reintroduce SFP reset/NIC randomization.
 - After SFP has a reliable specialist checkpoint, revisit Step 9 distillation
   and final Gazebo routing.
