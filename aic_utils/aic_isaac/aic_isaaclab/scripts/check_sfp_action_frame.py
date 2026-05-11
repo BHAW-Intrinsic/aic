@@ -509,9 +509,23 @@ def main() -> int:
                     mask = target_ids == target_id
                     if not bool(mask.any()):
                         continue
+                    target_success = success[mask]
+                    success_text = (
+                        f"successes={int(target_success.sum().item())}/"
+                        f"{target_success.numel()}"
+                    )
+                    if trajectory is not None:
+                        target_ever_success = trajectory["ever_success"][
+                            mask.to(trajectory["ever_success"].device)
+                        ]
+                        success_text += (
+                            f" ever_successes={int(target_ever_success.sum().item())}/"
+                            f"{target_ever_success.numel()}"
+                        )
                     report.line(
                         "    "
                         f"{target_name}: n={int(mask.sum().item())} "
+                        f"{success_text} "
                         f"d_lateral_x_mean={_mean(after['lateral_x'][mask] - before['lateral_x'][mask]):+.6f} "
                         f"d_lateral_y_mean={_mean(after['lateral_y'][mask] - before['lateral_y'][mask]):+.6f} "
                         f"d_depth_mean={_mean(after['depth'][mask] - before['depth'][mask]):+.6f}"
