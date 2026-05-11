@@ -726,6 +726,7 @@ def sfp_insertion_action_reward(
     asset_name: str = "robot",
     action_scale: float = 0.05,
     command_scale: float = 0.025,
+    realized_depth_scale: float = 2.0e-5,
     lateral_threshold: float = 0.010,
     orientation_threshold: float = 0.35,
     lateral_std: float = 0.0,
@@ -743,6 +744,16 @@ def sfp_insertion_action_reward(
     )
     insertion_axis_w = geometry.sfp_port_insertion_axis(env)
     inward_command = torch.sum(delta_pos_w * insertion_axis_w, dim=-1)
+    depth = geometry.sfp_insertion_depth(env)
+    realized_progress = _metric_progress_reward(
+        env,
+        geometry.SFP_PREV_INSERTION_ACTION_ATTR,
+        depth,
+        improvement="increase",
+        scale=realized_depth_scale,
+        clip=1.0,
+    )
+    realized_gain = torch.clamp(realized_progress, min=0.0, max=1.0)
 
     lateral_error = geometry.sfp_lateral_error(env)
     orientation_error = geometry.sfp_orientation_error(env)
@@ -755,7 +766,7 @@ def sfp_insertion_action_reward(
     if lateral_std > 0.0:
         lateral_gain = 1.0 - torch.tanh(lateral_error / lateral_std)
         scaled_command = scaled_command * lateral_gain
-    return aligned.float() * scaled_command
+    return aligned.float() * realized_gain * scaled_command
 
 
 def _quat_conjugate(quat: torch.Tensor) -> torch.Tensor:

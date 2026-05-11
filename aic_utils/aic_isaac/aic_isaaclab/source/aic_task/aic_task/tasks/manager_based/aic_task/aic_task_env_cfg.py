@@ -870,8 +870,8 @@ class SfpRewardsCfg:
         weight=80.0,
         params={
             "action_name": "arm_action",
-            "command_scale": 0.20,
-            "realized_depth_scale": 2.0e-5,
+            "command_scale": 0.25,
+            "realized_depth_scale": 3.0e-5,
             "min_depth": -0.080,
             "target_depth": 0.012,
             "lateral_threshold": 10.0,
@@ -901,7 +901,7 @@ class SfpRewardsCfg:
     )
     sfp_depth_progress = RewTerm(
         func=mdp.sfp_depth_progress_reward,
-        weight=10.0,
+        weight=40.0,
         params={"scale": 0.01, "clip": 1.0},
     )
     sfp_coarse_lateral_alignment = RewTerm(
@@ -926,7 +926,7 @@ class SfpRewardsCfg:
     )
     sfp_insertion_depth = RewTerm(
         func=mdp.sfp_insertion_depth_reward,
-        weight=120.0,
+        weight=160.0,
         params={
             "depth_scale": 0.006,
             "max_depth": 0.045,
@@ -937,12 +937,13 @@ class SfpRewardsCfg:
     )
     sfp_insertion_action = RewTerm(
         func=mdp.sfp_insertion_action_reward,
-        weight=80.0,
+        weight=60.0,
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
-            "action_scale": 0.002,
-            "command_scale": 0.0004,
+            "action_scale": 0.003,
+            "command_scale": 0.0006,
+            "realized_depth_scale": 3.0e-5,
             "lateral_threshold": 0.010,
             "orientation_threshold": 0.35,
             "lateral_std": 0.008,
@@ -950,7 +951,7 @@ class SfpRewardsCfg:
     )
     sfp_insertion_success = RewTerm(
         func=mdp.sfp_insertion_success_bonus,
-        weight=25.0,
+        weight=100.0,
         params={
             "lateral_threshold": 0.020,
             "orientation_threshold": 0.50,
@@ -1076,7 +1077,7 @@ class AICTaskSfpEnvCfg(AICTaskEnvCfg):
         super().__post_init__()
         # SFP insertion is a millimeter-scale task; use smaller relative-IK
         # deltas than SC so near-port PPO does not leave the insertion corridor.
-        self.actions.arm_action.scale = 0.002
+        self.actions.arm_action.scale = 0.003
         # Final insertion should resolve quickly from the near-port curriculum.
         # Short episodes keep failed non-terminated attempts from drifting far.
         self.episode_length_s = 5.0
