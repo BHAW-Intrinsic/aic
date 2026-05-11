@@ -437,6 +437,73 @@ def sfp_insertion_success_bonus(
     ).float()
 
 
+def _relative_ik_delta_pos_w(
+    env: ManagerBasedRLEnv,
+    action_name: str,
+    asset_name: str,
+    action_scale: float,
+) -> torch.Tensor:
+    if action_name:
+        actual_action = env.action_manager.get_term(action_name).raw_actions
+    else:
+        actual_action = env.action_manager.action
+    delta_pos_root = actual_action[:, :3] * action_scale
+
+    robot = env.scene[asset_name]
+    return geometry._quat_apply(robot.data.root_quat_w, delta_pos_root)
+
+
+def sfp_lateral_correction_action_reward(
+    env: ManagerBasedRLEnv,
+    action_name: str = "arm_action",
+    asset_name: str = "robot",
+    action_scale: float = 0.01,
+    command_scale: float = 0.004,
+    min_lateral_error: float = 0.002,
+    lateral_scale: float = 0.012,
+    lateral_threshold: float = 0.060,
+    orientation_threshold: float = 0.80,
+    min_depth: float = -0.080,
+    max_depth: float = 0.060,
+) -> torch.Tensor:
+    """Reward relative-IK commands that reduce SFP lateral error."""
+    delta_pos_w = _relative_ik_delta_pos_w(
+        env,
+        action_name=action_name,
+        asset_name=asset_name,
+        action_scale=action_scale,
+    )
+
+    plug_pos_w, _ = geometry.sfp_plug_tip_pose(env)
+    entry_pos_w, _ = geometry.sfp_port_entry_pose(env)
+    insertion_axis_w = geometry.sfp_port_insertion_axis(env)
+    plug_delta = plug_pos_w - entry_pos_w
+    depth = torch.sum(plug_delta * insertion_axis_w, dim=-1)
+    lateral_vec = plug_delta - depth.unsqueeze(-1) * insertion_axis_w
+    lateral_error = torch.norm(lateral_vec, dim=-1)
+    lateral_dir = lateral_vec / torch.clamp(lateral_error, min=1.0e-6).unsqueeze(-1)
+
+    correction_command = torch.sum(delta_pos_w * -lateral_dir, dim=-1)
+    scaled_command = torch.clamp(
+        correction_command / max(command_scale, 1.0e-6), min=0.0, max=1.0
+    )
+    lateral_gain = torch.clamp(
+        (lateral_error - min_lateral_error)
+        / max(lateral_scale - min_lateral_error, 1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
+    orientation_error = geometry.sfp_orientation_error(env)
+    active = (
+        (lateral_error > min_lateral_error)
+        & (lateral_error < lateral_threshold)
+        & (orientation_error < orientation_threshold)
+        & (depth > min_depth)
+        & (depth < max_depth)
+    )
+    return active.float() * lateral_gain * scaled_command
+
+
 def sfp_insertion_action_reward(
     env: ManagerBasedRLEnv,
     action_name: str = "arm_action",
@@ -452,14 +519,12 @@ def sfp_insertion_action_reward(
     This is a privileged PPO shaping term: it uses the simulator's port axis in
     the reward only, while the actor still receives eval-compatible observations.
     """
-    if action_name:
-        actual_action = env.action_manager.get_term(action_name).raw_actions
-    else:
-        actual_action = env.action_manager.action
-    delta_pos_root = actual_action[:, :3] * action_scale
-
-    robot = env.scene[asset_name]
-    delta_pos_w = geometry._quat_apply(robot.data.root_quat_w, delta_pos_root)
+    delta_pos_w = _relative_ik_delta_pos_w(
+        env,
+        action_name=action_name,
+        asset_name=asset_name,
+        action_scale=action_scale,
+    )
     insertion_axis_w = geometry.sfp_port_insertion_axis(env)
     inward_command = torch.sum(delta_pos_w * insertion_axis_w, dim=-1)
 
