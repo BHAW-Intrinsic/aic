@@ -867,10 +867,10 @@ class SfpRewardsCfg:
     )
     sfp_port_frame_depth_action = RewTerm(
         func=mdp.sfp_port_frame_depth_action_reward,
-        weight=80.0,
+        weight=120.0,
         params={
             "action_name": "arm_action",
-            "command_scale": 0.02,
+            "command_scale": 0.005,
             "min_depth": -0.080,
             "target_depth": 0.005,
             "lateral_threshold": 10.0,

@@ -582,16 +582,17 @@ def sfp_port_frame_depth_action_reward(
     lateral_threshold: float = 0.120,
     orientation_threshold: float = 1.50,
 ) -> torch.Tensor:
-    """Reward raw ``z-`` commands that move the SFP module inward.
+    """Reward raw ``z-`` commands and penalize raw ``z+`` commands.
 
     The SFP action-frame diagnostic shows raw ``z-`` is the clearest positive
-    depth command. This coarse term stays active before fine lateral alignment
-    so PPO has an immediate alternative to backing out of the port.
+    depth command. This signed coarse term stays active before fine lateral
+    alignment so PPO has an immediate directional signal instead of a zero
+    reward when it initially chooses the wrong depth direction.
     """
     raw = _raw_action(env, action_name)
     inward_command = -raw[:, 2]
     scaled_command = torch.clamp(
-        inward_command / max(command_scale, 1.0e-6), min=0.0, max=1.0
+        inward_command / max(command_scale, 1.0e-6), min=-1.0, max=1.0
     )
 
     _, _, lateral_error, depth = _sfp_signed_lateral_components(env)
