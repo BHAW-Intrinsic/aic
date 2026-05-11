@@ -791,6 +791,9 @@ Immediate Step 8 note from Step 7:
   - Added a PPO lateral-guard remediation: reduce/gate inward-action reward,
     multiply it by a smooth lateral-centering factor, and increase lateral
     progress/alignment weights. This stays on PPO rather than BC.
+  - The lateral-guard run still had zero success and `1.0000` corridor exits by
+    iteration `115`, so it was stopped and replaced with a more direct PPO
+    reward for lateral corrective actions.
 
 Later distilled outputs:
 
@@ -892,7 +895,10 @@ Done when:
   - [x] Continue reduced-scale SFP PPO from fixed-NIC `model_50.pt` until it
     stalled with low intermittent coarse success and near-total corridor exits.
   - [x] Add PPO lateral-guard reward/config remediation.
-  - [ ] Run lateral-guard SFP PPO from fixed-NIC `model_50.pt`.
+  - [x] Run lateral-guard SFP PPO from fixed-NIC `model_50.pt` until it stalled
+    at zero success with immediate corridor exits.
+  - [x] Add PPO lateral-correction action reward.
+  - [ ] Run lateral-correction SFP PPO from fixed-NIC `model_50.pt`.
   - [ ] Train SFP PPO specialist checkpoint.
 - [ ] 14. Revisit distillation only after both teachers work.
 

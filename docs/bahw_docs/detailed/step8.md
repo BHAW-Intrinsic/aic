@@ -51,6 +51,122 @@ py_compile passed
 git diff --check passed
 ```
 
+Host pull/copy:
+
+```bash
+tmux new-session -d -s isaac-step8-lateralguard-pull-3526909 \
+  "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py; echo STEP8_LATERALGUARD_PULL_EXIT:\$?; sleep 120'"
+```
+
+Result:
+
+```text
+Fast-forward to 3526909
+Successfully copied aic_task_env_cfg.py into isaac-lab-base
+Successfully copied rewards.py into isaac-lab-base
+STEP8_LATERALGUARD_PULL_EXIT:0
+```
+
+Reward smoke:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-lateralguard-reward-3526909 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py --task AIC-SFP-Task-v0 --num_envs 16 --num_steps 8 --headless --enable_cameras\"; echo STEP8_SFP_LATERALGUARD_REWARD_3526909_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+Reward Manager contains 17 active terms.
+  sfp_lateral_progress weight: 5.0
+  sfp_lateral_alignment weight: 4.0
+  sfp_insertion_action weight: 15.0
+analytic_shape_checks_ok: True
+overall_finite: True
+STEP8_SFP_LATERALGUARD_REWARD_3526909_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-lateralguard-3526909 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_05-09-54_step8_sfp_ppo_fixednic_977ac05 --checkpoint model_50.pt --run_name step8_sfp_ppo_lateralguard_3526909 --headless --enable_cameras\"; echo STEP8_SFP_PPO_LATERALGUARD_3526909_EXIT:\$?; sleep 120'"
+```
+
+Run directory:
+
+```text
+/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-47-49_step8_sfp_ppo_lateralguard_3526909
+```
+
+Initial key output:
+
+```text
+iteration 60:
+  Mean reward: 2.91
+  Mean episode length: 6.47
+  Episode_Reward/sfp_lateral_progress: -0.0341
+  Episode_Reward/sfp_insertion_depth: 0.0046
+  Episode_Reward/sfp_insertion_action: 0.0203
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Early interpretation:
+
+- The lateral guard reduced the inward-action reward substantially, but the
+  warm-start policy still immediately leaves the corridor.
+- By iteration `115`, success was still `0.0000` and
+  `sfp_corridor_violation` was still `1.0000`.
+- This run was stopped. Lateral state weighting alone was not enough; the next
+  remediation targets the raw action direction.
+
+## Lateral-Correction Action Reward
+
+Code change:
+
+```text
+cee91e6 Reward SFP lateral correction actions
+```
+
+Change:
+
+- Added `mdp.sfp_lateral_correction_action_reward`.
+- The reward reads the raw relative-IK translation command, projects it into
+  world frame, computes the SFP plug-tip lateral vector away from the active
+  port axis, and rewards commands that move opposite that lateral vector.
+- Added `SfpRewardsCfg.sfp_lateral_correction_action` with weight `20.0`.
+- The reward is active only inside the temporary corridor:
+  - lateral between `0.002` and `0.060`
+  - orientation `<0.80`
+  - depth between `-0.080` and `0.060`
+- This is still PPO reward shaping, not BC or a scripted policy.
+
+Reason:
+
+- The previous lateral guard changed the scalar reward balance but did not give
+  the policy an immediate action-level signal for which direction reduces the
+  lateral miss.
+- The new term directly rewards corrective motion toward the active SFP port
+  axis while leaving the actor observation group unchanged.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
 Next remote command after commit/push/host pull:
 
 ```bash
