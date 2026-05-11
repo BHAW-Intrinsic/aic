@@ -67,5 +67,6 @@ from .rewards import (  # noqa: F401
     sfp_lateral_progress_reward,
     sfp_orientation_alignment_reward,
     sfp_orientation_progress_reward,
+    sfp_port_frame_lateral_action_reward,
     sfp_port_approach_action_reward,
 )

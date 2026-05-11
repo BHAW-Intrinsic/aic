@@ -478,6 +478,82 @@ def _relative_ik_delta_pos_w(
     return geometry._quat_apply(robot.data.root_quat_w, delta_pos_root)
 
 
+def _raw_action(env: ManagerBasedRLEnv, action_name: str) -> torch.Tensor:
+    if action_name:
+        return env.action_manager.get_term(action_name).raw_actions
+    return env.action_manager.action
+
+
+def _sfp_signed_lateral_components(
+    env: ManagerBasedRLEnv,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    plug_pos_w, _ = geometry.sfp_plug_tip_pose(env)
+    entry_pos_w, entry_quat_w = geometry.sfp_port_entry_pose(env)
+    insertion_axis_w = geometry.sfp_port_insertion_axis(env)
+
+    plug_delta = plug_pos_w - entry_pos_w
+    depth = torch.sum(plug_delta * insertion_axis_w, dim=-1)
+    lateral_vec = plug_delta - depth.unsqueeze(-1) * insertion_axis_w
+    lateral_error = torch.norm(lateral_vec, dim=-1)
+
+    port_x = geometry._quat_apply(
+        entry_quat_w,
+        geometry._expand_vec((1.0, 0.0, 0.0), env),
+    )
+    port_y = geometry._quat_apply(
+        entry_quat_w,
+        geometry._expand_vec((0.0, 1.0, 0.0), env),
+    )
+    signed_x = torch.sum(lateral_vec * port_x, dim=-1)
+    signed_y = torch.sum(lateral_vec * port_y, dim=-1)
+    return signed_x, signed_y, lateral_error, depth
+
+
+def sfp_port_frame_lateral_action_reward(
+    env: ManagerBasedRLEnv,
+    action_name: str = "arm_action",
+    command_scale: float = 0.02,
+    min_lateral_error: float = 0.002,
+    lateral_scale: float = 0.006,
+    lateral_threshold: float = 0.060,
+    orientation_threshold: float = 0.80,
+    min_depth: float = -0.080,
+    max_depth: float = 0.060,
+) -> torch.Tensor:
+    """Reward raw IK commands that empirically reduce SFP port-frame lateral error.
+
+    The SFP action-frame diagnostic shows raw ``x+`` increases signed port-frame
+    x, while raw ``y+`` decreases signed port-frame y. This term uses that
+    measured mapping directly instead of assuming the raw translation command is
+    already expressed in the active SFP port frame.
+    """
+    raw = _raw_action(env, action_name)
+    signed_x, signed_y, lateral_error, depth = _sfp_signed_lateral_components(env)
+    lateral_denom = torch.clamp(lateral_error, min=1.0e-6)
+
+    desired_raw_x = -signed_x / lateral_denom
+    desired_raw_y = signed_y / lateral_denom
+    correction_command = raw[:, 0] * desired_raw_x + raw[:, 1] * desired_raw_y
+    scaled_command = torch.clamp(
+        correction_command / max(command_scale, 1.0e-6), min=0.0, max=1.0
+    )
+    lateral_gain = torch.clamp(
+        (lateral_error - min_lateral_error)
+        / max(lateral_scale - min_lateral_error, 1.0e-6),
+        min=0.0,
+        max=1.0,
+    )
+    orientation_error = geometry.sfp_orientation_error(env)
+    active = (
+        (lateral_error > min_lateral_error)
+        & (lateral_error < lateral_threshold)
+        & (orientation_error < orientation_threshold)
+        & (depth > min_depth)
+        & (depth < max_depth)
+    )
+    return active.float() * lateral_gain * scaled_command
+
+
 def sfp_lateral_correction_action_reward(
     env: ManagerBasedRLEnv,
     action_name: str = "arm_action",

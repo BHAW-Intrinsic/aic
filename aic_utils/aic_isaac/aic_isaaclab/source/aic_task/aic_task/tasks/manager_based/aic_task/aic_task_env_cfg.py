@@ -860,9 +860,23 @@ class SfpRewardsCfg:
             "violation_cost": 1.0,
         },
     )
+    sfp_port_frame_lateral_action = RewTerm(
+        func=mdp.sfp_port_frame_lateral_action_reward,
+        weight=100.0,
+        params={
+            "action_name": "arm_action",
+            "command_scale": 0.02,
+            "min_lateral_error": 0.002,
+            "lateral_scale": 0.006,
+            "lateral_threshold": 0.060,
+            "orientation_threshold": 0.80,
+            "min_depth": -0.080,
+            "max_depth": 0.060,
+        },
+    )
     sfp_lateral_correction_action = RewTerm(
         func=mdp.sfp_lateral_correction_action_reward,
-        weight=80.0,
+        weight=0.0,
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
