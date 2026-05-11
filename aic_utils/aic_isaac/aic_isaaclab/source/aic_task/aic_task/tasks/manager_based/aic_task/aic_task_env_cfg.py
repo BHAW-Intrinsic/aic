@@ -711,14 +711,10 @@ class SfpTerminationsCfg:
             "depth_threshold": 0.005,
         },
     )
-    sfp_corridor_lateral_violation = DoneTerm(
-        func=mdp.sfp_corridor_lateral_violation,
-        params={
-            # Keep early SFP PPO rollouts in the near-port insertion corridor.
-            # Tighten or remove this after fixed-card SFP insertion is reliable.
-            "lateral_limit": 0.060,
-        },
-    )
+    # First SFP PPO curriculum: do not immediately terminate lateral misses.
+    # The reward penalty below makes lateral escape costly across a short
+    # timeout horizon; immediate reset made corridor exit an escape behavior.
+    sfp_corridor_lateral_violation = None
     sfp_corridor_orientation_violation = DoneTerm(
         func=mdp.sfp_corridor_orientation_violation,
         params={
@@ -1074,5 +1070,5 @@ class AICTaskSfpEnvCfg(AICTaskEnvCfg):
         # deltas than SC so near-port PPO does not leave the insertion corridor.
         self.actions.arm_action.scale = 0.001
         # Final insertion should resolve quickly from the near-port curriculum.
-        # Short episodes reset failed attempts back into the useful state band.
-        self.episode_length_s = 20.0
+        # Short episodes keep failed non-terminated attempts from drifting far.
+        self.episode_length_s = 5.0
