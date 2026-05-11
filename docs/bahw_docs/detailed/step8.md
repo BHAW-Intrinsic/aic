@@ -58,30 +58,13 @@ tmux new-session -d -s isaac-step8-lateralguard-pull-3526909 \
   "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py; echo STEP8_LATERALGUARD_PULL_EXIT:\$?; sleep 120'"
 ```
 
-Result:
-
-```text
-Fast-forward to 3526909
-Successfully copied aic_task_env_cfg.py into isaac-lab-base
-Successfully copied rewards.py into isaac-lab-base
-STEP8_LATERALGUARD_PULL_EXIT:0
-```
-
-Reward smoke:
-
-```bash
-tmux new-session -d -s isaac-step8-sfp-lateralguard-reward-3526909 \
-  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_aic_rewards.py --task AIC-SFP-Task-v0 --num_envs 16 --num_steps 8 --headless --enable_cameras\"; echo STEP8_SFP_LATERALGUARD_REWARD_3526909_EXIT:\$?; sleep 120'"
-```
-
-Key output:
+Reward smoke key output:
 
 ```text
 Reward Manager contains 17 active terms.
   sfp_lateral_progress weight: 5.0
   sfp_lateral_alignment weight: 4.0
   sfp_insertion_action weight: 15.0
-analytic_shape_checks_ok: True
 overall_finite: True
 STEP8_SFP_LATERALGUARD_REWARD_3526909_EXIT:0
 ```
@@ -99,7 +82,7 @@ Run directory:
 /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-47-49_step8_sfp_ppo_lateralguard_3526909
 ```
 
-Initial key output:
+Key output:
 
 ```text
 iteration 60:
@@ -110,16 +93,17 @@ iteration 60:
   Episode_Reward/sfp_insertion_action: 0.0203
   Episode_Termination/sfp_insertion_success: 0.0000
   Episode_Termination/sfp_corridor_violation: 1.0000
+
+iteration 115:
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
 ```
 
-Early interpretation:
+Interpretation:
 
 - The lateral guard reduced the inward-action reward substantially, but the
-  warm-start policy still immediately leaves the corridor.
-- By iteration `115`, success was still `0.0000` and
-  `sfp_corridor_violation` was still `1.0000`.
-- This run was stopped. Lateral state weighting alone was not enough; the next
-  remediation targets the raw action direction.
+  fixed-NIC warm-start policy still immediately left the corridor.
+- This run was stopped. Lateral state weighting alone was not enough.
 
 ## Lateral-Correction Action Reward
 
@@ -132,23 +116,131 @@ cee91e6 Reward SFP lateral correction actions
 Change:
 
 - Added `mdp.sfp_lateral_correction_action_reward`.
-- The reward reads the raw relative-IK translation command, projects it into
-  world frame, computes the SFP plug-tip lateral vector away from the active
-  port axis, and rewards commands that move opposite that lateral vector.
+- The reward projects the raw relative-IK translation command into world frame,
+  computes the SFP plug-tip lateral vector away from the active port axis, and
+  rewards commands that move opposite that lateral vector.
 - Added `SfpRewardsCfg.sfp_lateral_correction_action` with weight `20.0`.
 - The reward is active only inside the temporary corridor:
-  - lateral between `0.002` and `0.060`
-  - orientation `<0.80`
-  - depth between `-0.080` and `0.060`
+  lateral between `0.002` and `0.060`, orientation `<0.80`, and depth between
+  `-0.080` and `0.060`.
 - This is still PPO reward shaping, not BC or a scripted policy.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Host pull/copy:
+
+```bash
+tmux new-session -d -s isaac-step8-lateralcorrection-pull-6956029 \
+  "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py; echo STEP8_LATERALCORRECTION_PULL_EXIT:\$?; sleep 120'"
+```
+
+Reward smoke key output:
+
+```text
+Reward Manager contains 18 active terms.
+  sfp_lateral_correction_action weight: 20.0
+overall_finite: True
+STEP8_SFP_LATERALCORRECTION_REWARD_6956029_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-lateralcorrection-6956029 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_05-09-54_step8_sfp_ppo_fixednic_977ac05 --checkpoint model_50.pt --run_name step8_sfp_ppo_lateralcorrection_6956029 --headless --enable_cameras\"; echo STEP8_SFP_PPO_LATERALCORRECTION_6956029_EXIT:\$?; sleep 120'"
+```
+
+Run directory:
+
+```text
+/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-59-21_step8_sfp_ppo_lateralcorrection_6956029
+```
+
+Key output:
+
+```text
+iteration 64:
+  Episode_Reward/sfp_lateral_correction_action: 0.0485
+  Episode_Termination/sfp_insertion_success: 0.0104
+  Episode_Termination/sfp_corridor_violation: 0.9896
+
+iteration 129:
+  Episode_Reward/sfp_lateral_correction_action: 0.0455
+  Episode_Termination/sfp_insertion_success: 0.0111
+  Episode_Termination/sfp_corridor_violation: 0.9889
+
+iteration 222:
+  Episode_Reward/sfp_lateral_correction_action: 0.0569
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Evaluation of `model_200.pt`:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-lateralcorrection200-6956029 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 50 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-59-21_step8_sfp_ppo_lateralcorrection_6956029/model_200.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_LATERALCORRECTION200_6956029_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 0
+success_rate: 0.000000
+mean_lateral_error_at_termination: 0.142818
+mean_signed_lateral_x_at_termination: 0.112403
+mean_signed_lateral_z_at_termination: -0.056010
+mean_orientation_error_at_termination: 1.119678
+mean_insertion_depth_at_termination: -0.170864
+STEP8_SFP_EVAL_LATERALCORRECTION200_6956029_EXIT:0
+```
+
+Interpretation:
+
+- The lateral-correction reward recovered intermittent coarse training success
+  but did not produce a usable checkpoint.
+- Evaluation shows the policy backs away from the port under rollout
+  (`mean_depth=-0.170864` after 50 steps), so the next PPO shaping should reward
+  pre-insertion actions that move toward the port entry.
+
+## Port-Approach Action Reward
+
+Code change:
+
+```text
+16159eb Reward SFP port approach actions
+```
+
+Change:
+
+- Added `mdp.sfp_port_approach_action_reward`.
+- The reward projects the raw relative-IK translation command onto the vector
+  from SFP plug tip to active port entry and rewards motion toward the entry.
+- The term is active before insertion: depth between `-0.080` and `0.005`,
+  distance between `0.001` and `0.120`, and orientation `<1.20`.
+- Added `SfpRewardsCfg.sfp_port_approach_action` with weight `20.0`.
 
 Reason:
 
-- The previous lateral guard changed the scalar reward balance but did not give
-  the policy an immediate action-level signal for which direction reduces the
-  lateral miss.
-- The new term directly rewards corrective motion toward the active SFP port
-  axis while leaving the actor observation group unchanged.
+- `model_200.pt` from the lateral-correction run still backed away from the
+  port. This term gives PPO an immediate action-level reward for moving toward
+  the entry before the insertion-depth reward should dominate.
 
 Local checks:
 

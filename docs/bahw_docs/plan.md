@@ -794,6 +794,16 @@ Immediate Step 8 note from Step 7:
   - The lateral-guard run still had zero success and `1.0000` corridor exits by
     iteration `115`, so it was stopped and replaced with a more direct PPO
     reward for lateral corrective actions.
+  - Lateral-correction action reward smoke passed and the run from fixed-NIC
+    `model_50.pt` recovered intermittent coarse success around `0.010-0.011` by
+    iterations `64`, `127`, and `129`, but the signal did not improve by
+    iteration `222`.
+  - Evaluation of lateral-correction `model_200.pt` over 64 episodes with
+    `max_episode_steps=50` produced `0/64` successes and backed away from the
+    port (`mean_lateral=0.142818`, `mean_orientation=1.119678`,
+    `mean_depth=-0.170864`), so add a pre-insertion port-approach action reward.
+  - Added PPO port-approach action reward to reward motion from SFP plug tip
+    toward the active port entry before the insertion-depth reward takes over.
 
 Later distilled outputs:
 
@@ -898,7 +908,11 @@ Done when:
   - [x] Run lateral-guard SFP PPO from fixed-NIC `model_50.pt` until it stalled
     at zero success with immediate corridor exits.
   - [x] Add PPO lateral-correction action reward.
-  - [ ] Run lateral-correction SFP PPO from fixed-NIC `model_50.pt`.
+  - [x] Run lateral-correction SFP PPO from fixed-NIC `model_50.pt`.
+  - [x] Evaluate lateral-correction `model_200.pt` and confirm it still backs
+    away from the port.
+  - [x] Add PPO port-approach action reward.
+  - [ ] Run port-approach SFP PPO from fixed-NIC `model_50.pt`.
   - [ ] Train SFP PPO specialist checkpoint.
 - [ ] 14. Revisit distillation only after both teachers work.
 
