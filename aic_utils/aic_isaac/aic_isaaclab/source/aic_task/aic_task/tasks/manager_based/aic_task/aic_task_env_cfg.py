@@ -830,7 +830,7 @@ class SfpRewardsCfg:
     sfp_lateral_error = RewTerm(
         func=mdp.sfp_lateral_error_penalty,
         weight=-60.0,
-        params={"scale": 0.015, "clip": 1.0},
+        params={"scale": 0.060, "clip": 1.0},
     )
     sfp_lateral_corridor = RewTerm(
         func=mdp.sfp_lateral_corridor_penalty,
@@ -858,6 +858,7 @@ class SfpRewardsCfg:
         params={
             "action_name": "arm_action",
             "command_scale": 0.02,
+            "realized_lateral_scale": 3.0e-5,
             "min_lateral_error": 0.002,
             "lateral_scale": 0.006,
             "lateral_threshold": 0.060,
@@ -875,7 +876,7 @@ class SfpRewardsCfg:
             "realized_depth_scale": 3.0e-5,
             "min_depth": -0.080,
             "target_depth": 0.018,
-            "lateral_threshold": 0.015,
+            "lateral_threshold": 0.030,
             "orientation_threshold": 0.25,
         },
     )
@@ -932,7 +933,7 @@ class SfpRewardsCfg:
             "depth_scale": 0.006,
             "max_depth": 0.045,
             "min_depth": 0.0,
-            "lateral_threshold": 0.015,
+            "lateral_threshold": 0.030,
             "orientation_threshold": 0.25,
         },
     )

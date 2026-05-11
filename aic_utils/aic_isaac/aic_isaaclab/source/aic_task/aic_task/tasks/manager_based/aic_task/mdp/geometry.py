@@ -51,6 +51,7 @@ SFP_PREV_DISTANCE_ATTR = "aic_prev_sfp_distance"
 SFP_PREV_LATERAL_ATTR = "aic_prev_sfp_lateral_error"
 SFP_PREV_ORIENTATION_ATTR = "aic_prev_sfp_orientation_error"
 SFP_PREV_DEPTH_ATTR = "aic_prev_sfp_insertion_depth"
+SFP_PREV_LATERAL_ACTION_ATTR = "aic_prev_sfp_lateral_action_error"
 SFP_PREV_DEPTH_ACTION_ATTR = "aic_prev_sfp_depth_action_depth"
 SFP_PREV_INSERTION_ACTION_ATTR = "aic_prev_sfp_insertion_action_depth"
 
@@ -487,6 +488,9 @@ def reset_sfp_progress_buffers(
         env, env_ids, SFP_PREV_ORIENTATION_ATTR, sfp_orientation_error(env)
     )
     _reset_metric_buffer(env, env_ids, SFP_PREV_DEPTH_ATTR, sfp_insertion_depth(env))
+    _reset_metric_buffer(
+        env, env_ids, SFP_PREV_LATERAL_ACTION_ATTR, sfp_lateral_error(env)
+    )
     _reset_metric_buffer(
         env, env_ids, SFP_PREV_DEPTH_ACTION_ATTR, sfp_insertion_depth(env)
     )

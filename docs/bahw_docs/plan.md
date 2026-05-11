@@ -923,6 +923,15 @@ Immediate Step 8 note from Step 7:
 	    lateral/orientation gate and targeted only `0.012 m` depth. Tighten that
 	    shaping term to the intermediate gate and raise its target depth before
 	    retrying.
+	  - The gated-depth retry was evaluated at `model_100.pt` and reached only
+	    `2/64` successes under the intermediate gate. It ended close on depth
+	    (`mean_depth=0.019861`) but still missed lateral/orientation
+	    (`mean_lateral=0.016383`, `mean_orientation=0.301070`). The reward logs
+	    showed `sfp_port_frame_lateral_action` saturating while measured lateral
+	    error stayed clipped, so the next patch makes the lateral penalty
+	    informative across the corridor, requires realized lateral improvement
+	    for the lateral-action reward, and loosens depth-shaping gates to
+	    lateral `<0.030` while keeping terminal success at `<0.015`.
 
 Later distilled outputs:
 
@@ -1081,8 +1090,10 @@ Done when:
 	    pre-corrected reset (`64/64` coarse deterministic successes).
 	  - [ ] Tighten/improve SFP lateral centering beyond the temporary coarse
 	    `0.020` lateral gate.
-	  - [ ] Train/evaluate intermediate-gate SFP PPO
-	    (`lateral <0.015`, `orientation <0.25`, `depth >0.015`).
+	  - [x] Train/evaluate first intermediate-gate SFP PPO
+	    (`2/64`; not sufficient).
+	  - [ ] Retry intermediate-gate SFP PPO with realized-lateral-action shaping
+	    and widened lateral-error scale.
 	  - [ ] Reintroduce SFP reset/NIC randomization after the deterministic
 	    final-stage checkpoint is reliable under the tighter gate.
 - [ ] 14. Revisit distillation only after both teachers work.

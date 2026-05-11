@@ -2989,3 +2989,70 @@ Follow-up code change:
 - Raise its target depth to `0.018`.
 - Match `sfp_insertion_depth` orientation gate to the intermediate success gate
   by setting it to `<0.25`.
+
+Gated-depth PPO retry:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-gateddepth-777d095 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1000 --resume --load_run 2026-05-11_15-49-50_step8_sfp_ppo_precorr_54b5879 --checkpoint model_50.pt --run_name step8_sfp_ppo_gateddepth_777d095 --headless --enable_cameras\"; echo STEP8_SFP_PPO_GATEDEPTH_777D095_EXIT:\$?; sleep 120'"
+```
+
+The run was stopped after `model_100.pt` because the success signal stayed low
+and the lateral-action reward saturated while the lateral-error penalty also
+stayed saturated:
+
+```text
+iteration 106:
+  Episode_Reward/sfp_lateral_error: -59.7222
+  Episode_Reward/sfp_port_frame_lateral_action: 19.9074
+  Episode_Reward/sfp_port_frame_depth_action: 0.0000
+  Episode_Termination/sfp_insertion_success: 0.0710
+```
+
+Detached intermediate-gate evaluation:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-gateddepth100-777d095 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_16-15-49_step8_sfp_ppo_gateddepth_777d095/model_100.pt --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_GATEDEPTH100_777D095_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 2
+success_rate: 0.031250
+mean_lateral_error_at_termination: 0.016383
+mean_orientation_error_at_termination: 0.301070
+mean_insertion_depth_at_termination: 0.019861
+failure_breakdown:
+  timeout: 62
+  lateral_miss: 62
+  orientation_miss: 57
+  depth_shortfall: 37
+per_target:
+  sfp_port_0: episodes=37 successes=0
+  sfp_port_1: episodes=27 successes=2
+```
+
+Interpretation:
+
+- The checkpoint is close on depth and just outside the lateral gate, but
+  orientation is still too poor.
+- The reward table showed a conflict: `sfp_port_frame_lateral_action` could pay
+  almost its full `+20` while the measured lateral error stayed clipped at the
+  maximum `-60` penalty.
+- The next patch makes the lateral penalty informative across the full
+  curriculum corridor, requires realized lateral improvement before paying
+  `sfp_port_frame_lateral_action`, and allows depth shaping to start before the
+  exact terminal lateral gate.
+
+Follow-up code change:
+
+- Set `sfp_lateral_error` scale to `0.060` instead of `0.015`, so PPO can
+  distinguish a small lateral miss from a large corridor miss.
+- Add `SFP_PREV_LATERAL_ACTION_ATTR` and require realized one-step lateral
+  improvement in `sfp_port_frame_lateral_action_reward`.
+- Loosen depth-shaping lateral gates to `<0.030` for
+  `sfp_port_frame_depth_action` and `sfp_insertion_depth`; the terminal success
+  gate remains `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
