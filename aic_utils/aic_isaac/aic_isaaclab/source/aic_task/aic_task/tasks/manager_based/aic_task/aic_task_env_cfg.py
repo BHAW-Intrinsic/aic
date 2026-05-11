@@ -711,6 +711,17 @@ class SfpTerminationsCfg:
             "depth_threshold": 0.005,
         },
     )
+    sfp_corridor_violation = DoneTerm(
+        func=mdp.sfp_insertion_corridor_violation,
+        params={
+            # Keep early SFP PPO rollouts in the near-port insertion corridor.
+            # Tighten or remove this after fixed-card SFP insertion is reliable.
+            "lateral_limit": 0.060,
+            "orientation_limit": 0.80,
+            "min_depth": -0.080,
+            "max_depth": 0.060,
+        },
+    )
 
 
 @configclass

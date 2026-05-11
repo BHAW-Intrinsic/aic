@@ -45,3 +45,22 @@ def sfp_insertion_success(
         orientation_threshold=orientation_threshold,
         depth_threshold=depth_threshold,
     )
+
+
+def sfp_insertion_corridor_violation(
+    env: ManagerBasedRLEnv,
+    lateral_limit: float = 0.06,
+    orientation_limit: float = 0.80,
+    min_depth: float = -0.08,
+    max_depth: float = 0.06,
+) -> torch.Tensor:
+    """Terminate early when SFP attempts leave the near-port curriculum corridor."""
+    lateral_error = geometry.sfp_lateral_error(env)
+    orientation_error = geometry.sfp_orientation_error(env)
+    depth = geometry.sfp_insertion_depth(env)
+    return (
+        (lateral_error > lateral_limit)
+        | (orientation_error > orientation_limit)
+        | (depth < min_depth)
+        | (depth > max_depth)
+    )

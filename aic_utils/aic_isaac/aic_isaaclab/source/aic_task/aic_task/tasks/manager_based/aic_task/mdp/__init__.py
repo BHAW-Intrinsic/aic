@@ -22,7 +22,11 @@ from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 from .observations import *  # noqa: F401, F403
 from .geometry import *  # noqa: F401, F403
-from .terminations import sc_insertion_success, sfp_insertion_success  # noqa: F401
+from .terminations import (  # noqa: F401
+    sc_insertion_success,
+    sfp_insertion_corridor_violation,
+    sfp_insertion_success,
+)
 from .rewards import (  # noqa: F401
     body_lin_acc_l2,
     ee_reaching_bonus,
