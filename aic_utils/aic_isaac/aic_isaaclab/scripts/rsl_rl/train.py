@@ -165,18 +165,21 @@ def _apply_aic_actor_output_bias(runner: OnPolicyRunner, bias: tuple[float, ...]
         return
 
     algorithm = getattr(runner, "alg", None)
-    policy = getattr(algorithm, "policy", None)
-    if policy is None:
-        policy = getattr(algorithm, "actor_critic", None)
-    if policy is None:
+    if algorithm is None:
         raise RuntimeError("Unable to find RSL-RL policy for AIC actor output bias.")
 
     candidates: list[tuple[str, torch.nn.Module]] = []
-    for attr_name in ("actor", "actor_model", "student_actor"):
-        module = getattr(policy, attr_name, None)
+    for attr_name in ("actor", "policy", "actor_critic", "actor_model", "student_actor"):
+        module = getattr(algorithm, attr_name, None)
         if isinstance(module, torch.nn.Module):
-            candidates.append((f"policy.{attr_name}", module))
+            candidates.append((f"algorithm.{attr_name}", module))
+
+    policy = getattr(algorithm, "policy", None)
     if isinstance(policy, torch.nn.Module):
+        for attr_name in ("actor", "actor_model", "student_actor"):
+            module = getattr(policy, attr_name, None)
+            if isinstance(module, torch.nn.Module):
+                candidates.append((f"policy.{attr_name}", module))
         candidates.append(("policy", policy))
 
     for module_name, module in candidates:
