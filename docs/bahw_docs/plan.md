@@ -941,6 +941,18 @@ Immediate Step 8 note from Step 7:
 	    ever-successes. The next curriculum reset uses the joint state after the
 	    `0.5,0.75,0@10` pre-correction so PPO does not have to discover that
 	    first phase from scratch.
+	  - A later target-specific reset pass replaced both SFP reset presets with
+	    joint means after `-0.25,-0.25,0@4` from the current reset. From this
+	    final deterministic reset, pure `z-` reached `122/128` first-hit
+	    successes under the intermediate gate.
+	  - SFP PPO was changed to full 150-step rollouts because the useful
+	    insertion signal usually appears around step `83`; the previous 24-step
+	    rollout updated PPO before it saw success.
+	  - Full-rollout PPO run
+	    `2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt`
+	    evaluated at `118/128` successes (`92.1875%`) under the intermediate
+	    gate. Per-target rates were `67/74` for `sfp_port_0` and `51/54` for
+	    `sfp_port_1`.
 
 Later distilled outputs:
 
@@ -950,7 +962,13 @@ Later distilled outputs:
 Done when:
 
 - [ ] SC checkpoint solves SC validation.
-- [ ] SFP checkpoint solves SFP validation.
+- [x] SFP checkpoint solves SFP validation.
+  - Current accepted deterministic SFP checkpoint:
+    `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt`
+  - Detached eval: `118/128` successes (`92.1875%`) at
+    `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
+  - This is still fixed-NIC/final-stage curriculum validation; randomized SFP
+    insertion remains future work before final qualification confidence.
 - [ ] Each checkpoint has recorded config, commit hash, and success metrics.
 
 ## Step 9: Distillation, High Level Only
@@ -1097,7 +1115,7 @@ Done when:
 	    (`64/64` deterministic successes).
 	  - [x] Train and evaluate SFP PPO specialist checkpoint from the
 	    pre-corrected reset (`64/64` coarse deterministic successes).
-	  - [ ] Tighten/improve SFP lateral centering beyond the temporary coarse
+	  - [x] Tighten/improve SFP lateral centering beyond the temporary coarse
 	    `0.020` lateral gate.
 	  - [x] Train/evaluate first intermediate-gate SFP PPO
 	    (`2/64`; not sufficient).
@@ -1105,8 +1123,10 @@ Done when:
 	    and widened lateral-error scale (`2/64`; not sufficient).
 	  - [x] Run positive-precorrection action grid and derive new deterministic
 	    SFP reset presets.
-	  - [ ] Validate pure `z-` insertion from the positive-precorrected reset.
-	  - [ ] Retry intermediate-gate PPO from the positive-precorrected reset.
+	  - [x] Validate pure `z-` insertion from the positive/final pre-corrected
+	    reset (`122/128` first-hit successes under the intermediate gate).
+	  - [x] Retry intermediate-gate PPO from the pre-corrected reset
+	    (`118/128` detached eval successes with full 150-step PPO rollouts).
 	  - [ ] Reintroduce SFP reset/NIC randomization after the deterministic
 	    final-stage checkpoint is reliable under the tighter gate.
 - [ ] 14. Revisit distillation only after both teachers work.

@@ -3190,3 +3190,138 @@ sfp_port_1:
   (0.8004823923, -1.5945894718, -1.8431059122,
    -1.1004146338, 1.8384238482, 2.1075541973)
 ```
+
+## Final Intermediate-Gate SFP Reset And PPO
+
+The first positive pre-correction improved the average result but left port 0
+weaker than port 1. A target-specific port-0 correction was tested next, then a
+joint extraction after the best short negative correction was used for both SFP
+ports.
+
+Final reset preset extraction:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-grid3-joints-27d8c65 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 64 --custom_only --custom_sequence=\\\"-0.25,-0.25,0@4\\\" --print_joint_positions --headless --enable_cameras\"; echo STEP8_SFP_GRID3_JOINTS_27D8C65_EXIT:\$?; sleep 120'"
+```
+
+Extracted reset presets committed in `7c99499`:
+
+```text
+sfp_port_0:
+  (0.8302846551, -1.5486999750, -1.8918046951,
+   -1.0959614515, 1.8380267620, 2.1012129784)
+
+sfp_port_1:
+  (0.8000932336, -1.5981711149, -1.8391590118,
+   -1.1001185179, 1.8383054733, 2.1077697277)
+```
+
+Pure z-negative validation from the final reset:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-finalpurez-7c99499 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 128 --custom_only --custom_action 0,0,-1 --num_steps 132 --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --headless --enable_cameras\"; echo STEP8_SFP_FINALPUREZ_7C99499_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+successes=99/128
+ever_successes=122/128
+mean_first_success_step=83.06
+sfp_port_0: n=62 successes=46/62 ever_successes=59/62
+sfp_port_1: n=66 successes=53/66 ever_successes=63/66
+```
+
+Interpretation:
+
+- The reset is physically capable of reaching the intermediate gate:
+  first-hit success is `122/128` (`95.3%`).
+- Final-frame success is lower because the forced action keeps moving after the
+  first successful insertion frame; detached policy evaluation stops on first
+  success.
+
+Detached evaluation of the prior best PPO checkpoint on this reset:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-finalpreset-old0-7c99499 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 128 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_17-37-57_step8_sfp_ppo_port0preset_27d8c65/model_0.pt --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_FINALPRESET_OLD0_7C99499_EXIT:\$?; sleep 120'"
+```
+
+Result:
+
+```text
+episodes: 128
+successes: 113
+success_rate: 0.882812
+per_target:
+  sfp_port_0: episodes=74 successes=62 success_rate=0.837838
+  sfp_port_1: episodes=54 successes=51 success_rate=0.944444
+```
+
+The result improved over previous intermediate-gate PPO attempts, but port 0
+remained below the accepted `>90%` gate.
+
+The next training fix was to change the SFP PPO runner from short 24-step
+rollouts to full 150-step rollouts. The pure z-negative trajectory usually
+first succeeds around step 83, so 24-step PPO updates were happening before the
+rollout observed the sparse success signal.
+
+Commit:
+
+```text
+303652b Use full rollouts for SFP PPO
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-fullrollout-303652b \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 20 --run_name step8_sfp_ppo_fullrollout_303652b --headless --enable_cameras\"; echo STEP8_SFP_PPO_FULLROLLOUT_303652B_EXIT:\$?; sleep 120'"
+```
+
+Training signal:
+
+```text
+iteration 1:  Episode_Termination/sfp_insertion_success: 0.9315
+iteration 2:  Episode_Termination/sfp_insertion_success: 0.9500
+iteration 9:  Episode_Termination/sfp_insertion_success: 0.9125
+iteration 15: Episode_Termination/sfp_insertion_success: 0.9570
+iteration 19: Episode_Termination/sfp_insertion_success: 0.9249
+```
+
+Detached evaluation of the final saved checkpoint:
+
+```bash
+tmux new-session -d -s isaac-step8-eval-fullrollout19-303652b \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 128 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_EVAL_FULLROLLOUT19_303652B_EXIT:\$?; sleep 120'"
+```
+
+Result:
+
+```text
+episodes: 128
+successes: 118
+success_rate: 0.921875
+mean_episode_length_on_success: 79.831
+failure_breakdown:
+  timeout: 10
+  lateral_miss: 10
+  orientation_miss: 5
+  depth_shortfall: 0
+per_target:
+  sfp_port_0: episodes=74 successes=67 success_rate=0.905405
+  sfp_port_1: episodes=54 successes=51 success_rate=0.944444
+```
+
+Interpretation:
+
+- This is the first SFP PPO checkpoint to clear `>90%` detached validation under
+  the intermediate gate (`lateral <0.015`, `orientation <0.25`, `depth >0.015`).
+- The actor still uses only eval-compatible observations; privileged geometry is
+  critic-only.
+- The checkpoint is still a deterministic/fixed-NIC final-stage curriculum
+  checkpoint. It does not yet prove randomized SFP insertion.
+- Next Step 8 work is to reintroduce reset noise and NIC/card randomization
+  gradually while preserving the intermediate-gate success rate.

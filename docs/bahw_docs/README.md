@@ -30,60 +30,41 @@ Completed work so far:
 - Step 7 extended the same MDP structure to SFP with `AIC-SFP-Task-v0`, active
   SFP port metadata, SFP helper geometry, SFP observations/rewards/terminations,
   and SFP PPO config.
-- Step 8 is in progress. The SFP scripted controller was tested and rejected as
-  a BC expert because it systematically misses the port by a few millimeters.
-  Multiple PPO curriculum and reward variants have been tested. The current
-  SFP direction is a pre-corrected final-insertion reset derived from action
-  sequence diagnostics, followed by gradual reintroduction of randomization.
+- Step 8 now has a deterministic fixed-NIC SFP PPO checkpoint above the accepted
+  `>90%` gate under the intermediate insertion threshold. The SFP scripted
+  controller was tested and rejected as a BC expert because it systematically
+  misses the port by a few millimeters. The current SFP path uses a
+  pre-corrected final-insertion reset derived from action-sequence diagnostics,
+  plus full-episode PPO rollouts so the first update sees insertion successes.
 
 Current Step 8 best result:
 
-- Best detached SFP PPO eval before reset pre-correction is
-  `step8_sfp_ppo_purez_noneg_c2a6b11/model_100.pt`: `5/64` coarse successes.
-- The action-sequence diagnostic showed the old SFP reset was laterally biased:
-  `(0.5, 0.5, 0.0)@30; (0.0, 0.0, -1.0)@120` reached `46/64` deterministic
-  successes.
-- The current pre-corrected SFP reset plus pure raw `z-` action probe reaches
-  `64/64` deterministic successes.
-- PPO checkpoint
-  `step8_sfp_ppo_precorr_54b5879/model_50.pt` also reaches `64/64` detached
-  successes under the temporary coarse SFP gate.
-- The first intermediate-gate retry,
-  `step8_sfp_ppo_gateddepth_777d095/model_100.pt`, reached only `2/64`
-  detached successes at `lateral <0.015`, `orientation <0.25`,
-  `depth >0.015`.
-- The realized-lateral-action retry,
-  `step8_sfp_ppo_realizedlat_3d533a4/model_100.pt`, also reached only `2/64`.
-- A positive pre-correction action sequence,
-  `0.5,0.75,0@10;0,0,-1@130`, reached `23/32` final successes and `28/32`
-  ever-successes under the intermediate gate.
+- Final pre-corrected SFP reset plus pure raw `z-` action reaches `122/128`
+  first-hit successes under the intermediate gate.
+- Current accepted deterministic SFP PPO checkpoint:
+  `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt`.
+- Detached eval of that checkpoint reached `118/128` successes (`92.1875%`) at
+  `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
+- Per-target SFP eval: `sfp_port_0` was `67/74` (`90.54%`) and `sfp_port_1`
+  was `51/54` (`94.44%`).
 
 Current blocker:
 
-- The deterministic final-stage SFP reset is now controllable under the coarse
-  SFP gate, but lateral centering is not good enough yet: the detached eval mean
-  lateral error is `0.017177`, close to the temporary `0.020` threshold.
-- A strict action-sequence grid found no `0.004` lateral-threshold successes, so
-  the next training stage uses an intermediate gate of `lateral <0.015`,
-  `orientation <0.25`, `depth >0.015`.
-- The first intermediate-gate retry exposed a reward-shaping conflict: the raw
-  lateral-action reward could saturate while measured lateral error stayed poor.
-- The reward-shaping fix removed that saturation, but PPO still did not
-  discover the staged positive x/y pre-correction. The current retry direction
-  is a new deterministic reset taken after that pre-correction.
-- After lateral centering improves, reset noise and NIC randomization must be
-  reintroduced without losing success.
-- Step 9 remains blocked until both SC and SFP have reliable specialist
-  checkpoints.
+- The current SFP result is deterministic fixed-NIC final-stage validation, not
+  randomized SFP insertion.
+- Reset noise and NIC randomization still need to be reintroduced gradually.
+- Step 9 distillation/export work can be revisited, but final qualification
+  confidence still depends on preserving SFP success under randomization.
 
 Next recommended work:
 
-- Improve the SFP final-stage lateral centering from the pre-corrected reset.
-- Validate pure `z-` insertion from the positive-precorrected SFP reset.
-- Train and evaluate PPO from that positive-precorrected reset.
-- Then gradually reintroduce SFP reset/NIC randomization.
-- After SFP has a reliable specialist checkpoint, revisit Step 9 distillation
-  and final Gazebo routing.
+- Reintroduce SFP reset noise in small increments and evaluate the accepted
+  checkpoint.
+- Resume PPO from the accepted checkpoint if small randomization drops below
+  the `>90%` gate.
+- Then reintroduce NIC/card y randomization.
+- Revisit Step 9 distillation/export and final Gazebo routing once the
+  randomized SFP checkpoint is stable enough.
 
 ## Key Code References
 
