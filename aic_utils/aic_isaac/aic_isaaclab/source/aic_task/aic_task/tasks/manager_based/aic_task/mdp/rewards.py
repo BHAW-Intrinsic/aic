@@ -341,6 +341,25 @@ def sfp_lateral_corridor_penalty(
     return margin_cost + terminal_cost
 
 
+def sfp_depth_backout_penalty(
+    env: ManagerBasedRLEnv,
+    soft_min_depth: float = -0.010,
+    hard_min_depth: float = -0.080,
+    clip: float = 1.0,
+    violation_cost: float = 1.0,
+) -> torch.Tensor:
+    """Penalize backing the SFP module out of the near-port curriculum band."""
+    depth = geometry.sfp_insertion_depth(env)
+    scale = max(soft_min_depth - hard_min_depth, 1.0e-6)
+    margin_cost = torch.clamp(
+        (soft_min_depth - depth) / scale,
+        min=0.0,
+        max=clip,
+    )
+    terminal_cost = (depth < hard_min_depth).float() * violation_cost
+    return margin_cost + terminal_cost
+
+
 def sfp_orientation_alignment_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.35,

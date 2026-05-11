@@ -55,6 +55,7 @@ from .rewards import (  # noqa: F401
     sc_scripted_action_prior_reward,
     sc_scripted_raw_action,
     sfp_approach_reward,
+    sfp_depth_backout_penalty,
     sfp_depth_progress_reward,
     sfp_distance_progress_reward,
     sfp_insertion_action_reward,

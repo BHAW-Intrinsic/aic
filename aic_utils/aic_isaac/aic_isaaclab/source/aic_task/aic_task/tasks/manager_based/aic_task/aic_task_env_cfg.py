@@ -715,24 +715,9 @@ class SfpTerminationsCfg:
     # The reward penalty below makes lateral escape costly across a short
     # timeout horizon; immediate reset made corridor exit an escape behavior.
     sfp_corridor_lateral_violation = None
-    sfp_corridor_orientation_violation = DoneTerm(
-        func=mdp.sfp_corridor_orientation_violation,
-        params={
-            "orientation_limit": 0.80,
-        },
-    )
-    sfp_corridor_min_depth_violation = DoneTerm(
-        func=mdp.sfp_corridor_min_depth_violation,
-        params={
-            "min_depth": -0.080,
-        },
-    )
-    sfp_corridor_max_depth_violation = DoneTerm(
-        func=mdp.sfp_corridor_max_depth_violation,
-        params={
-            "max_depth": 0.060,
-        },
-    )
+    sfp_corridor_orientation_violation = None
+    sfp_corridor_min_depth_violation = None
+    sfp_corridor_max_depth_violation = None
 
 
 @configclass
@@ -852,6 +837,16 @@ class SfpRewardsCfg:
         params={
             "soft_limit": 0.020,
             "hard_limit": 0.060,
+            "clip": 1.0,
+            "violation_cost": 1.0,
+        },
+    )
+    sfp_depth_backout = RewTerm(
+        func=mdp.sfp_depth_backout_penalty,
+        weight=-80.0,
+        params={
+            "soft_min_depth": -0.010,
+            "hard_min_depth": -0.080,
             "clip": 1.0,
             "violation_cost": 1.0,
         },
