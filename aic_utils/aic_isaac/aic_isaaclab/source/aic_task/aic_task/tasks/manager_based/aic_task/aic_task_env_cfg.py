@@ -860,14 +860,14 @@ class SfpRewardsCfg:
     )
     sfp_insertion_action = RewTerm(
         func=mdp.sfp_insertion_action_reward,
-        weight=3.0,
+        weight=30.0,
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
             "action_scale": 0.05,
-            "command_scale": 0.025,
-            "lateral_threshold": 0.010,
-            "orientation_threshold": 0.35,
+            "command_scale": 0.010,
+            "lateral_threshold": 0.020,
+            "orientation_threshold": 0.50,
         },
     )
     sfp_insertion_success = RewTerm(
@@ -993,3 +993,9 @@ class AICTaskSfpEnvCfg(AICTaskEnvCfg):
     rewards: SfpRewardsCfg = SfpRewardsCfg()
     terminations: SfpTerminationsCfg = SfpTerminationsCfg()
     events: SfpEventCfg = SfpEventCfg()
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        # Final insertion should resolve quickly from the near-port curriculum.
+        # Short episodes reset failed attempts back into the useful state band.
+        self.episode_length_s = 20.0
