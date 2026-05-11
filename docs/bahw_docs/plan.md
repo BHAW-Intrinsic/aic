@@ -683,21 +683,27 @@ Current gate:
 
 Work:
 
-- [ ] Add SFP assets to Isaac scene if not already present.
-- [ ] Use Step 0's confirmed runtime body `robot.sfp_tip_link` for the SFP plug
+- [x] Add SFP assets to Isaac scene if not already present.
+  - `AIC-SFP-Task-v0` loads the existing `nic_card` and unified robot/cable
+    scene; no new scene asset was needed for the Step 7 smoke test.
+- [x] Use Step 0's confirmed runtime body `robot.sfp_tip_link` for the SFP plug
   tip geometry.
   - Before relying on it, repeat the Step 6 drift/scripted-control diagnostic
     pattern for SFP. The SC body name existed but was not the controlled gripped
     insertion tip, so SFP must not assume body-name presence equals controllable
     insertion geometry.
-- [ ] Add or expose SFP port entrance helper poses.
+  - Step 7 uses `robot.sfp_tip_link` for the initial helper. The diagnostic is
+    still required before long SFP training.
+- [x] Add or expose SFP port entrance helper poses.
   - Step 0 found `sfp_port_0_link_entrance` and `sfp_port_1_link_entrance` as
     USD prims under `nic_card`, but not as runtime rigid bodies.
   - Prefer reading those USD prim transforms if stable; otherwise derive fixed
     offsets from `nic_card`.
-- [ ] Add active SFP target metadata for `sfp_port_0` and `sfp_port_1`.
-- [ ] Reuse the same geometry helper interface from SC.
-- [ ] Add SFP reward thresholds and insertion depth thresholds.
+  - Step 7 derives fixed offsets from `nic_card` using the NIC Card SDF port and
+    entrance poses.
+- [x] Add active SFP target metadata for `sfp_port_0` and `sfp_port_1`.
+- [x] Reuse the same geometry helper interface from SC.
+- [x] Add SFP reward thresholds and insertion depth thresholds.
 
 Reference Gazebo SDF frames:
 
@@ -707,9 +713,9 @@ Reference Gazebo SDF frames:
 
 Done when:
 
-- [ ] The same observation/reward/termination API works for SFP.
-- [ ] SFP target can switch between port 0 and port 1.
-- [ ] SFP teacher/policy smoke run starts.
+- [x] The same observation/reward/termination API works for SFP.
+- [x] SFP target can switch between port 0 and port 1.
+- [x] SFP teacher/policy smoke run starts.
   - Carry over the Step 6 scripted-control plus BC/DAgger bootstrap path if
     reward-only PPO remains unreliable.
 - [ ] SFP teacher/policy learns insertion in simulation.
@@ -729,6 +735,12 @@ Output checkpoints:
 Prefer PPO checkpoints for final/generalizable specialist policies. BC/DAgger
 checkpoints may be kept as diagnostics, warm starts, or provisional gates, and
 their provenance must be recorded explicitly.
+
+Immediate Step 8 note from Step 7:
+
+- Before long SFP PPO training, run an SFP drift/scripted-control diagnostic
+  analogous to Step 6. If `sfp_tip_link` is not the controlled gripped insertion
+  point, switch SFP geometry to a virtual TCP helper offset first.
 
 Later distilled outputs:
 
@@ -809,7 +821,7 @@ Done when:
   - [x] User accepted `>90%` SC plus saved video as sufficient to unblock SFP.
     Current best is a BC-trained neural actor checkpoint at `233/256`; PPO
     remains the preferred final path.
-- [ ] 12. Extend the same geometry/reward interface to SFP.
+- [x] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher/policy.
 - [ ] 14. Revisit distillation only after both teachers work.
 
@@ -825,7 +837,7 @@ The SC implementation is done when:
 
 The SFP implementation is done when:
 
-- [ ] The same MDP structure supports SFP.
+- [x] The same MDP structure supports SFP.
 - [ ] SFP plug and port entrance geometry are correct.
 - [ ] SFP teacher/policy inserts in randomized simulation.
 
