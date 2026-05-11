@@ -704,11 +704,12 @@ class SfpTerminationsCfg:
     sfp_insertion_success = DoneTerm(
         func=mdp.sfp_insertion_success,
         params={
-            # First SFP curriculum gate. Tighten back to the strict insertion
-            # gate after PPO reliably reaches this coarse final-insertion band.
-            "lateral_threshold": 0.020,
-            "orientation_threshold": 0.50,
-            "depth_threshold": 0.005,
+            # Intermediate SFP curriculum gate. The first coarse gate
+            # (0.020, 0.50, 0.005) is solved from the pre-corrected reset; this
+            # stage asks PPO to keep lateral centering while inserting deeper.
+            "lateral_threshold": 0.015,
+            "orientation_threshold": 0.25,
+            "depth_threshold": 0.015,
         },
     )
     # First SFP PPO curriculum: do not immediately terminate lateral misses.
@@ -823,13 +824,13 @@ class SfpRewardsCfg:
     )
     sfp_lateral_progress = RewTerm(
         func=mdp.sfp_lateral_progress_reward,
-        weight=20.0,
+        weight=30.0,
         params={"scale": 0.005, "clip": 1.0},
     )
     sfp_lateral_error = RewTerm(
         func=mdp.sfp_lateral_error_penalty,
-        weight=-40.0,
-        params={"scale": 0.020, "clip": 1.0},
+        weight=-60.0,
+        params={"scale": 0.015, "clip": 1.0},
     )
     sfp_lateral_corridor = RewTerm(
         func=mdp.sfp_lateral_corridor_penalty,
@@ -917,7 +918,7 @@ class SfpRewardsCfg:
     sfp_lateral_alignment = RewTerm(
         func=mdp.sfp_lateral_alignment_reward,
         weight=4.0,
-        params={"std": 0.02},
+        params={"std": 0.015},
     )
     sfp_orientation_alignment = RewTerm(
         func=mdp.sfp_orientation_alignment_reward,
@@ -931,8 +932,8 @@ class SfpRewardsCfg:
             "depth_scale": 0.006,
             "max_depth": 0.045,
             "min_depth": 0.0,
-            "lateral_threshold": 0.010,
-            "orientation_threshold": 0.35,
+            "lateral_threshold": 0.015,
+            "orientation_threshold": 0.30,
         },
     )
     sfp_insertion_action = RewTerm(
@@ -944,8 +945,8 @@ class SfpRewardsCfg:
             "action_scale": 0.003,
             "command_scale": 0.0006,
             "realized_depth_scale": 3.0e-5,
-            "lateral_threshold": 0.010,
-            "orientation_threshold": 0.35,
+            "lateral_threshold": 0.015,
+            "orientation_threshold": 0.30,
             "lateral_std": 0.008,
         },
     )
@@ -953,9 +954,9 @@ class SfpRewardsCfg:
         func=mdp.sfp_insertion_success_bonus,
         weight=100.0,
         params={
-            "lateral_threshold": 0.020,
-            "orientation_threshold": 0.50,
-            "depth_threshold": 0.005,
+            "lateral_threshold": 0.015,
+            "orientation_threshold": 0.25,
+            "depth_threshold": 0.015,
         },
     )
 

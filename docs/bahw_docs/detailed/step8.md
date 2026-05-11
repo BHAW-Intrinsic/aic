@@ -2604,3 +2604,354 @@ Interpretation:
 - The next step should be a custom combined-action diagnostic in
   `check_sfp_action_frame.py`, then a reset/curriculum or reward update based
   on measured combined-action behavior.
+
+## Custom SFP Action Diagnostic
+
+Code changes:
+
+```text
+5351bca Add custom SFP action probe
+03c56fa Track SFP action probe trajectory success
+```
+
+Change:
+
+- Extended `scripts/check_sfp_action_frame.py` with `--custom_action`,
+  `--custom_only`, and trajectory-aware success tracking.
+- The diagnostic now reports final successes, ever-successes, first success
+  step, and best aligned depth reached during the rollout.
+
+Key results from the current reset:
+
+```text
+custom_action=(0.0, 0.0, -1.0), 150 steps:
+  ever_successes: 3/64 to 4/64 depending reset/noise setting
+  final successes: low single digits
+
+custom_action=(0.13, 0.10, -1.0), 150 steps:
+  ever_successes: 0/64
+  final successes: 0/64
+
+custom_action=(0.13, 0.10, -0.25), 150 steps:
+  ever_successes: 0/64
+  final successes: 0/64
+```
+
+Interpretation:
+
+- The simple linear compensation inferred from single-axis probes was not a
+  valid combined action.
+- Pure raw `z-` remained the only reliable depth-advancing primitive, but from
+  the old reset it only produced occasional transient success.
+
+## Pure Depth Bias Curriculum
+
+Code change:
+
+```text
+c2a6b11 Use pure SFP depth curriculum start
+```
+
+Change:
+
+- Removed SFP reset position noise for the first final-insertion curriculum
+  pass.
+- Replaced the coupled initial actor bias with pure raw `z=-1.0`.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-purez-noneg-c2a6b11 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_purez_noneg_c2a6b11 --headless --enable_cameras\"; echo STEP8_SFP_PPO_PUREZ_NONEG_EXIT:\$?; sleep 120'"
+```
+
+Detached evaluation of `model_100.pt`:
+
+```text
+episodes: 64
+successes: 5
+success_rate: 0.078125
+mean_episode_length: 147.547
+mean_episode_length_on_success: 118.600
+mean_lateral_error_at_termination: 0.023220
+mean_signed_lateral_x_at_termination: -0.017436
+mean_signed_lateral_z_at_termination: 0.015302
+mean_orientation_error_at_termination: 0.335581
+mean_insertion_depth_at_termination: 0.013849
+mean_success_lateral_error: 0.019595
+mean_success_insertion_depth: 0.005598
+failure_breakdown:
+  timeout: 59
+  lateral_miss: 43
+  orientation_miss: 0
+  depth_shortfall: 19
+per_target:
+  sfp_port_0: 4/37
+  sfp_port_1: 1/27
+```
+
+Interpretation:
+
+- This became the best detached SFP PPO checkpoint at that point.
+- The policy could generate enough depth, but the residual lateral offset made
+  most episodes miss the coarse lateral gate.
+
+## SFP Action Sequence Probe
+
+Code change:
+
+```text
+cfc645b Support SFP action sequence probes
+```
+
+Change:
+
+- Added `--custom_sequence`, with sequence entries formatted as
+  `x,y,z@steps`.
+- This makes it possible to test a lateral pre-correction phase followed by a
+  pure insertion phase.
+
+Key results:
+
+```text
+pure z 150:
+  successes=0/64
+  ever_successes=5/64
+  best_aligned_depth_mean=0.003050
+
+sequence 1,1,0@15;0,0,-1@135:
+  successes=40/64
+  ever_successes=42/64
+  mean_first_success_step=32.60
+  best_aligned_depth_mean=0.026113
+
+sequence 0.5,0.5,0@30;0,0,-1@120:
+  successes=46/64
+  ever_successes=46/64
+  mean_first_success_step=44.07
+  best_aligned_depth_mean=0.024681
+```
+
+Interpretation:
+
+- The missing ingredient was not a complex insertion controller. The reset was
+  laterally biased relative to the action frame.
+- A short raw `(x+, y+)` pre-correction followed by pure raw `z-` solved most
+  deterministic reset episodes.
+
+## Pre-Corrected SFP Reset Presets
+
+Code changes:
+
+```text
+30966e6 Log SFP probe joint presets
+54b5879 Use pre-corrected SFP reset presets
+```
+
+Preset extraction command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-precorr-joints-30966e6 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 64 --num_steps 30 --custom_only --custom_action 0.5,0.5,0.0 --print_joint_positions --headless --enable_cameras\"; echo STEP8_SFP_PRECORR_JOINTS_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+after_lateral_mean=0.019039
+after_depth_mean=-0.000724
+after_orientation_mean=0.020370
+
+sfp_port_0_mean_joint_pos=(
+  0.8343623281, -1.5769010782, -1.8567240238,
+  -1.0969889164, 1.8369734287, 2.1079621315
+)
+
+sfp_port_1_mean_joint_pos=(
+  0.8025181293, -1.6159480810, -1.8159053326,
+  -1.1020359993, 1.8379788399, 2.1117913723
+)
+```
+
+These per-target joint means replaced the previous SFP near-port reset presets.
+
+Validation command after `54b5879`:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-precorr-purez-54b5879 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 64 --num_steps 120 --custom_only --custom_action 0.0,0.0,-1.0 --headless --enable_cameras\"; echo STEP8_SFP_PRECORR_PUREZ_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+successes=64/64
+ever_successes=64/64
+mean_first_success_step=8.14
+best_aligned_depth_mean=0.025381
+after_lateral_mean=0.016404
+after_depth_mean=0.025370
+after_orientation_mean=0.238877
+sfp_port_0 d_depth_mean=+0.008744
+sfp_port_1 d_depth_mean=+0.037951
+```
+
+Interpretation:
+
+- The deterministic final-insertion curriculum is now controllable with pure
+  raw `z-` from the pre-corrected reset.
+- This does not yet solve randomized SFP insertion, but it gives PPO a clean
+  final-stage curriculum instead of a laterally biased one.
+
+Smoke PPO from the pre-corrected reset:
+
+```bash
+tmux new-session -d -s isaac-step8-precorr-smoke-54b5879 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 16 --max_iterations 1 --run_name step8_sfp_precorr_smoke_54b5879 --headless --enable_cameras\"; echo STEP8_PRECORR_SMOKE_54B5879_EXIT:\$?; sleep 120'"
+```
+
+Smoke output:
+
+```text
+Episode_Termination/time_out: 0.0521
+Episode_Termination/sfp_insertion_success: 0.6693
+STEP8_PRECORR_SMOKE_54B5879_EXIT:0
+```
+
+Training command now running:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-precorr-54b5879 \
+  "bash -lc 'cd ~/IsaacLab/aic && git fetch origin aloy && git checkout aloy && git pull --ff-only origin aloy && cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_precorr_54b5879 --headless --enable_cameras\"; echo STEP8_SFP_PPO_PRECORR_54B5879_EXIT:\$?; sleep 120'"
+```
+
+Early monitor:
+
+```text
+iteration 0:
+  Episode_Termination/time_out: 0.0306
+  Episode_Termination/sfp_insertion_success: 0.6628
+
+iteration 20:
+  Episode_Termination/time_out: 0.0000
+  Episode_Termination/sfp_insertion_success: 1.0000
+```
+
+Current interpretation:
+
+- PPO is solving the deterministic pre-corrected reset stage immediately.
+- Next checks are detached evaluation of saved checkpoints, then gradual
+  reintroduction of reset/NIC randomization if the checkpoint remains reliable
+  under evaluation.
+
+The run was stopped after `model_50.pt` so the GPU could be used for detached
+evaluation.
+
+Evaluation command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-precorr50-54b5879 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_15-49-50_step8_sfp_ppo_precorr_54b5879/model_50.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_PRECORR50_54B5879_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 64
+success_rate: 1.000000
+mean_episode_length: 9.500
+mean_episode_length_on_success: 9.500
+mean_lateral_error_at_termination: 0.017177
+mean_signed_lateral_x_at_termination: 0.014381
+mean_signed_lateral_z_at_termination: -0.009381
+mean_orientation_error_at_termination: 0.032587
+mean_insertion_depth_at_termination: 0.005357
+failure_breakdown:
+  timeout: 0
+  lateral_miss: 0
+  orientation_miss: 0
+  depth_shortfall: 0
+per_target:
+  sfp_port_0: 36/36
+  sfp_port_1: 28/28
+STEP8_SFP_EVAL_PRECORR50_54B5879_EXIT:0
+```
+
+Interpretation:
+
+- The pre-corrected deterministic final-stage reset is solved under the current
+  coarse SFP gate.
+- The gate is still coarse: lateral error is about `17 mm`, close to the
+  temporary `20 mm` threshold and far outside the older strict SFP scripted gate
+  of `4 mm`.
+- Before this can count as a reliable SFP specialist, the next curriculum pass
+  must improve lateral centering and then reintroduce reset/NIC randomization.
+
+## Intermediate Lateral-Centering Gate
+
+Strict action-sequence diagnostic command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-strict-grid16-54b5879
+tmux send-keys -t isaac-step8-sfp-strict-grid16-54b5879 \
+  "cd ~/IsaacLab && docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 16 --custom_only --lateral_threshold 0.004 --orientation_threshold 0.20 --depth_threshold 0.015 --custom_sequence=\"0,0,-1@140\" --custom_sequence=\"-0.25,-0.25,0@10;0,0,-1@130\" --custom_sequence=\"-0.5,-0.5,0@10;0,0,-1@130\" --custom_sequence=\"-1,-1,0@10;0,0,-1@130\" --custom_sequence=\"-0.5,0,0@10;0,0,-1@130\" --custom_sequence=\"0,-0.5,0@10;0,0,-1@130\" --custom_sequence=\"0.25,0.25,0@10;0,0,-1@130\" --custom_sequence=\"0.5,0.5,0@10;0,0,-1@130\" --custom_sequence=\"-0.25,0.25,0@10;0,0,-1@130\" --custom_sequence=\"0.25,-0.25,0@10;0,0,-1@130\" --headless --enable_cameras'; echo STEP8_SFP_STRICT_GRID16_EXIT:\$?" C-m
+```
+
+Key results:
+
+```text
+strict thresholds:
+  lateral <0.004
+  orientation <0.20
+  depth >0.015
+
+sequence 0,0,-1@140:
+  after_lateral_mean=0.016535
+  after_depth_mean=0.021867
+  after_orientation_mean=0.291995
+  successes=0/16
+
+sequence -0.25,-0.25,0@10;0,0,-1@130:
+  after_lateral_mean=0.006417
+  after_depth_mean=0.000927
+  after_orientation_mean=0.313583
+  successes=0/16
+
+sequence -0.5,-0.5,0@10;0,0,-1@130:
+  after_lateral_mean=0.003805
+  after_depth_mean=-0.002681
+  after_orientation_mean=0.311319
+  successes=0/16
+
+sequence 0.25,0.25,0@10;0,0,-1@130:
+  after_lateral_mean=0.014548
+  after_depth_mean=0.054768
+  after_orientation_mean=0.234727
+  successes=0/16
+
+sequence 0.5,0.5,0@10;0,0,-1@130:
+  after_lateral_mean=0.016426
+  after_depth_mean=0.073435
+  after_orientation_mean=0.207665
+  successes=0/16
+```
+
+Interpretation:
+
+- Jumping straight from the coarse gate to the old strict gate is too large a
+  step.
+- Negative lateral correction can center the tip to roughly the strict lateral
+  band, but it kills insertion depth.
+- Positive lateral correction preserves or improves depth, but keeps lateral
+  error near `15-16 mm`.
+- The next PPO stage should use an intermediate gate rather than the old strict
+  gate: lateral `<0.015`, orientation `<0.25`, depth `>0.015`.
+
+Code change in progress:
+
+- Tighten SFP success termination and success bonus to the intermediate gate.
+- Increase lateral progress/error pressure slightly.
+- Let insertion-depth/action rewards remain active up to lateral `<0.015` so
+  PPO is not forced to solve strict lateral centering before receiving any depth
+  reward.

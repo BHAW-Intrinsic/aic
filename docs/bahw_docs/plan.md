@@ -890,10 +890,33 @@ Immediate Step 8 note from Step 7:
 	    timeout-only behavior by iteration `72`. Evaluation of `model_50.pt`
 	    produced `0/64` successes, `mean_lateral=0.013022`,
 	    `mean_orientation=0.342141`, and `mean_depth=-0.003365`.
-	  - Current blocker: SFP final insertion requires a depth-advancing action
-	    that does not induce lateral drift. Before more PPO, extend
-	    `check_sfp_action_frame.py` to test custom combined action vectors and use
-	    that to derive the next reset/curriculum or action-shaping change.
+	  - Added custom combined-action and sequence diagnostics for
+	    `check_sfp_action_frame.py`. The direct combined compensation
+	    `(0.13, 0.10, -1.0)` did not work (`0/64`), but a two-phase sequence did:
+	    `(0.5, 0.5, 0.0)@30; (0.0, 0.0, -1.0)@120` reached `46/64` final
+	    successes and `46/64` ever-successes.
+	  - Used the successful lateral pre-correction diagnostic to derive
+	    per-target SFP reset joint presets. From those pre-corrected resets, pure
+	    raw `z-` succeeds in `64/64` deterministic action-probe episodes with
+	    mean first success step `8.14`.
+	  - Current SFP status: the deterministic final-insertion curriculum is now
+	    controllable. PPO run `step8_sfp_ppo_precorr_54b5879` reached `1.0000`
+	    `Episode_Termination/sfp_insertion_success` by iteration `20`.
+	  - Detached evaluation of
+	    `2026-05-11_15-49-50_step8_sfp_ppo_precorr_54b5879/model_50.pt` reached
+	    `64/64` successes under the temporary coarse SFP gate
+	    (`lateral <0.020`, `orientation <0.50`, `depth >0.005`).
+	  - Next blocker: this solves only the fixed/pre-corrected final-stage reset
+	    under a coarse lateral gate. The evaluated mean lateral error is
+	    `0.017177`, close to the `0.020` threshold and far outside the older
+	    strict SFP scripted gate of `0.004`. Improve lateral centering, then
+	    reintroduce reset/NIC randomization gradually before starting Step 9.
+	  - A strict 16-env action-sequence grid found no successes under
+	    `lateral <0.004`, `orientation <0.20`, `depth >0.015`. Negative lateral
+	    corrections can reach mean lateral `0.003805`, but depth remains negative;
+	    positive corrections preserve depth but leave lateral around `0.0145` to
+	    `0.0164`. The next PPO stage is therefore an intermediate gate:
+	    `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
 
 Later distilled outputs:
 
@@ -1043,8 +1066,19 @@ Done when:
 	  - [x] Run insertion-action-progress SFP PPO.
 	  - [x] Run strong forced-action diagnostic for final SFP insertion motion.
 	  - [x] Add and evaluate coupled initial insertion push bias.
-	  - [ ] Add custom combined-action SFP diagnostic.
-	  - [ ] Train SFP PPO specialist checkpoint.
+	  - [x] Add custom combined-action SFP diagnostic.
+	  - [x] Add action-sequence SFP diagnostic and derive pre-corrected reset
+	    presets.
+	  - [x] Validate pre-corrected reset with pure raw `z-` action probe
+	    (`64/64` deterministic successes).
+	  - [x] Train and evaluate SFP PPO specialist checkpoint from the
+	    pre-corrected reset (`64/64` coarse deterministic successes).
+	  - [ ] Tighten/improve SFP lateral centering beyond the temporary coarse
+	    `0.020` lateral gate.
+	  - [ ] Train/evaluate intermediate-gate SFP PPO
+	    (`lateral <0.015`, `orientation <0.25`, `depth >0.015`).
+	  - [ ] Reintroduce SFP reset/NIC randomization after the deterministic
+	    final-stage checkpoint is reliable under the tighter gate.
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria

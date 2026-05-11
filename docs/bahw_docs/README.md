@@ -32,33 +32,41 @@ Completed work so far:
   and SFP PPO config.
 - Step 8 is in progress. The SFP scripted controller was tested and rejected as
   a BC expert because it systematically misses the port by a few millimeters.
-  Multiple PPO curriculum and reward variants have been tested.
+  Multiple PPO curriculum and reward variants have been tested. The current
+  SFP direction is a pre-corrected final-insertion reset derived from action
+  sequence diagnostics, followed by gradual reintroduction of randomization.
 
 Current Step 8 best result:
 
-- Best detached SFP eval so far is
-  `step8_sfp_ppo_progressgate_a79737c/model_50.pt`: `1/64` coarse successes.
-- Latest coupled-bias PPO checkpoint
-  `step8_sfp_ppo_coupledbias_6c3fbf2/model_50.pt` evaluated at `0/64`.
-- The SFP policy can often stay within the temporary lateral/orientation gate,
-  but it does not reliably cross the final insertion-depth threshold.
+- Best detached SFP PPO eval before reset pre-correction is
+  `step8_sfp_ppo_purez_noneg_c2a6b11/model_100.pt`: `5/64` coarse successes.
+- The action-sequence diagnostic showed the old SFP reset was laterally biased:
+  `(0.5, 0.5, 0.0)@30; (0.0, 0.0, -1.0)@120` reached `46/64` deterministic
+  successes.
+- The current pre-corrected SFP reset plus pure raw `z-` action probe reaches
+  `64/64` deterministic successes.
+- PPO checkpoint
+  `step8_sfp_ppo_precorr_54b5879/model_50.pt` also reaches `64/64` detached
+  successes under the temporary coarse SFP gate.
 
 Current blocker:
 
-- The final SFP insertion motion is not yet controllable enough for PPO. The
-  forced-action diagnostic shows raw `tz-` increases signed insertion depth, but
-  it also creates lateral drift. Reward shaping and fixed actor bias have not
-  yet produced a stable depth-advancing, laterally centered insertion policy.
+- The deterministic final-stage SFP reset is now controllable under the coarse
+  SFP gate, but lateral centering is not good enough yet: the detached eval mean
+  lateral error is `0.017177`, close to the temporary `0.020` threshold.
+- A strict action-sequence grid found no `0.004` lateral-threshold successes, so
+  the next training stage uses an intermediate gate of `lateral <0.015`,
+  `orientation <0.25`, `depth >0.015`.
+- After lateral centering improves, reset noise and NIC randomization must be
+  reintroduced without losing success.
+- Step 9 remains blocked until both SC and SFP have reliable specialist
+  checkpoints.
 
 Next recommended work:
 
-- Extend `scripts/check_sfp_action_frame.py` with a custom action-vector mode.
-  Use it to test combined pushes such as the estimated `x/y/z` compensation
-  vector from the forced-action diagnostic.
-- If a combined action can insert without lateral drift, use that measurement to
-  design the next PPO reset/curriculum or action-shaping term.
-- If no combined action inserts from the current reset, adjust the SFP reset
-  preset or action frame before running more PPO.
+- Improve the SFP final-stage lateral centering from the pre-corrected reset.
+- Train and evaluate the intermediate-gate SFP PPO stage.
+- Then gradually reintroduce SFP reset/NIC randomization.
 - After SFP has a reliable specialist checkpoint, revisit Step 9 distillation
   and final Gazebo routing.
 
