@@ -668,7 +668,9 @@ class SfpEventCfg:
                 {
                     "scene_name": "nic_card",
                     "offset": (-0.03235, 0.02329, 0.0743),
-                    "pose_range": {"y": (0.0, 0.12)},
+                    # First SFP PPO curriculum stage: keep the NIC fixed until
+                    # insertion works, then reintroduce the y randomization.
+                    "pose_range": {"y": (0.0, 0.0)},
                     "snap_step": {"y": 0.04},
                 },
             ],
@@ -684,7 +686,7 @@ class SfpEventCfg:
         params={
             "probability": 1.0,
             "blend": 1.0,
-            "position_noise": 0.01,
+            "position_noise": 0.003,
             "velocity_range": (0.0, 0.0),
         },
     )
