@@ -845,6 +845,11 @@ class SfpRewardsCfg:
         weight=5.0,
         params={"scale": 0.005, "clip": 1.0},
     )
+    sfp_lateral_error = RewTerm(
+        func=mdp.sfp_lateral_error_penalty,
+        weight=-6.0,
+        params={"scale": 0.060, "clip": 1.0},
+    )
     sfp_lateral_correction_action = RewTerm(
         func=mdp.sfp_lateral_correction_action_reward,
         weight=20.0,

@@ -62,6 +62,7 @@ from .rewards import (  # noqa: F401
     sfp_insertion_success_bonus,
     sfp_lateral_alignment_reward,
     sfp_lateral_correction_action_reward,
+    sfp_lateral_error_penalty,
     sfp_lateral_progress_reward,
     sfp_orientation_alignment_reward,
     sfp_orientation_progress_reward,

@@ -316,6 +316,16 @@ def sfp_lateral_alignment_reward(
     return 1.0 - torch.tanh(lateral_error / std)
 
 
+def sfp_lateral_error_penalty(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.06,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Penalize SFP lateral error inside the near-port curriculum corridor."""
+    lateral_error = geometry.sfp_lateral_error(env)
+    return torch.clamp(lateral_error / max(scale, 1.0e-6), min=0.0, max=clip)
+
+
 def sfp_orientation_alignment_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.35,
