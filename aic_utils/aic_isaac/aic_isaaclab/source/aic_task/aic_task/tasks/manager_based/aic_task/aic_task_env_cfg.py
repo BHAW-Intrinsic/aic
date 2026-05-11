@@ -865,6 +865,18 @@ class SfpRewardsCfg:
             "max_depth": 0.060,
         },
     )
+    sfp_port_frame_depth_action = RewTerm(
+        func=mdp.sfp_port_frame_depth_action_reward,
+        weight=80.0,
+        params={
+            "action_name": "arm_action",
+            "command_scale": 0.02,
+            "min_depth": -0.080,
+            "target_depth": 0.005,
+            "lateral_threshold": 0.120,
+            "orientation_threshold": 1.50,
+        },
+    )
     sfp_lateral_correction_action = RewTerm(
         func=mdp.sfp_lateral_correction_action_reward,
         weight=0.0,
