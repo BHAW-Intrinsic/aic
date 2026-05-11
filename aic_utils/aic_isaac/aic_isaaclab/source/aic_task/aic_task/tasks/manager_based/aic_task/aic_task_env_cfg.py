@@ -827,7 +827,7 @@ class SfpRewardsCfg:
     )
     sfp_lateral_progress = RewTerm(
         func=mdp.sfp_lateral_progress_reward,
-        weight=1.0,
+        weight=5.0,
         params={"scale": 0.005, "clip": 1.0},
     )
     sfp_orientation_progress = RewTerm(
@@ -852,7 +852,7 @@ class SfpRewardsCfg:
     )
     sfp_lateral_alignment = RewTerm(
         func=mdp.sfp_lateral_alignment_reward,
-        weight=1.0,
+        weight=4.0,
         params={"std": 0.02},
     )
     sfp_orientation_alignment = RewTerm(
@@ -873,14 +873,15 @@ class SfpRewardsCfg:
     )
     sfp_insertion_action = RewTerm(
         func=mdp.sfp_insertion_action_reward,
-        weight=30.0,
+        weight=15.0,
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
             "action_scale": 0.01,
             "command_scale": 0.004,
-            "lateral_threshold": 0.020,
-            "orientation_threshold": 0.50,
+            "lateral_threshold": 0.010,
+            "orientation_threshold": 0.35,
+            "lateral_std": 0.008,
         },
     )
     sfp_insertion_success = RewTerm(

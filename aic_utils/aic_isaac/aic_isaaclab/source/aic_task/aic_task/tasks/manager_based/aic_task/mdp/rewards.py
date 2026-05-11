@@ -445,6 +445,7 @@ def sfp_insertion_action_reward(
     command_scale: float = 0.025,
     lateral_threshold: float = 0.010,
     orientation_threshold: float = 0.35,
+    lateral_std: float = 0.0,
 ) -> torch.Tensor:
     """Reward relative-IK translation commands that move the SFP tip inward.
 
@@ -470,6 +471,9 @@ def sfp_insertion_action_reward(
     scaled_command = torch.clamp(
         inward_command / max(command_scale, 1.0e-6), min=0.0, max=1.0
     )
+    if lateral_std > 0.0:
+        lateral_gain = 1.0 - torch.tanh(lateral_error / lateral_std)
+        scaled_command = scaled_command * lateral_gain
     return aligned.float() * scaled_command
 
 
