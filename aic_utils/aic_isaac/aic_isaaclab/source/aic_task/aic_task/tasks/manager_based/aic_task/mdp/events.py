@@ -53,18 +53,18 @@ SC_NEAR_PORT_JOINT_PRESETS = {
     ),
 }
 
-# Mean joint positions after the Step 8 intermediate-gate SFP pre-correction
-# diagnostic: starting from the earlier final-stage seeds, apply raw action
-# (0.5, 0.75, 0.0) for 10 steps. From these seeds, raw z-negative insertion is
-# closer to the lateral/orientation/depth intermediate gate.
+# Mean joint positions after Step 8 intermediate-gate SFP pre-correction
+# diagnostics. Port 0 uses an additional target-specific lateral correction
+# because pure z-negative insertion remained weaker there. Port 1 keeps the
+# earlier positive pre-correction seed, which was already near-reliable.
 SFP_NEAR_PORT_JOINT_PRESETS = {
     "sfp_port_0": (
-        0.8327597380,
-        -1.5545032024,
-        -1.8837299347,
-        -1.0963498354,
-        1.8376724720,
-        2.1044800282,
+        0.8307705522,
+        -1.5449107885,
+        -1.8956825733,
+        -1.0964404345,
+        1.8381533623,
+        2.1011598110,
     ),
     "sfp_port_1": (
         0.8004823923,
