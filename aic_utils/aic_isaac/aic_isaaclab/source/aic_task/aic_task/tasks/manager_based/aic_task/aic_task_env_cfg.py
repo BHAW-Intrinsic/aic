@@ -858,6 +858,18 @@ class SfpRewardsCfg:
             "orientation_threshold": 0.35,
         },
     )
+    sfp_insertion_action = RewTerm(
+        func=mdp.sfp_insertion_action_reward,
+        weight=3.0,
+        params={
+            "action_name": "arm_action",
+            "asset_name": "robot",
+            "action_scale": 0.05,
+            "command_scale": 0.025,
+            "lateral_threshold": 0.010,
+            "orientation_threshold": 0.35,
+        },
+    )
     sfp_insertion_success = RewTerm(
         func=mdp.sfp_insertion_success_bonus,
         weight=10.0,

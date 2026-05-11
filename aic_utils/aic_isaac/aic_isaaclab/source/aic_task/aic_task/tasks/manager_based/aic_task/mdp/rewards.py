@@ -437,6 +437,42 @@ def sfp_insertion_success_bonus(
     ).float()
 
 
+def sfp_insertion_action_reward(
+    env: ManagerBasedRLEnv,
+    action_name: str = "arm_action",
+    asset_name: str = "robot",
+    action_scale: float = 0.05,
+    command_scale: float = 0.025,
+    lateral_threshold: float = 0.010,
+    orientation_threshold: float = 0.35,
+) -> torch.Tensor:
+    """Reward relative-IK translation commands that move the SFP tip inward.
+
+    This is a privileged PPO shaping term: it uses the simulator's port axis in
+    the reward only, while the actor still receives eval-compatible observations.
+    """
+    if action_name:
+        actual_action = env.action_manager.get_term(action_name).raw_actions
+    else:
+        actual_action = env.action_manager.action
+    delta_pos_root = actual_action[:, :3] * action_scale
+
+    robot = env.scene[asset_name]
+    delta_pos_w = geometry._quat_apply(robot.data.root_quat_w, delta_pos_root)
+    insertion_axis_w = geometry.sfp_port_insertion_axis(env)
+    inward_command = torch.sum(delta_pos_w * insertion_axis_w, dim=-1)
+
+    lateral_error = geometry.sfp_lateral_error(env)
+    orientation_error = geometry.sfp_orientation_error(env)
+    aligned = (lateral_error < lateral_threshold) & (
+        orientation_error < orientation_threshold
+    )
+    scaled_command = torch.clamp(
+        inward_command / max(command_scale, 1.0e-6), min=0.0, max=1.0
+    )
+    return aligned.float() * scaled_command
+
+
 def _quat_conjugate(quat: torch.Tensor) -> torch.Tensor:
     return torch.cat((quat[..., 0:1], -quat[..., 1:]), dim=-1)
 

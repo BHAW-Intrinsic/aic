@@ -49,6 +49,7 @@ from .rewards import (  # noqa: F401
     sfp_approach_reward,
     sfp_depth_progress_reward,
     sfp_distance_progress_reward,
+    sfp_insertion_action_reward,
     sfp_insertion_depth_reward,
     sfp_insertion_success_bonus,
     sfp_lateral_alignment_reward,
