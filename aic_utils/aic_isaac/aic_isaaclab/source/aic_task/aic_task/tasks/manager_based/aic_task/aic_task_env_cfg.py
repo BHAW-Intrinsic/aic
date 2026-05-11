@@ -704,9 +704,11 @@ class SfpTerminationsCfg:
     sfp_insertion_success = DoneTerm(
         func=mdp.sfp_insertion_success,
         params={
-            "lateral_threshold": 0.004,
-            "orientation_threshold": 0.20,
-            "depth_threshold": 0.015,
+            # First SFP curriculum gate. Tighten back to the strict insertion
+            # gate after PPO reliably reaches this coarse final-insertion band.
+            "lateral_threshold": 0.020,
+            "orientation_threshold": 0.50,
+            "depth_threshold": 0.005,
         },
     )
 
@@ -872,11 +874,11 @@ class SfpRewardsCfg:
     )
     sfp_insertion_success = RewTerm(
         func=mdp.sfp_insertion_success_bonus,
-        weight=10.0,
+        weight=25.0,
         params={
-            "lateral_threshold": 0.004,
-            "orientation_threshold": 0.20,
-            "depth_threshold": 0.015,
+            "lateral_threshold": 0.020,
+            "orientation_threshold": 0.50,
+            "depth_threshold": 0.005,
         },
     )
 
