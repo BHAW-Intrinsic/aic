@@ -197,12 +197,16 @@ def main(
 
     # extract the neural network module
     # we do this in a try-except to maintain backwards compatibility.
-    try:
-        # version 2.3 onwards
-        policy_nn = runner.alg.policy
-    except AttributeError:
-        # version 2.2 and below
-        policy_nn = runner.alg.actor_critic
+    policy_nn = getattr(runner.alg, "policy", None)
+    if policy_nn is None:
+        policy_nn = getattr(runner.alg, "actor_critic", None)
+    if policy_nn is None:
+        policy_nn = getattr(runner.alg, "actor", None)
+    if policy_nn is None:
+        raise AttributeError(
+            "Unable to find policy network on runner.alg. Expected one of "
+            "'policy', 'actor_critic', or 'actor'."
+        )
 
     # extract the normalizer
     if hasattr(policy_nn, "actor_obs_normalizer"):
@@ -236,7 +240,8 @@ def main(
             # env stepping
             obs, _, dones, _ = env.step(actions)
             # reset recurrent states for episodes that have terminated
-            policy_nn.reset(dones)
+            if hasattr(policy_nn, "reset"):
+                policy_nn.reset(dones)
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
