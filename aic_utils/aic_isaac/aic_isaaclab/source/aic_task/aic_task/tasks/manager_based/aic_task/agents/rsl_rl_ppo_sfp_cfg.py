@@ -23,6 +23,9 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     save_interval = 50
     experiment_name = "aic_sfp_insert"
     obs_groups = {"actor": ["policy"], "critic": ["policy", "privileged"]}
+    # Training-only PPO initialization: action-frame diagnostics showed raw
+    # z-negative is the inward SFP direction. PPO can still update this normally.
+    aic_actor_output_bias = (0.0, 0.0, -0.05, 0.0, 0.0, 0.0)
     actor = RslRlMLPModelCfg(
         hidden_dims=[512, 256, 128],
         activation="elu",

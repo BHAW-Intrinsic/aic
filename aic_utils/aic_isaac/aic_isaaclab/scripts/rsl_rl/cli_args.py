@@ -128,6 +128,7 @@ def update_rsl_rl_cfg(agent_cfg: RslRlBaseRunnerCfg, args_cli: argparse.Namespac
 def runner_cfg_to_dict(agent_cfg: RslRlBaseRunnerCfg) -> dict[str, Any]:
     """Convert an RSL-RL config to a runner dict accepted by the installed RSL-RL."""
     cfg = agent_cfg.to_dict()
+    cfg.pop("aic_actor_output_bias", None)
     unsupported_mlp_keys = (
         "stochastic",
         "init_noise_std",

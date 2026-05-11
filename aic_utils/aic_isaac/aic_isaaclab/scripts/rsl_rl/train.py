@@ -158,6 +158,56 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
 
+def _apply_aic_actor_output_bias(runner: OnPolicyRunner, bias: tuple[float, ...]) -> None:
+    """Set an optional AIC training-only actor output bias."""
+    bias_tensor = torch.as_tensor(bias, dtype=torch.float32)
+    if bias_tensor.numel() == 0:
+        return
+
+    algorithm = getattr(runner, "alg", None)
+    policy = getattr(algorithm, "policy", None)
+    if policy is None:
+        policy = getattr(algorithm, "actor_critic", None)
+    if policy is None:
+        raise RuntimeError("Unable to find RSL-RL policy for AIC actor output bias.")
+
+    candidates: list[tuple[str, torch.nn.Module]] = []
+    for attr_name in ("actor", "actor_model", "student_actor"):
+        module = getattr(policy, attr_name, None)
+        if isinstance(module, torch.nn.Module):
+            candidates.append((f"policy.{attr_name}", module))
+    if isinstance(policy, torch.nn.Module):
+        candidates.append(("policy", policy))
+
+    for module_name, module in candidates:
+        heads = [
+            submodule
+            for submodule in module.modules()
+            if isinstance(submodule, torch.nn.Linear)
+            and submodule.out_features == bias_tensor.numel()
+        ]
+        if not heads:
+            continue
+
+        head = heads[-1]
+        if head.bias is None:
+            raise RuntimeError(
+                f"Actor output head '{module_name}' has no bias parameter to set."
+            )
+        with torch.no_grad():
+            head.bias.copy_(bias_tensor.to(device=head.bias.device, dtype=head.bias.dtype))
+        print(
+            "[INFO] Applied AIC actor output bias "
+            f"to {module_name}: {bias_tensor.tolist()}"
+        )
+        return
+
+    raise RuntimeError(
+        "Unable to find actor output Linear layer matching AIC actor output bias "
+        f"length {bias_tensor.numel()}."
+    )
+
+
 @hydra_task_config(args_cli.task, args_cli.agent)
 def main(
     env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg,
@@ -277,6 +327,11 @@ def main(
         )
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
+    actor_output_bias = getattr(agent_cfg, "aic_actor_output_bias", None)
+    if actor_output_bias is not None and not agent_cfg.resume:
+        _apply_aic_actor_output_bias(runner, tuple(actor_output_bias))
+    elif actor_output_bias is not None:
+        print("[INFO] Skipping AIC actor output bias because training is resuming.")
     # write git state to logs
     runner.add_git_repo_to_log(__file__)
     # load the checkpoint
