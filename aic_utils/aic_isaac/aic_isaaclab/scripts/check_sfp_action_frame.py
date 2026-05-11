@@ -219,6 +219,7 @@ def _print_summary(
     label: str,
     before: dict[str, torch.Tensor],
     after: dict[str, torch.Tensor],
+    trajectory: dict[str, torch.Tensor] | None = None,
 ) -> None:
     success = _success_mask(after)
     parts = [f"action={label}"]
@@ -229,7 +230,62 @@ def _print_summary(
     parts.append(f"after_depth_mean={_mean(after['depth']):.6f}")
     parts.append(f"after_orientation_mean={_mean(after['orientation']):.6f}")
     parts.append(f"successes={int(success.sum().item())}/{success.numel()}")
+    if trajectory is not None:
+        ever_success = trajectory["ever_success"]
+        first_success_step = trajectory["first_success_step"]
+        successful_steps = first_success_step[ever_success]
+        if bool(ever_success.any()):
+            mean_first_success = _mean(successful_steps.float())
+        else:
+            mean_first_success = float("nan")
+        parts.append(
+            f"ever_successes={int(ever_success.sum().item())}/{ever_success.numel()}"
+        )
+        parts.append(f"mean_first_success_step={mean_first_success:.2f}")
+        parts.append(
+            f"best_aligned_depth_mean={_mean(trajectory['best_aligned_depth']):.6f}"
+        )
     report.line("  " + " ".join(parts))
+
+
+def _empty_trajectory_metrics(
+    base_env: Any,
+    initial_metrics: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    return {
+        "ever_success": torch.zeros(
+            base_env.num_envs, device=base_env.device, dtype=torch.bool
+        ),
+        "first_success_step": torch.full(
+            (base_env.num_envs,), -1, device=base_env.device, dtype=torch.long
+        ),
+        "best_aligned_depth": initial_metrics["depth"].clone(),
+    }
+
+
+def _update_trajectory_metrics(
+    trajectory: dict[str, torch.Tensor],
+    metrics: dict[str, torch.Tensor],
+    step_index: int,
+) -> None:
+    success = _success_mask(metrics)
+    first_success = success & ~trajectory["ever_success"]
+    trajectory["first_success_step"][first_success] = step_index
+    trajectory["ever_success"] |= success
+
+    aligned = (
+        (metrics["lateral"] < args_cli.lateral_threshold)
+        & (metrics["orientation"] < args_cli.orientation_threshold)
+    )
+    best_candidate = torch.where(
+        aligned,
+        metrics["depth"],
+        trajectory["best_aligned_depth"],
+    )
+    trajectory["best_aligned_depth"] = torch.maximum(
+        trajectory["best_aligned_depth"],
+        best_candidate,
+    )
 
 
 def main() -> int:
@@ -329,10 +385,16 @@ def main() -> int:
                     device=base_env.device,
                     dtype=torch.float32,
                 ).unsqueeze(0)
-                for _ in range(args_cli.num_steps):
+                trajectory = _empty_trajectory_metrics(base_env, before)
+                for step_index in range(1, args_cli.num_steps + 1):
                     env.step(actions)
+                    _update_trajectory_metrics(
+                        trajectory,
+                        _sfp_metrics(base_env),
+                        step_index,
+                    )
                 after = _sfp_metrics(base_env)
-                _print_summary(report, label, before, after)
+                _print_summary(report, label, before, after, trajectory)
                 for target_id, target_name in enumerate(mdp.SFP_TARGET_NAMES):
                     mask = target_ids == target_id
                     if not bool(mask.any()):
