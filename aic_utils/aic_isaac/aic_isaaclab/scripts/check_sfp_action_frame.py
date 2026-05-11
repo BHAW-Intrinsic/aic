@@ -34,10 +34,20 @@ parser.add_argument(
     ),
 )
 parser.add_argument(
+    "--custom_sequence",
+    action="append",
+    default=[],
+    help=(
+        "Semicolon-separated action phases to probe, for example "
+        "'1,1,0@15;0,0,-1@135'. Each action may provide 3 translation values "
+        "or the full action dimension. Phase steps default to --num_steps."
+    ),
+)
+parser.add_argument(
     "--custom_only",
     action="store_true",
     default=False,
-    help="Run only --custom_action probes and skip the standard axis probes.",
+    help="Run only custom probes and skip the standard axis probes.",
 )
 parser.add_argument(
     "--num_steps",
@@ -189,6 +199,30 @@ def _parse_custom_action(raw: str, action_dim: int) -> list[float]:
     return values
 
 
+def _parse_action_phase(raw: str, action_dim: int) -> tuple[list[float], int]:
+    action_text, _, steps_text = raw.partition("@")
+    steps = args_cli.num_steps
+    if steps_text.strip():
+        steps = int(steps_text.strip())
+    if steps < 1:
+        raise ValueError(f"Custom action phase '{raw}' must have at least 1 step.")
+    return _parse_custom_action(action_text, action_dim), steps
+
+
+def _parse_custom_sequence(
+    raw: str,
+    action_dim: int,
+) -> list[tuple[list[float], int]]:
+    phases = [
+        _parse_action_phase(phase.strip(), action_dim)
+        for phase in raw.split(";")
+        if phase.strip()
+    ]
+    if not phases:
+        raise ValueError(f"Custom sequence '{raw}' did not contain any phases.")
+    return phases
+
+
 def _success_mask(metrics: dict[str, torch.Tensor]) -> torch.Tensor:
     return (
         (metrics["lateral"] < args_cli.lateral_threshold)
@@ -306,6 +340,7 @@ def main() -> int:
         report.line(f"num_envs: {args_cli.num_envs}")
         report.line(f"raw_action: {args_cli.raw_action}")
         report.line(f"custom_action: {args_cli.custom_action}")
+        report.line(f"custom_sequence: {args_cli.custom_sequence}")
         report.line(f"custom_only: {args_cli.custom_only}")
         report.line(f"num_steps: {args_cli.num_steps}")
         report.line(
@@ -330,7 +365,7 @@ def main() -> int:
         action_dim = env.action_space.shape[-1]
         report.line(f"action_dim: {action_dim}")
 
-        probes: list[tuple[str, list[float]]] = []
+        probes: list[tuple[str, list[tuple[list[float], int]]]] = []
         if not args_cli.custom_only:
             for label, index, value in (
                 ("tx+", 0, args_cli.raw_action),
@@ -342,7 +377,7 @@ def main() -> int:
             ):
                 action = [0.0] * action_dim
                 action[index] = value
-                probes.append((label, action))
+                probes.append((label, [(action, args_cli.num_steps)]))
             if action_dim >= 6:
                 for label, index, value in (
                     ("rx+", 3, args_cli.raw_action),
@@ -354,45 +389,60 @@ def main() -> int:
                 ):
                     action = [0.0] * action_dim
                     action[index] = value
-                    probes.append((label, action))
+                    probes.append((label, [(action, args_cli.num_steps)]))
 
         for custom_index, raw_custom_action in enumerate(args_cli.custom_action):
             custom_action = _parse_custom_action(raw_custom_action, action_dim)
             custom_label = (
                 f"custom{custom_index}[" + ",".join(f"{v:g}" for v in custom_action) + "]"
             )
-            probes.append((custom_label, custom_action))
+            probes.append((custom_label, [(custom_action, args_cli.num_steps)]))
+
+        for sequence_index, raw_sequence in enumerate(args_cli.custom_sequence):
+            phases = _parse_custom_sequence(raw_sequence, action_dim)
+            phase_labels = []
+            for action_values, steps in phases:
+                action_label = ",".join(f"{value:g}" for value in action_values)
+                phase_labels.append(f"{action_label}@{steps}")
+            custom_label = f"sequence{sequence_index}[" + ";".join(phase_labels) + "]"
+            probes.append((custom_label, phases))
 
         if not probes:
-            raise ValueError("No probes requested. Provide --custom_action or omit --custom_only.")
+            raise ValueError(
+                "No probes requested. Provide --custom_action, "
+                "--custom_sequence, or omit --custom_only."
+            )
 
         report.line("probes:")
-        for label, action_values in probes:
-            report.line(f"  {label}: {action_values}")
+        for label, phases in probes:
+            report.line(f"  {label}: {phases}")
 
         with torch.inference_mode():
-            for label, action_values in probes:
+            for label, phases in probes:
                 env.reset()
                 before = _sfp_metrics(base_env)
                 target_ids = mdp.active_sfp_target_ids(base_env).detach().cpu()
-                actions = torch.zeros(
-                    env.action_space.shape,
-                    device=base_env.device,
-                    dtype=torch.float32,
-                )
-                actions[:] = torch.tensor(
-                    action_values,
-                    device=base_env.device,
-                    dtype=torch.float32,
-                ).unsqueeze(0)
                 trajectory = _empty_trajectory_metrics(base_env, before)
-                for step_index in range(1, args_cli.num_steps + 1):
-                    env.step(actions)
-                    _update_trajectory_metrics(
-                        trajectory,
-                        _sfp_metrics(base_env),
-                        step_index,
+                step_index = 0
+                for action_values, phase_steps in phases:
+                    actions = torch.zeros(
+                        env.action_space.shape,
+                        device=base_env.device,
+                        dtype=torch.float32,
                     )
+                    actions[:] = torch.tensor(
+                        action_values,
+                        device=base_env.device,
+                        dtype=torch.float32,
+                    ).unsqueeze(0)
+                    for _ in range(phase_steps):
+                        step_index += 1
+                        env.step(actions)
+                        _update_trajectory_metrics(
+                            trajectory,
+                            _sfp_metrics(base_env),
+                            step_index,
+                        )
                 after = _sfp_metrics(base_env)
                 _print_summary(report, label, before, after, trajectory)
                 for target_id, target_name in enumerate(mdp.SFP_TARGET_NAMES):
