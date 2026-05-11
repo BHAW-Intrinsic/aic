@@ -686,7 +686,7 @@ class SfpEventCfg:
         params={
             "probability": 1.0,
             "blend": 1.0,
-            "position_noise": 0.0,
+            "position_noise": 0.002,
             "velocity_range": (0.0, 0.0),
         },
     )
