@@ -272,6 +272,8 @@ def main(
             env_cfg.terminations.sc_insertion_success = None
         if hasattr(env_cfg.terminations, "sfp_insertion_success"):
             env_cfg.terminations.sfp_insertion_success = None
+        if hasattr(env_cfg.terminations, "sfp_corridor_violation"):
+            env_cfg.terminations.sfp_corridor_violation = None
 
     resume_path = _resolve_checkpoint(agent_cfg)
     log_path = None
