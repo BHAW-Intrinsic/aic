@@ -694,6 +694,8 @@ Work:
     insertion geometry.
   - Step 7 uses `robot.sfp_tip_link` for the initial helper. The diagnostic is
     still required before long SFP training.
+  - Step 8 confirmed zero runtime drift from the controlled gripper path to
+    `sfp_tip_link`; no SFP virtual tip helper is needed at this point.
 - [x] Add or expose SFP port entrance helper poses.
   - Step 0 found `sfp_port_0_link_entrance` and `sfp_port_1_link_entrance` as
     USD prims under `nic_card`, but not as runtime rigid bodies.
@@ -701,6 +703,8 @@ Work:
     offsets from `nic_card`.
   - Step 7 derives fixed offsets from `nic_card` using the NIC Card SDF port and
     entrance poses.
+  - Step 8 confirmed the derived fixed offsets exactly match the USD semantic
+    entrance prims for both SFP ports in env 0.
 - [x] Add active SFP target metadata for `sfp_port_0` and `sfp_port_1`.
 - [x] Reuse the same geometry helper interface from SC.
 - [x] Add SFP reward thresholds and insertion depth thresholds.
@@ -738,9 +742,55 @@ their provenance must be recorded explicitly.
 
 Immediate Step 8 note from Step 7:
 
-- Before long SFP PPO training, run an SFP drift/scripted-control diagnostic
-  analogous to Step 6. If `sfp_tip_link` is not the controlled gripped insertion
-  point, switch SFP geometry to a virtual TCP helper offset first.
+- Completed before long SFP PPO training:
+  - `sfp_tip_link` is stable relative to the controlled gripper path.
+  - SFP port entrance helpers match the USD semantic entrance frames exactly.
+  - The current scripted controller remains `0/16` on SFP and has a systematic
+    signed port-frame `x` miss of roughly 4-7 mm, so it is not a suitable SFP BC
+    expert. PPO remains the main training path.
+- Current SFP PPO curriculum status:
+  - Added a temporary fixed-NIC near-port reset curriculum for the first SFP PPO
+    stage. Reintroduce NIC `y` randomization after fixed-card insertion works.
+  - Fixed-card reset validation starts near the entrance: lateral mean
+    `0.003303`, orientation mean `0.012314`, depth mean `-0.001980`.
+  - First fixed-NIC PPO attempt from the near-port reset plateaued with
+    `sfp_insertion_depth: 0.0000` and no success by iteration `60`.
+  - Added shaped SFP depth reward from slightly outside the port
+    (`min_depth=-0.006`, `depth_scale=0.018`) and resumed PPO from the
+    alignment warm-start `model_50.pt` in run
+    `2026-05-11_05-21-25_step8_sfp_ppo_depthreward_491fc43`.
+  - Depth-reward PPO still had `0.0000` success by iteration `155`; added a
+    privileged inward-action PPO reward and started run
+    `2026-05-11_05-33-23_step8_sfp_ppo_action_3b9e781`.
+  - Weak inward-action PPO still had zero success by iteration `120`; stronger
+    action shaping reached nonzero depth/action rewards but zero strict success
+    by iteration `100`.
+  - Added a temporary coarse success gate (`lateral <0.020`,
+    `orientation <0.50`, `depth >0.005`) and trained to `model_200.pt`; training
+    still had zero coarse success.
+  - SFP-aware evaluation of
+    `2026-05-11_05-47-25_step8_sfp_ppo_coarsegate_b47cc33/model_200.pt` produced
+    `0/128` successes under the coarse gate. Terminal failures were far from the
+    port (`mean_lateral=0.957564`, `mean_orientation=1.172962`,
+    `mean_depth=-0.254260`), so the next remediation is a temporary SFP
+    corridor-violation termination to reset attempts once they leave the
+    near-port insertion band.
+  - Corridor termination smoke passed, but resuming from the strong-action
+    checkpoint immediately violated the corridor and remained at zero success.
+    Short-horizon evaluation showed it was far off within 10 steps
+    (`mean_lateral=0.205032`, `mean_orientation=0.965474`).
+  - Reduced the SFP relative-IK action scale from `0.05` to `0.01`, restarted
+    from fixed-NIC `model_50.pt`, and observed the first nonzero coarse SFP PPO
+    success signal (`Episode_Termination/sfp_insertion_success` around
+    `0.0065-0.0078` by iterations `52-55`, intermittently reaching roughly
+    `0.0208` by iteration `127`). Most episodes still terminate through the
+    corridor guard.
+  - The reduced-scale run still had only intermittent low coarse success by
+    iteration `215` (`0.0059` at that snapshot) and roughly `99-100%` corridor
+    exits, so it was stopped after `model_200.pt`.
+  - Added a PPO lateral-guard remediation: reduce/gate inward-action reward,
+    multiply it by a smooth lateral-centering factor, and increase lateral
+    progress/alignment weights. This stays on PPO rather than BC.
 
 Later distilled outputs:
 
@@ -823,6 +873,27 @@ Done when:
     remains the preferred final path.
 - [x] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher/policy.
+  - [x] Run SFP scripted-control diagnostic before long training.
+  - [x] Verify SFP port helper geometry against USD semantic entrance frames.
+  - [x] Add first SFP near-port reset curriculum.
+  - [x] Run first fixed-NIC SFP PPO attempt.
+  - [x] Add depth reward shaping after fixed-NIC PPO learned alignment without
+    insertion.
+  - [x] Add inward-action PPO reward after depth-only shaping still had zero
+    success by iteration `155`.
+  - [x] Add temporary coarse SFP success gate after stronger inward-action PPO
+    still had zero strict success.
+  - [x] Add SFP-aware evaluation diagnostics and confirm coarse-gate
+    `model_200.pt` is `0/128`.
+  - [x] Add temporary SFP corridor-violation termination after evaluation showed
+    timeout failures far outside the near-port corridor.
+  - [x] Reduce SFP relative-IK action scale after short-horizon diagnostics
+    showed the policy left the near-port corridor within 10 steps.
+  - [x] Continue reduced-scale SFP PPO from fixed-NIC `model_50.pt` until it
+    stalled with low intermittent coarse success and near-total corridor exits.
+  - [x] Add PPO lateral-guard reward/config remediation.
+  - [ ] Run lateral-guard SFP PPO from fixed-NIC `model_50.pt`.
+  - [ ] Train SFP PPO specialist checkpoint.
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria
@@ -838,7 +909,7 @@ The SC implementation is done when:
 The SFP implementation is done when:
 
 - [x] The same MDP structure supports SFP.
-- [ ] SFP plug and port entrance geometry are correct.
+- [x] SFP plug and port entrance geometry are correct.
 - [ ] SFP teacher/policy inserts in randomized simulation.
 
 The training path is ready for distillation when:
