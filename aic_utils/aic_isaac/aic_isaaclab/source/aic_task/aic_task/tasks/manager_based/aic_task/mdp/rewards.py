@@ -372,20 +372,25 @@ def sfp_orientation_alignment_reward(
 def sfp_approach_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.50,
+    active_until_depth: float | None = None,
 ) -> torch.Tensor:
     """Reward moving the SFP plug tip toward the active port entrance."""
     distance = torch.norm(geometry.sfp_plug_to_port_vector(env), dim=-1)
-    return 1.0 - torch.tanh(distance / std)
+    reward = 1.0 - torch.tanh(distance / std)
+    if active_until_depth is not None:
+        reward = reward * (geometry.sfp_insertion_depth(env) < active_until_depth).float()
+    return reward
 
 
 def sfp_distance_progress_reward(
     env: ManagerBasedRLEnv,
     scale: float = 0.02,
     clip: float = 1.0,
+    active_until_depth: float | None = None,
 ) -> torch.Tensor:
     """Reward reducing plug-tip distance to the active SFP port entrance."""
     distance = torch.norm(geometry.sfp_plug_to_port_vector(env), dim=-1)
-    return _metric_progress_reward(
+    reward = _metric_progress_reward(
         env,
         geometry.SFP_PREV_DISTANCE_ATTR,
         distance,
@@ -393,6 +398,9 @@ def sfp_distance_progress_reward(
         scale=scale,
         clip=clip,
     )
+    if active_until_depth is not None:
+        reward = reward * (geometry.sfp_insertion_depth(env) < active_until_depth).float()
+    return reward
 
 
 def sfp_lateral_progress_reward(
@@ -577,6 +585,7 @@ def sfp_port_frame_depth_action_reward(
     env: ManagerBasedRLEnv,
     action_name: str = "arm_action",
     command_scale: float = 0.02,
+    realized_depth_scale: float = 2.0e-5,
     min_depth: float = -0.080,
     target_depth: float = 0.005,
     lateral_threshold: float = 0.120,
@@ -586,8 +595,9 @@ def sfp_port_frame_depth_action_reward(
 
     The SFP action-frame diagnostic shows raw ``z-`` is the clearest positive
     depth command. This signed coarse term stays active before fine lateral
-    alignment so PPO has an immediate directional signal instead of a zero
-    reward when it initially chooses the wrong depth direction.
+    alignment, but it only pays when the last action produced measured positive
+    signed-depth progress. That prevents PPO from maximizing raw inward intent
+    while contact or IK leaves the plug tip outside the port.
     """
     raw = _raw_action(env, action_name)
     inward_command = -raw[:, 2]
@@ -597,6 +607,15 @@ def sfp_port_frame_depth_action_reward(
 
     _, _, lateral_error, depth = _sfp_signed_lateral_components(env)
     orientation_error = geometry.sfp_orientation_error(env)
+    realized_progress = _metric_progress_reward(
+        env,
+        geometry.SFP_PREV_DEPTH_ACTION_ATTR,
+        depth,
+        improvement="increase",
+        scale=realized_depth_scale,
+        clip=1.0,
+    )
+    realized_gain = torch.clamp(realized_progress, min=0.0, max=1.0)
     depth_gain = torch.clamp(
         (target_depth - depth) / max(target_depth - min_depth, 1.0e-6),
         min=0.0,
@@ -607,7 +626,7 @@ def sfp_port_frame_depth_action_reward(
         & (lateral_error < lateral_threshold)
         & (orientation_error < orientation_threshold)
     )
-    return active.float() * depth_gain * scaled_command
+    return active.float() * depth_gain * realized_gain * scaled_command
 
 
 def sfp_lateral_correction_action_reward(

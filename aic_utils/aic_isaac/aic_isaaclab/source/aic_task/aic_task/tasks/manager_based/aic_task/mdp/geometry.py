@@ -51,6 +51,7 @@ SFP_PREV_DISTANCE_ATTR = "aic_prev_sfp_distance"
 SFP_PREV_LATERAL_ATTR = "aic_prev_sfp_lateral_error"
 SFP_PREV_ORIENTATION_ATTR = "aic_prev_sfp_orientation_error"
 SFP_PREV_DEPTH_ATTR = "aic_prev_sfp_insertion_depth"
+SFP_PREV_DEPTH_ACTION_ATTR = "aic_prev_sfp_depth_action_depth"
 
 # Derived from aic_assets/models/NIC Card/model.sdf:
 # - sfp_port_0_link pose relative to nic_card_link:
@@ -485,6 +486,9 @@ def reset_sfp_progress_buffers(
         env, env_ids, SFP_PREV_ORIENTATION_ATTR, sfp_orientation_error(env)
     )
     _reset_metric_buffer(env, env_ids, SFP_PREV_DEPTH_ATTR, sfp_insertion_depth(env))
+    _reset_metric_buffer(
+        env, env_ids, SFP_PREV_DEPTH_ACTION_ATTR, sfp_insertion_depth(env)
+    )
 
 
 def sfp_plug_tip_pose(
