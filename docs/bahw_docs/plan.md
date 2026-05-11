@@ -917,6 +917,12 @@ Immediate Step 8 note from Step 7:
 	    positive corrections preserve depth but leave lateral around `0.0145` to
 	    `0.0164`. The next PPO stage is therefore an intermediate gate:
 	    `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
+	  - The first intermediate-gate resume briefly recovered low success
+	    (`0.0156-0.0312`) but was stopped because
+	    `sfp_port_frame_depth_action` still rewarded inward action outside the new
+	    lateral/orientation gate and targeted only `0.012 m` depth. Tighten that
+	    shaping term to the intermediate gate and raise its target depth before
+	    retrying.
 
 Later distilled outputs:
 

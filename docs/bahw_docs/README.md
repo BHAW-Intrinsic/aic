@@ -57,6 +57,9 @@ Current blocker:
 - A strict action-sequence grid found no `0.004` lateral-threshold successes, so
   the next training stage uses an intermediate gate of `lateral <0.015`,
   `orientation <0.25`, `depth >0.015`.
+- The first intermediate-gate retry exposed a reward-shaping conflict: the raw
+  depth-action reward was still active outside the new lateral/orientation gate.
+  That shaping term is being tightened before the next retry.
 - After lateral centering improves, reset noise and NIC randomization must be
   reintroduced without losing success.
 - Step 9 remains blocked until both SC and SFP have reliable specialist

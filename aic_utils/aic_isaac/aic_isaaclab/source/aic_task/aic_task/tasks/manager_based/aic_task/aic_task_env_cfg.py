@@ -874,9 +874,9 @@ class SfpRewardsCfg:
             "command_scale": 0.25,
             "realized_depth_scale": 3.0e-5,
             "min_depth": -0.080,
-            "target_depth": 0.012,
-            "lateral_threshold": 10.0,
-            "orientation_threshold": 3.20,
+            "target_depth": 0.018,
+            "lateral_threshold": 0.015,
+            "orientation_threshold": 0.25,
         },
     )
     sfp_lateral_correction_action = RewTerm(
@@ -933,7 +933,7 @@ class SfpRewardsCfg:
             "max_depth": 0.045,
             "min_depth": 0.0,
             "lateral_threshold": 0.015,
-            "orientation_threshold": 0.30,
+            "orientation_threshold": 0.25,
         },
     )
     sfp_insertion_action = RewTerm(

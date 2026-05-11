@@ -2955,3 +2955,37 @@ Code change in progress:
 - Let insertion-depth/action rewards remain active up to lateral `<0.015` so
   PPO is not forced to solve strict lateral centering before receiving any depth
   reward.
+
+Initial intermediate PPO command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-intermediate-08dd7f8 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1000 --resume --load_run 2026-05-11_15-49-50_step8_sfp_ppo_precorr_54b5879 --checkpoint model_50.pt --run_name step8_sfp_ppo_intermediate_08dd7f8 --headless --enable_cameras\"; echo STEP8_SFP_PPO_INTERMEDIATE_08DD7F8_EXIT:\$?; sleep 120'"
+```
+
+Early output:
+
+```text
+iteration 50:
+  Episode_Termination/sfp_insertion_success: 0.0000
+
+iteration 57:
+  Episode_Termination/sfp_insertion_success: 0.0156
+
+iteration 70:
+  Episode_Termination/sfp_insertion_success: 0.0312
+```
+
+The run was stopped before `model_100.pt` because reward inspection found that
+`sfp_port_frame_depth_action` still used `lateral_threshold=10.0` and
+`orientation_threshold=3.20`, so it could reward inward motion far outside the
+new intermediate success gate. It also targeted only `0.012 m` depth while the
+new success threshold is `0.015 m`.
+
+Follow-up code change:
+
+- Gate `sfp_port_frame_depth_action` at lateral `<0.015` and orientation
+  `<0.25`.
+- Raise its target depth to `0.018`.
+- Match `sfp_insertion_depth` orientation gate to the intermediate success gate
+  by setting it to `<0.25`.
