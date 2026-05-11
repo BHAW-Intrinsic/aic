@@ -2051,3 +2051,108 @@ STEP6_BC_REFINE_EVAL_EXIT:0
 
 Do not prefer the refinement checkpoint. It inserts deeply but creates a large
 negative lateral-z bias.
+
+## Video Capture And Gate Decision
+
+User decision on 2026-05-11:
+
+- `>90%` SC success is acceptable for unblocking Step 7.
+- PPO remains the preferred final/generalizable training path over BC.
+- The current strict-label BC checkpoint should be treated as a neural policy
+  checkpoint and provisional SC gate, not as a hardcoded runtime CheatCode.
+
+Playback fix:
+
+- Commit `5d3077f` made `play.py` fall back to `runner.alg.actor` for older
+  checkpoints whose RSL-RL runner does not expose `runner.alg.policy` or
+  `runner.alg.actor_critic`.
+- Commit `d731182` made `play.py` skip ONNX/JIT export when the loaded network
+  is the bare actor module and does not expose an `actor` or `student` wrapper.
+- Local verification for `d731182`: `python -m py_compile
+  aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/play.py`.
+
+Host/container sync for `d731182`:
+
+```bash
+tmux new-session -d -s isaac-step6-play-pull-d731182 \
+  "cd ~/IsaacLab/aic && git pull --ff-only && docker cp aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/play.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/play.py; echo STEP6_PLAY_PULL_COPY_EXIT:\$?; sleep 120"
+```
+
+Result:
+
+```text
+Updating 5d3077f..d731182
+Fast-forward
+Successfully copied .../play.py
+STEP6_PLAY_PULL_COPY_EXIT:0
+```
+
+Two earlier playback attempts left stale Isaac Python processes. They were
+cleaned before the successful run. Final clean-state check:
+
+```text
+HOST_MATCHES
+CONTAINER_MATCHES
+GPU memory after cleanup: 491MiB / 24564MiB
+STEP6_VIDEO_PROCESS_CHECK_EXIT:0
+```
+
+Successful video command:
+
+```bash
+tmux new-session -d -s isaac-step6-video-strict-d731182c \
+  "echo STALE_CHECK; ps -eo pid,ppid,stat,etime,pcpu,pmem,args | grep -E \"/workspace/isaaclab/_isaac_sim/kit/python/bin/python3 .*rsl_rl/[p]lay.py\" || true; nvidia-smi; docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/play.py --task AIC-Task-v0 --agent rsl_rl_sc_cfg_entry_point --num_envs 4 --video --video_length 300 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/model_1000.pt --headless --enable_cameras\"; echo STEP6_VIDEO_D731182C_EXIT:\$?; sleep 120"
+```
+
+Successful video result:
+
+```text
+video_folder: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/videos/play
+checkpoint: /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/model_1000.pt
+Actor Model input: 3149
+Critic Model input: 3169
+[INFO] Skipping policy export because the loaded policy network does not expose an actor/student module.
+STEP6_VIDEO_D731182C_EXIT:0
+```
+
+Video copy command:
+
+```bash
+tmux new-session -d -s isaac-step6-video-copy-d731182c \
+  "mkdir -p ~/IsaacLab/aic/logs/videos; latest=\$(docker exec isaac-lab-base bash -lc 'find /workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/videos/play -maxdepth 1 -type f -name \"*.mp4\" -printf \"%T@ %p\n\" | sort -nr | head -1 | cut -d\" \" -f2-'); echo LATEST_CONTAINER_VIDEO:\$latest; docker cp isaac-lab-base:\$latest ~/IsaacLab/aic/logs/videos/step6_sc_strict_20260511_d731182c.mp4; ls -lh ~/IsaacLab/aic/logs/videos/step6_sc_strict_20260511_d731182c.mp4; ps -eo pid,ppid,stat,etime,pcpu,pmem,args | grep -E \"/workspace/isaaclab/_isaac_sim/kit/python/bin/python3 .*rsl_rl/[p]lay.py\" || true; nvidia-smi; echo STEP6_VIDEO_COPY_EXIT:\$?; sleep 120"
+```
+
+Copy result:
+
+```text
+LATEST_CONTAINER_VIDEO:/workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/videos/play/rl-video-step-0.mp4
+Successfully copied 1.01MB ... step6_sc_strict_20260511_d731182c.mp4
+-rw-r--r--. 1 bahw bahw 989K May 11 12:08 /var/home/bahw/IsaacLab/aic/logs/videos/step6_sc_strict_20260511_d731182c.mp4
+GPU memory after copy: 491MiB / 24564MiB
+STEP6_VIDEO_COPY_EXIT:0
+```
+
+Local transfer:
+
+```bash
+scp bahw@100.103.111.75:~/IsaacLab/aic/logs/videos/step6_sc_strict_20260511_d731182c.mp4 /Users/aloy/Downloads/step6_sc_strict_20260511_d731182c.mp4
+```
+
+Local file:
+
+```text
+/Users/aloy/Downloads/step6_sc_strict_20260511_d731182c.mp4
+size: 989K
+```
+
+Step 6 gate status:
+
+- Current best SC checkpoint: `/workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/model_1000.pt`.
+- Deterministic evaluation: `233/256` successes (`0.910156`) with a 300-step
+  cap.
+- Per-target evaluation: `sc_port` `124/134`, `sc_port_2` `109/122`.
+- Failure mode: remaining failures are timeouts with lateral misses; orientation
+  misses are `0`, and depth shortfall is `5`.
+- Decision: Step 7 can begin, but future training should still prefer PPO for
+  qualification generalization. BC remains useful as a bootstrap/provisional
+  checkpoint, not the primary final strategy.

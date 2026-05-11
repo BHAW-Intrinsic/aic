@@ -7,9 +7,10 @@ Scope:
 
 - Isaac Lab training path only
 - SC first, then SFP
-- PPO with asymmetric actor-critic when RL fine-tuning is useful
-- supervised BC/DAgger bootstraps when scripted insertion is the only reliable
-  signal
+- PPO with asymmetric actor-critic remains the preferred path for
+  generalization.
+- Supervised BC/DAgger bootstraps are allowed as diagnostics or warm starts, but
+  they are not the preferred final training strategy unless explicitly accepted.
 - eval-compatible actor from the start
 - privileged critic during training
 - direct plug-to-port rewards, not `ee_pose` command rewards
@@ -28,6 +29,10 @@ Scope:
   eval-provided `Task` metadata.
 - Treat distillation as a later phase. Do not implement it before a reliable
   teacher/policy can solve insertion.
+- Step 6 gate decision: SC at or above `90%` deterministic Isaac success is
+  acceptable for unblocking SFP work, provided a video artifact is saved. The
+  current BC checkpoint is a neural actor, not a runtime hardcoded CheatCode,
+  but PPO remains the preferred final/generalizable training path.
 
 ## Relevant Files
 
@@ -472,7 +477,10 @@ Work:
     Infrastructure was stable, but learning failed: insertion-depth reward,
     insertion-success reward, and success termination stayed at `0.0`.
 - [ ] Increase after smoke runs are stable.
-- [ ] Save videos periodically for qualitative checks.
+- [x] Save videos periodically for qualitative checks.
+  - Recorded the current best SC checkpoint with `play.py --video` after fixing
+    playback export for bare-actor checkpoints. Local copy:
+    `/Users/aloy/Downloads/step6_sc_strict_20260511_d731182c.mp4`.
 - [x] Add a first Step 6 remediation before SFP:
   - added reset-initialized SC progress buffers
   - added distance, lateral, orientation, and signed-depth progress rewards
@@ -614,6 +622,8 @@ Work:
   - A tighter/deeper refinement
     (`--align_lateral_threshold 0.005 --target_depth 0.025`) regressed to
     `0/256`; do not prefer it.
+  - User decision on 2026-05-11: accept `>90%` SC as sufficient to proceed to
+    Step 7, but continue treating PPO as the preferred final path over BC.
 
 Training command:
 
@@ -634,9 +644,10 @@ isaaclab -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/play.py \
 
 Done when:
 
-- [ ] SC teacher inserts reliably in simulation.
-- [ ] Success rate is measured over randomized `sc_port` and `sc_port_2` targets.
-- [ ] Videos show true insertion, not hovering or target cheating.
+- [x] SC teacher/policy reaches the accepted provisional reliability gate in
+  simulation.
+- [x] Success rate is measured over randomized `sc_port` and `sc_port_2` targets.
+- [x] Video artifact is saved for qualitative review.
 - [ ] Reward curves are dominated by insertion progress and success, not smoothness
   penalties.
 
@@ -656,7 +667,7 @@ Qualification trials 1 and 2 are SFP, so SFP must be trained directly.
 
 Current gate:
 
-- Do not start Step 7 until Step 6 produces a reliable SC teacher/policy.
+- Step 7 is now unblocked by the accepted SC gate from Step 6.
   Baseline PPO
   and three reward-only remediation attempts did not reach insertion depth or
   success. Step 6 later found that the physical Isaac SC tip was not rigidly
@@ -666,8 +677,9 @@ Current gate:
   insertion; scalar scripted-action-prior reward shaping also failed to improve.
   Expert-rollout BC reached `193/256` successes. The current best strict-label
   BC checkpoint reached `233/256` successes, but PPO resume, actor-rollout BC,
-  and overly tight/deep refinement all regressed. This is strong progress, but
-  it is not yet a fully reliable SC teacher/policy.
+  and overly tight/deep refinement all regressed. The `233/256` result exceeds
+  the accepted `90%` SC gate and has a saved video artifact, so SFP work can
+  start while PPO remains the preferred final/generalizable training path.
 
 Work:
 
@@ -714,9 +726,9 @@ Output checkpoints:
 - `sc_teacher.pt`
 - `sfp_teacher.pt`
 
-These may be PPO checkpoints or BC/DAgger specialist policy checkpoints. Record
-the training provenance with each checkpoint instead of assuming PPO is the only
-valid teacher source.
+Prefer PPO checkpoints for final/generalizable specialist policies. BC/DAgger
+checkpoints may be kept as diagnostics, warm starts, or provisional gates, and
+their provenance must be recorded explicitly.
 
 Later distilled outputs:
 
@@ -794,8 +806,9 @@ Done when:
     training variant.
   - [x] Improved BC with strict scripted alignment labels; current best SC
     checkpoint reached `233/256`.
-  - [ ] Decide whether to keep iterating SC reliability, add video validation,
-    or unblock SFP using the current best checkpoint as a provisional teacher.
+  - [x] User accepted `>90%` SC plus saved video as sufficient to unblock SFP.
+    Current best is a BC-trained neural actor checkpoint at `233/256`; PPO
+    remains the preferred final path.
 - [ ] 12. Extend the same geometry/reward interface to SFP.
 - [ ] 13. Train SFP teacher/policy.
 - [ ] 14. Revisit distillation only after both teachers work.
