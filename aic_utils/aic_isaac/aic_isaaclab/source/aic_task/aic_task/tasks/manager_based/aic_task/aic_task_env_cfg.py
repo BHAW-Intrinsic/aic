@@ -842,24 +842,24 @@ class SfpRewardsCfg:
     )
     sfp_lateral_progress = RewTerm(
         func=mdp.sfp_lateral_progress_reward,
-        weight=5.0,
+        weight=20.0,
         params={"scale": 0.005, "clip": 1.0},
     )
     sfp_lateral_error = RewTerm(
         func=mdp.sfp_lateral_error_penalty,
-        weight=-6.0,
-        params={"scale": 0.060, "clip": 1.0},
+        weight=-40.0,
+        params={"scale": 0.020, "clip": 1.0},
     )
     sfp_lateral_correction_action = RewTerm(
         func=mdp.sfp_lateral_correction_action_reward,
-        weight=20.0,
+        weight=80.0,
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
             "action_scale": 0.005,
-            "command_scale": 0.002,
+            "command_scale": 0.001,
             "min_lateral_error": 0.002,
-            "lateral_scale": 0.012,
+            "lateral_scale": 0.006,
             "lateral_threshold": 0.060,
             "orientation_threshold": 0.80,
             "min_depth": -0.080,
