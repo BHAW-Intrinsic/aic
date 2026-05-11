@@ -53,6 +53,28 @@ SC_NEAR_PORT_JOINT_PRESETS = {
     ),
 }
 
+# Mean final joint positions from the Step 8 SFP scripted alignment diagnostic.
+# These are near-port, outside-insertion seeds; they are not expert success
+# labels because the scripted controller remained 0/32 on strict SFP success.
+SFP_NEAR_PORT_JOINT_PRESETS = {
+    "sfp_port_0": (
+        0.8853519558906555,
+        -1.6830404996871948,
+        -1.6544853448867798,
+        -1.1938611268997192,
+        1.810861349105835,
+        2.1718170642852783,
+    ),
+    "sfp_port_1": (
+        0.8498124480247498,
+        -1.7137359380722046,
+        -1.621854305267334,
+        -1.197874903678894,
+        1.8100838661193848,
+        2.1746506690979004,
+    ),
+}
+
 
 def randomize_dome_light(
     env: ManagerBasedEnv,
@@ -281,6 +303,61 @@ def reset_robot_near_sc_port(
         dtype=default_joint_pos.dtype,
     )
     target_ids = geometry.active_sc_target_ids(env)[env_ids]
+    preset_joint_pos = presets[target_ids]
+
+    joint_pos = default_joint_pos + blend * (preset_joint_pos - default_joint_pos)
+    if position_noise > 0.0:
+        joint_pos += torch.empty_like(joint_pos).uniform_(
+            -position_noise, position_noise
+        )
+
+    if probability < 1.0:
+        use_curriculum = torch.rand(len(env_ids), device=device) < probability
+        joint_pos = torch.where(use_curriculum[:, None], joint_pos, default_joint_pos)
+
+    joint_pos_limits = asset.data.soft_joint_pos_limits[iter_env_ids, joint_ids]
+    joint_pos = joint_pos.clamp_(joint_pos_limits[..., 0], joint_pos_limits[..., 1])
+
+    joint_vel = default_joint_vel
+    if velocity_range != (0.0, 0.0):
+        joint_vel = joint_vel + torch.empty_like(joint_vel).uniform_(*velocity_range)
+        joint_vel_limits = asset.data.soft_joint_vel_limits[iter_env_ids, joint_ids]
+        joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
+
+    asset.write_joint_state_to_sim(
+        joint_pos, joint_vel, joint_ids=joint_ids, env_ids=env_ids
+    )
+
+
+def reset_robot_near_sfp_port(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    probability: float = 1.0,
+    blend: float = 1.0,
+    position_noise: float = 0.01,
+    velocity_range: tuple[float, float] = (0.0, 0.0),
+) -> None:
+    """Reset the arm near the active SFP port for a PPO insertion curriculum."""
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    if len(env_ids) == 0:
+        return
+
+    asset = env.scene[asset_cfg.name]
+    joint_ids = _joint_indices(asset, SC_ARM_JOINT_NAMES)
+    iter_env_ids = env_ids[:, None]
+    device = env.device
+
+    default_joint_pos = asset.data.default_joint_pos[iter_env_ids, joint_ids].clone()
+    default_joint_vel = asset.data.default_joint_vel[iter_env_ids, joint_ids].clone()
+
+    presets = torch.tensor(
+        [SFP_NEAR_PORT_JOINT_PRESETS[name] for name in geometry.SFP_TARGET_NAMES],
+        device=device,
+        dtype=default_joint_pos.dtype,
+    )
+    target_ids = geometry.active_sfp_target_ids(env)[env_ids]
     preset_joint_pos = presets[target_ids]
 
     joint_pos = default_joint_pos + blend * (preset_joint_pos - default_joint_pos)

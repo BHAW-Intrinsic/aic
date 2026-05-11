@@ -36,6 +36,7 @@ from .mdp.events import (
     randomize_board_and_parts,
     randomize_dome_light,
     reset_robot_near_sc_port,
+    reset_robot_near_sfp_port,
 )
 
 # Resolve asset directory relative to this file (portable across machines)
@@ -676,6 +677,16 @@ class SfpEventCfg:
     sample_active_sfp_target = EventTerm(
         func=mdp.sample_active_sfp_target,
         mode="reset",
+    )
+    reset_robot_near_sfp_port = EventTerm(
+        func=reset_robot_near_sfp_port,
+        mode="reset",
+        params={
+            "probability": 1.0,
+            "blend": 1.0,
+            "position_noise": 0.01,
+            "velocity_range": (0.0, 0.0),
+        },
     )
     reset_sfp_progress_buffers = EventTerm(
         func=mdp.reset_sfp_progress_buffers,
