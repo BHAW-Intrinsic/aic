@@ -953,6 +953,12 @@ Immediate Step 8 note from Step 7:
 	    evaluated at `118/128` successes (`92.1875%`) under the intermediate
 	    gate. Per-target rates were `67/74` for `sfp_port_0` and `51/54` for
 	    `sfp_port_1`.
+	  - First reset-noise reintroduction is stable at
+	    `reset_robot_near_sfp_port.position_noise=0.002`: the same `model_19.pt`
+	    evaluated at `121/128` successes, with both SFP ports above `94%`.
+	  - `position_noise=0.005` is not accepted as the default yet. PPO resume
+	    reached `118/128` overall, but `sfp_port_0` stayed below `90%`
+	    (`61/69`). The checked-in curriculum was backed off to `0.002`.
 
 Later distilled outputs:
 
@@ -1127,8 +1133,14 @@ Done when:
 	    reset (`122/128` first-hit successes under the intermediate gate).
 	  - [x] Retry intermediate-gate PPO from the pre-corrected reset
 	    (`118/128` detached eval successes with full 150-step PPO rollouts).
+	  - [x] Reintroduce small SFP reset noise while preserving success
+	    (`0.002` joint noise: `121/128`, both ports above `94%`).
 	  - [ ] Reintroduce SFP reset/NIC randomization after the deterministic
 	    final-stage checkpoint is reliable under the tighter gate.
+	    - Do not simply enable NIC y randomization yet; the current SFP reset
+	      uses fixed joint presets and does not adapt to randomized NIC pose.
+	      Next step is adaptive/per-offset reset presets or another reset
+	      curriculum before NIC/card randomization.
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria
@@ -1146,6 +1158,8 @@ The SFP implementation is done when:
 - [x] The same MDP structure supports SFP.
 - [x] SFP plug and port entrance geometry are correct.
 - [ ] SFP teacher/policy inserts in randomized simulation.
+  - Current best accepted checkpoint solves fixed-NIC final-stage validation and
+    small reset noise (`0.002`), but not NIC/card randomization.
 
 The training path is ready for distillation when:
 

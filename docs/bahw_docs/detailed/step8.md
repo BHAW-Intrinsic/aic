@@ -3325,3 +3325,72 @@ Interpretation:
   checkpoint. It does not yet prove randomized SFP insertion.
 - Next Step 8 work is to reintroduce reset noise and NIC/card randomization
   gradually while preserving the intermediate-gate success rate.
+
+## SFP Reset Noise Reintroduction
+
+The first randomization pass reintroduced small joint noise in
+`reset_robot_near_sfp_port` while keeping NIC/card y fixed. This isolates reset
+robustness from target/asset randomization because the current SFP reset is
+still based on fixed per-target joint presets.
+
+Stable `0.002` joint-noise config:
+
+```text
+reset_robot_near_sfp_port.position_noise = 0.002
+```
+
+Evaluation command:
+
+```bash
+tmux new-session -d -s isaac-step8-eval-noise002-model19-1297f10 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 128 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_EVAL_NOISE002_MODEL19_1297F10_EXIT:\$?; sleep 120'"
+```
+
+Result:
+
+```text
+episodes: 128
+successes: 121
+success_rate: 0.945312
+per_target:
+  sfp_port_0: episodes=69 successes=65 success_rate=0.942029
+  sfp_port_1: episodes=59 successes=56 success_rate=0.949153
+```
+
+The next tested level, `position_noise=0.005`, was marginal. Evaluating the
+unchanged `model_19.pt` produced `115/128` (`89.8438%`) and port 0 dropped to
+`58/69` (`84.0580%`). A PPO resume from `model_19.pt` under `0.005` noise was
+then trained for 20 full-rollout iterations:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-noise005-1834a29 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 20 --resume --load_run 2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b --checkpoint model_19.pt --run_name step8_sfp_ppo_noise005_1834a29 --headless --enable_cameras\"; echo STEP8_SFP_PPO_NOISE005_1834A29_EXIT:\$?; sleep 120'"
+```
+
+Best detached result from that resume:
+
+```bash
+tmux new-session -d -s isaac-step8-eval-noise005-model38-1834a29 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 128 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-43-35_step8_sfp_ppo_noise005_1834a29/model_38.pt --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_EVAL_NOISE005_MODEL38_1834A29_EXIT:\$?; sleep 120'"
+```
+
+```text
+episodes: 128
+successes: 118
+success_rate: 0.921875
+per_target:
+  sfp_port_0: episodes=69 successes=61 success_rate=0.884058
+  sfp_port_1: episodes=59 successes=57 success_rate=0.966102
+```
+
+Interpretation:
+
+- `0.005` reset noise clears the overall `>90%` gate only after PPO resume, but
+  port 0 remains below `90%`.
+- The checked-in curriculum was backed off to `position_noise=0.002`, which
+  clears both ports in detached evaluation.
+- NIC/card y randomization should not be enabled by a simple range change yet:
+  `reset_robot_near_sfp_port` uses fixed per-target joint presets and does not
+  adapt those presets to the randomized NIC pose. The next randomization step
+  should either derive per-NIC-offset reset presets or add an adaptive reset
+  helper before training/evaluating with card randomization.

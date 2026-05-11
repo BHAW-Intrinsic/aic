@@ -47,22 +47,28 @@ Current Step 8 best result:
   `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
 - Per-target SFP eval: `sfp_port_0` was `67/74` (`90.54%`) and `sfp_port_1`
   was `51/54` (`94.44%`).
+- With small SFP reset joint noise `position_noise=0.002`, the same checkpoint
+  reached `121/128` successes (`94.53%`), with both ports above `94%`.
 
 Current blocker:
 
 - The current SFP result is deterministic fixed-NIC final-stage validation, not
   randomized SFP insertion.
-- Reset noise and NIC randomization still need to be reintroduced gradually.
+- Small reset noise is stable at `0.002`. A `0.005` reset-noise PPO resume
+  reached `118/128` overall, but `sfp_port_0` stayed below `90%`, so the
+  checked-in default is backed off to `0.002`.
+- NIC/card randomization still needs a reset-curriculum change. The current SFP
+  reset uses fixed per-target joint presets and does not adapt to randomized
+  NIC pose.
 - Step 9 distillation/export work can be revisited, but final qualification
   confidence still depends on preserving SFP success under randomization.
 
 Next recommended work:
 
-- Reintroduce SFP reset noise in small increments and evaluate the accepted
-  checkpoint.
-- Resume PPO from the accepted checkpoint if small randomization drops below
-  the `>90%` gate.
-- Then reintroduce NIC/card y randomization.
+- Derive adaptive or per-NIC-offset SFP reset presets so the near-port reset can
+  track randomized NIC/card y positions.
+- After that, reintroduce NIC/card y randomization and resume PPO from the best
+  SFP checkpoint.
 - Revisit Step 9 distillation/export and final Gazebo routing once the
   randomized SFP checkpoint is stable enough.
 
@@ -100,6 +106,7 @@ Next recommended work:
 - Step 6 SC training and accepted checkpoint: `detailed/step6.md`
 - Step 7 SFP task extension: `detailed/step7.md`
 - Step 8 SFP specialist PPO work: `detailed/step8.md`
+- Step 9 distillation/export blocker: `detailed/step9.md`
 
 ## Per-Step Workflow
 
