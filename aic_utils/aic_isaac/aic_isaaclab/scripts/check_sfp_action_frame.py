@@ -74,6 +74,12 @@ parser.add_argument(
     help="Insertion-depth success threshold for after-action summary.",
 )
 parser.add_argument(
+    "--print_joint_positions",
+    action="store_true",
+    default=False,
+    help="Print mean arm joint positions after each probe, grouped by SFP target.",
+)
+parser.add_argument(
     "--output_dir",
     type=str,
     default=None,
@@ -106,6 +112,16 @@ from isaaclab_tasks.utils import parse_env_cfg
 
 import aic_task.tasks  # noqa: F401
 from aic_task.tasks.manager_based.aic_task import mdp
+
+
+ARM_JOINT_NAMES = (
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+)
 
 
 class Reporter:
@@ -185,6 +201,20 @@ def _sfp_metrics(env: Any) -> dict[str, torch.Tensor]:
 
 def _mean(value: torch.Tensor) -> float:
     return float(value.detach().mean().cpu().item())
+
+
+def _joint_indices(asset: Any, joint_names: tuple[str, ...]) -> list[int]:
+    available = getattr(asset, "joint_names", None)
+    if available is None:
+        available = getattr(getattr(asset, "data", None), "joint_names", None)
+    if available is None:
+        raise RuntimeError(f"Asset {asset!r} does not expose joint_names.")
+    return [list(available).index(name) for name in joint_names]
+
+
+def _format_floats(values: torch.Tensor) -> str:
+    values_list = values.detach().cpu().tolist()
+    return "(" + ", ".join(f"{float(value):.10f}" for value in values_list) + ")"
 
 
 def _parse_custom_action(raw: str, action_dim: int) -> list[float]:
@@ -282,6 +312,32 @@ def _print_summary(
     report.line("  " + " ".join(parts))
 
 
+def _print_joint_summary(
+    report: Reporter,
+    env: Any,
+    target_ids: torch.Tensor,
+    success: torch.Tensor,
+) -> None:
+    robot = env.scene["robot"]
+    joint_ids = _joint_indices(robot, ARM_JOINT_NAMES)
+    joint_pos = robot.data.joint_pos[:, joint_ids]
+    report.line(f"    joint_names={ARM_JOINT_NAMES}")
+    report.line(f"    mean_joint_pos_all={_format_floats(joint_pos.mean(dim=0))}")
+    if bool(success.any()):
+        report.line(
+            "    "
+            f"mean_joint_pos_success={_format_floats(joint_pos[success].mean(dim=0))}"
+        )
+    for target_id, target_name in enumerate(mdp.SFP_TARGET_NAMES):
+        mask = target_ids.to(joint_pos.device) == target_id
+        if not bool(mask.any()):
+            continue
+        report.line(
+            "    "
+            f"{target_name}_mean_joint_pos={_format_floats(joint_pos[mask].mean(dim=0))}"
+        )
+
+
 def _empty_trajectory_metrics(
     base_env: Any,
     initial_metrics: dict[str, torch.Tensor],
@@ -342,6 +398,7 @@ def main() -> int:
         report.line(f"custom_action: {args_cli.custom_action}")
         report.line(f"custom_sequence: {args_cli.custom_sequence}")
         report.line(f"custom_only: {args_cli.custom_only}")
+        report.line(f"print_joint_positions: {args_cli.print_joint_positions}")
         report.line(f"num_steps: {args_cli.num_steps}")
         report.line(
             "success_thresholds: "
@@ -445,6 +502,9 @@ def main() -> int:
                         )
                 after = _sfp_metrics(base_env)
                 _print_summary(report, label, before, after, trajectory)
+                success = _success_mask(after)
+                if args_cli.print_joint_positions:
+                    _print_joint_summary(report, base_env, target_ids, success)
                 for target_id, target_name in enumerate(mdp.SFP_TARGET_NAMES):
                     mask = target_ids == target_id
                     if not bool(mask.any()):
