@@ -274,6 +274,14 @@ def main(
             env_cfg.terminations.sfp_insertion_success = None
         if hasattr(env_cfg.terminations, "sfp_corridor_violation"):
             env_cfg.terminations.sfp_corridor_violation = None
+        for termination_name in (
+            "sfp_corridor_lateral_violation",
+            "sfp_corridor_orientation_violation",
+            "sfp_corridor_min_depth_violation",
+            "sfp_corridor_max_depth_violation",
+        ):
+            if hasattr(env_cfg.terminations, termination_name):
+                setattr(env_cfg.terminations, termination_name, None)
 
     resume_path = _resolve_checkpoint(agent_cfg)
     log_path = None

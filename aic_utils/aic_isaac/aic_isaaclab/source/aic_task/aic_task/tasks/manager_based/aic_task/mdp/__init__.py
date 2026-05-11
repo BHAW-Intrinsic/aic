@@ -24,6 +24,10 @@ from .observations import *  # noqa: F401, F403
 from .geometry import *  # noqa: F401, F403
 from .terminations import (  # noqa: F401
     sc_insertion_success,
+    sfp_corridor_lateral_violation,
+    sfp_corridor_max_depth_violation,
+    sfp_corridor_min_depth_violation,
+    sfp_corridor_orientation_violation,
     sfp_insertion_corridor_violation,
     sfp_insertion_success,
 )

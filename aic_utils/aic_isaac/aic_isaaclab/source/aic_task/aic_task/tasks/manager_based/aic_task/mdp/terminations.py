@@ -64,3 +64,35 @@ def sfp_insertion_corridor_violation(
         | (depth < min_depth)
         | (depth > max_depth)
     )
+
+
+def sfp_corridor_lateral_violation(
+    env: ManagerBasedRLEnv,
+    lateral_limit: float = 0.06,
+) -> torch.Tensor:
+    """Terminate early when SFP lateral error leaves the curriculum corridor."""
+    return geometry.sfp_lateral_error(env) > lateral_limit
+
+
+def sfp_corridor_orientation_violation(
+    env: ManagerBasedRLEnv,
+    orientation_limit: float = 0.80,
+) -> torch.Tensor:
+    """Terminate early when SFP orientation error leaves the curriculum corridor."""
+    return geometry.sfp_orientation_error(env) > orientation_limit
+
+
+def sfp_corridor_min_depth_violation(
+    env: ManagerBasedRLEnv,
+    min_depth: float = -0.08,
+) -> torch.Tensor:
+    """Terminate early when the SFP module backs too far out of the port."""
+    return geometry.sfp_insertion_depth(env) < min_depth
+
+
+def sfp_corridor_max_depth_violation(
+    env: ManagerBasedRLEnv,
+    max_depth: float = 0.06,
+) -> torch.Tensor:
+    """Terminate early when the SFP module overshoots the curriculum depth."""
+    return geometry.sfp_insertion_depth(env) > max_depth
