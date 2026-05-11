@@ -216,14 +216,21 @@ def main(
     else:
         normalizer = None
 
-    # export policy to onnx/jit
+    # export policy to onnx/jit when the loaded module matches Isaac Lab's
+    # exporter contract. Older BC checkpoints may expose the actor directly.
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(
-        policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt"
-    )
-    export_policy_as_onnx(
-        policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx"
-    )
+    if hasattr(policy_nn, "actor") or hasattr(policy_nn, "student"):
+        export_policy_as_jit(
+            policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt"
+        )
+        export_policy_as_onnx(
+            policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx"
+        )
+    else:
+        print(
+            "[INFO] Skipping policy export because the loaded policy network does not "
+            "expose an actor/student module."
+        )
 
     dt = env.unwrapped.step_dt
 
