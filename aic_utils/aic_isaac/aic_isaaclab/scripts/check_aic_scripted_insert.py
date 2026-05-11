@@ -699,6 +699,16 @@ def main() -> int:
             values = first_success_joint_pos[mask].mean(dim=0).detach().cpu().tolist()
             report.line(f"  {target_name}: {values}")
 
+        final_arm_joint_pos = robot.data.joint_pos[:, arm_joint_indices]
+        report.line("final_joint_pos_mean_per_target:")
+        for target_id, target_name in enumerate(_target_names()):
+            mask = target_ids == target_id
+            if not bool(mask.any()):
+                report.line(f"  {target_name}: unavailable")
+                continue
+            values = final_arm_joint_pos[mask].mean(dim=0).detach().cpu().tolist()
+            report.line(f"  {target_name}: {values}")
+
         final_lateral = _lateral_error(env)
         final_orientation = _orientation_error(env)
         final_depth = _insertion_depth(env)
