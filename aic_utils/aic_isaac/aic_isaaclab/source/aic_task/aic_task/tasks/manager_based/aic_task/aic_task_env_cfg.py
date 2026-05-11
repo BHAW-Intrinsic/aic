@@ -856,8 +856,8 @@ class SfpRewardsCfg:
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
-            "action_scale": 0.005,
-            "command_scale": 0.001,
+            "action_scale": 0.001,
+            "command_scale": 0.0002,
             "min_lateral_error": 0.002,
             "lateral_scale": 0.006,
             "lateral_threshold": 0.060,
@@ -913,8 +913,8 @@ class SfpRewardsCfg:
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
-            "action_scale": 0.005,
-            "command_scale": 0.002,
+            "action_scale": 0.001,
+            "command_scale": 0.0004,
             "lateral_threshold": 0.010,
             "orientation_threshold": 0.35,
             "lateral_std": 0.008,
@@ -1048,7 +1048,7 @@ class AICTaskSfpEnvCfg(AICTaskEnvCfg):
         super().__post_init__()
         # SFP insertion is a millimeter-scale task; use smaller relative-IK
         # deltas than SC so near-port PPO does not leave the insertion corridor.
-        self.actions.arm_action.scale = 0.005
+        self.actions.arm_action.scale = 0.001
         # Final insertion should resolve quickly from the near-port curriculum.
         # Short episodes reset failed attempts back into the useful state band.
         self.episode_length_s = 20.0
