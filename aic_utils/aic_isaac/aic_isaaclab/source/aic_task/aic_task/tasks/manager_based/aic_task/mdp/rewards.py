@@ -326,6 +326,21 @@ def sfp_lateral_error_penalty(
     return torch.clamp(lateral_error / max(scale, 1.0e-6), min=0.0, max=clip)
 
 
+def sfp_lateral_corridor_penalty(
+    env: ManagerBasedRLEnv,
+    soft_limit: float = 0.020,
+    hard_limit: float = 0.060,
+    clip: float = 1.0,
+    violation_cost: float = 1.0,
+) -> torch.Tensor:
+    """Penalize approaching or crossing the SFP lateral curriculum boundary."""
+    lateral_error = geometry.sfp_lateral_error(env)
+    scale = max(hard_limit - soft_limit, 1.0e-6)
+    margin_cost = torch.clamp((lateral_error - soft_limit) / scale, min=0.0, max=clip)
+    terminal_cost = (lateral_error > hard_limit).float() * violation_cost
+    return margin_cost + terminal_cost
+
+
 def sfp_orientation_alignment_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.35,

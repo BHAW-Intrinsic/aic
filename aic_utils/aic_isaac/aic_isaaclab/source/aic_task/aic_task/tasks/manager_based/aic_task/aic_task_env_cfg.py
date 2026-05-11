@@ -850,6 +850,16 @@ class SfpRewardsCfg:
         weight=-40.0,
         params={"scale": 0.020, "clip": 1.0},
     )
+    sfp_lateral_corridor = RewTerm(
+        func=mdp.sfp_lateral_corridor_penalty,
+        weight=-80.0,
+        params={
+            "soft_limit": 0.020,
+            "hard_limit": 0.060,
+            "clip": 1.0,
+            "violation_cost": 1.0,
+        },
+    )
     sfp_lateral_correction_action = RewTerm(
         func=mdp.sfp_lateral_correction_action_reward,
         weight=80.0,
