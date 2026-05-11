@@ -25,10 +25,43 @@ parser.add_argument(
     help="Raw action magnitude applied to each probed action axis.",
 )
 parser.add_argument(
+    "--custom_action",
+    action="append",
+    default=[],
+    help=(
+        "Comma-separated raw action vector to probe. Provide either 3 "
+        "translation values, or the full action dimension. May be repeated."
+    ),
+)
+parser.add_argument(
+    "--custom_only",
+    action="store_true",
+    default=False,
+    help="Run only --custom_action probes and skip the standard axis probes.",
+)
+parser.add_argument(
     "--num_steps",
     type=int,
     default=1,
     help="Number of environment steps to apply each action.",
+)
+parser.add_argument(
+    "--lateral_threshold",
+    type=float,
+    default=0.020,
+    help="Lateral success threshold for after-action summary.",
+)
+parser.add_argument(
+    "--orientation_threshold",
+    type=float,
+    default=0.50,
+    help="Orientation success threshold for after-action summary.",
+)
+parser.add_argument(
+    "--depth_threshold",
+    type=float,
+    default=0.005,
+    help="Insertion-depth success threshold for after-action summary.",
 )
 parser.add_argument(
     "--output_dir",
@@ -144,6 +177,26 @@ def _mean(value: torch.Tensor) -> float:
     return float(value.detach().mean().cpu().item())
 
 
+def _parse_custom_action(raw: str, action_dim: int) -> list[float]:
+    values = [float(part.strip()) for part in raw.split(",") if part.strip()]
+    if len(values) == 3 and action_dim >= 3:
+        values = values + [0.0] * (action_dim - 3)
+    if len(values) != action_dim:
+        raise ValueError(
+            f"Custom action '{raw}' has {len(values)} values after padding. "
+            f"Expected 3 or {action_dim} values."
+        )
+    return values
+
+
+def _success_mask(metrics: dict[str, torch.Tensor]) -> torch.Tensor:
+    return (
+        (metrics["lateral"] < args_cli.lateral_threshold)
+        & (metrics["orientation"] < args_cli.orientation_threshold)
+        & (metrics["depth"] > args_cli.depth_threshold)
+    )
+
+
 def _disable_sfp_terminations(env_cfg: Any) -> None:
     terminations = getattr(env_cfg, "terminations", None)
     if terminations is None:
@@ -167,6 +220,7 @@ def _print_summary(
     before: dict[str, torch.Tensor],
     after: dict[str, torch.Tensor],
 ) -> None:
+    success = _success_mask(after)
     parts = [f"action={label}"]
     for key in ("lateral_x", "lateral_y", "depth", "lateral", "orientation"):
         delta = after[key] - before[key]
@@ -174,6 +228,7 @@ def _print_summary(
     parts.append(f"after_lateral_mean={_mean(after['lateral']):.6f}")
     parts.append(f"after_depth_mean={_mean(after['depth']):.6f}")
     parts.append(f"after_orientation_mean={_mean(after['orientation']):.6f}")
+    parts.append(f"successes={int(success.sum().item())}/{success.numel()}")
     report.line("  " + " ".join(parts))
 
 
@@ -194,7 +249,15 @@ def main() -> int:
         report.line(f"task: {args_cli.task}")
         report.line(f"num_envs: {args_cli.num_envs}")
         report.line(f"raw_action: {args_cli.raw_action}")
+        report.line(f"custom_action: {args_cli.custom_action}")
+        report.line(f"custom_only: {args_cli.custom_only}")
         report.line(f"num_steps: {args_cli.num_steps}")
+        report.line(
+            "success_thresholds: "
+            f"lateral<{args_cli.lateral_threshold} "
+            f"orientation<{args_cli.orientation_threshold} "
+            f"depth>{args_cli.depth_threshold}"
+        )
         if log_path is not None:
             report.line(f"log_path: {log_path}")
 
@@ -210,28 +273,49 @@ def main() -> int:
 
         action_dim = env.action_space.shape[-1]
         report.line(f"action_dim: {action_dim}")
-        report.line("translation probes:")
 
-        probes = (
-            ("tx+", 0, args_cli.raw_action),
-            ("tx-", 0, -args_cli.raw_action),
-            ("ty+", 1, args_cli.raw_action),
-            ("ty-", 1, -args_cli.raw_action),
-            ("tz+", 2, args_cli.raw_action),
-            ("tz-", 2, -args_cli.raw_action),
-        )
-        if action_dim >= 6:
-            probes = probes + (
-                ("rx+", 3, args_cli.raw_action),
-                ("rx-", 3, -args_cli.raw_action),
-                ("ry+", 4, args_cli.raw_action),
-                ("ry-", 4, -args_cli.raw_action),
-                ("rz+", 5, args_cli.raw_action),
-                ("rz-", 5, -args_cli.raw_action),
+        probes: list[tuple[str, list[float]]] = []
+        if not args_cli.custom_only:
+            for label, index, value in (
+                ("tx+", 0, args_cli.raw_action),
+                ("tx-", 0, -args_cli.raw_action),
+                ("ty+", 1, args_cli.raw_action),
+                ("ty-", 1, -args_cli.raw_action),
+                ("tz+", 2, args_cli.raw_action),
+                ("tz-", 2, -args_cli.raw_action),
+            ):
+                action = [0.0] * action_dim
+                action[index] = value
+                probes.append((label, action))
+            if action_dim >= 6:
+                for label, index, value in (
+                    ("rx+", 3, args_cli.raw_action),
+                    ("rx-", 3, -args_cli.raw_action),
+                    ("ry+", 4, args_cli.raw_action),
+                    ("ry-", 4, -args_cli.raw_action),
+                    ("rz+", 5, args_cli.raw_action),
+                    ("rz-", 5, -args_cli.raw_action),
+                ):
+                    action = [0.0] * action_dim
+                    action[index] = value
+                    probes.append((label, action))
+
+        for custom_index, raw_custom_action in enumerate(args_cli.custom_action):
+            custom_action = _parse_custom_action(raw_custom_action, action_dim)
+            custom_label = (
+                f"custom{custom_index}[" + ",".join(f"{v:g}" for v in custom_action) + "]"
             )
+            probes.append((custom_label, custom_action))
+
+        if not probes:
+            raise ValueError("No probes requested. Provide --custom_action or omit --custom_only.")
+
+        report.line("probes:")
+        for label, action_values in probes:
+            report.line(f"  {label}: {action_values}")
 
         with torch.inference_mode():
-            for label, index, value in probes:
+            for label, action_values in probes:
                 env.reset()
                 before = _sfp_metrics(base_env)
                 target_ids = mdp.active_sfp_target_ids(base_env).detach().cpu()
@@ -240,7 +324,11 @@ def main() -> int:
                     device=base_env.device,
                     dtype=torch.float32,
                 )
-                actions[:, index] = value
+                actions[:] = torch.tensor(
+                    action_values,
+                    device=base_env.device,
+                    dtype=torch.float32,
+                ).unsqueeze(0)
                 for _ in range(args_cli.num_steps):
                     env.step(actions)
                 after = _sfp_metrics(base_env)
