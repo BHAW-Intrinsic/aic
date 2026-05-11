@@ -53,25 +53,26 @@ SC_NEAR_PORT_JOINT_PRESETS = {
     ),
 }
 
-# Mean final joint positions from the Step 8 SFP scripted alignment diagnostic.
-# These are near-port, outside-insertion seeds; they are not expert success
-# labels because the scripted controller remained 0/32 on strict SFP success.
+# Mean joint positions after the Step 8 SFP lateral pre-correction diagnostic:
+# starting from the earlier near-port seeds, apply raw action (0.5, 0.5, 0.0)
+# for 30 steps. From these seeds, pure raw z-negative insertion produced the
+# first high-success deterministic SFP final-insertion diagnostic.
 SFP_NEAR_PORT_JOINT_PRESETS = {
     "sfp_port_0": (
-        0.8269333839416504,
-        -1.6315652132034302,
-        -1.792166829109192,
-        -1.1168278455734253,
-        1.8379584550857544,
-        2.102725028991699,
+        0.8343623281,
+        -1.5769010782,
+        -1.8567240238,
+        -1.0969889164,
+        1.8369734287,
+        2.1079621315,
     ),
     "sfp_port_1": (
-        0.7965589165687561,
-        -1.671587347984314,
-        -1.7475603818893433,
-        -1.1217869520187378,
-        1.837986946105957,
-        2.108513116836548,
+        0.8025181293,
+        -1.6159480810,
+        -1.8159053326,
+        -1.1020359993,
+        1.8379788399,
+        2.1117913723,
     ),
 }
 
