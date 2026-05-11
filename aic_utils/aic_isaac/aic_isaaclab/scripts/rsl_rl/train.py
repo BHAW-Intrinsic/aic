@@ -158,7 +158,11 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
 
-def _apply_aic_actor_output_bias(runner: OnPolicyRunner, bias: tuple[float, ...]) -> None:
+def _apply_aic_actor_output_bias(
+    runner: OnPolicyRunner,
+    bias: tuple[float, ...],
+    zero_output_weights: bool = False,
+) -> None:
     """Set an optional AIC training-only actor output bias."""
     bias_tensor = torch.as_tensor(bias, dtype=torch.float32)
     if bias_tensor.numel() == 0:
@@ -198,10 +202,13 @@ def _apply_aic_actor_output_bias(runner: OnPolicyRunner, bias: tuple[float, ...]
                 f"Actor output head '{module_name}' has no bias parameter to set."
             )
         with torch.no_grad():
+            if zero_output_weights:
+                head.weight.zero_()
             head.bias.copy_(bias_tensor.to(device=head.bias.device, dtype=head.bias.dtype))
         print(
             "[INFO] Applied AIC actor output bias "
-            f"to {module_name}: {bias_tensor.tolist()}"
+            f"to {module_name}: {bias_tensor.tolist()} "
+            f"(zero_output_weights={zero_output_weights})"
         )
         return
 
@@ -332,7 +339,13 @@ def main(
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
     actor_output_bias = getattr(agent_cfg, "aic_actor_output_bias", None)
     if actor_output_bias is not None and not agent_cfg.resume:
-        _apply_aic_actor_output_bias(runner, tuple(actor_output_bias))
+        _apply_aic_actor_output_bias(
+            runner,
+            tuple(actor_output_bias),
+            zero_output_weights=bool(
+                getattr(agent_cfg, "aic_actor_output_zero_weights", False)
+            ),
+        )
     elif actor_output_bias is not None:
         print("[INFO] Skipping AIC actor output bias because training is resuming.")
     # write git state to logs
