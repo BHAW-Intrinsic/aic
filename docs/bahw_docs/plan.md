@@ -804,6 +804,96 @@ Immediate Step 8 note from Step 7:
     `mean_depth=-0.170864`), so add a pre-insertion port-approach action reward.
   - Added PPO port-approach action reward to reward motion from SFP plug tip
     toward the active port entry before the insertion-depth reward takes over.
+	  - The port-approach warm-start run was worse: it stayed at `0.0000` success
+	    and `1.0000` corridor exits through iteration `130`, so the term was
+	    disabled again. Next comparison should use the lateral-correction reward set
+	    from a fresh PPO start instead of resuming the old fixed-NIC optimizer state.
+	  - Fresh-start lateral-correction PPO, lower exploration noise
+	    (`init_std=0.05`, entropy coefficient `0.0002`), and a smaller relative-IK
+	    scale (`0.005`) all remained at `0.0000` success with near-total corridor
+	    exits.
+	  - Split the SFP corridor termination into separate lateral, orientation,
+	    min-depth, and max-depth terms. The diagnostic run showed lateral drift is
+	    the dominant failure: by iteration `16`,
+	    `sfp_corridor_lateral_violation` was `1.0000` while the other corridor
+	    reasons were `0.0000`.
+	  - Added a direct SFP lateral-error PPO penalty (`sfp_lateral_error`,
+	    weight `-6.0`) and started a fresh lateral-penalty run. Early iterations
+	    still show lateral exits near `1.0000`, so monitor briefly before deciding
+	    whether to strengthen lateral control further.
+	  - The initial lateral-error penalty was too weak; strengthened the lateral
+	    curriculum (`sfp_lateral_progress=20.0`, `sfp_lateral_error=-40.0`,
+	    `sfp_lateral_correction_action=80.0`) and started another PPO run.
+	  - Strong lateral-control rewards still stayed at `1.0000` lateral exits
+	    through iteration `44`, so the next change reduced actual SFP action scale
+	    to `0.001` and PPO `init_std` to `0.02`.
+	  - The 0.001-scale run produced the best early lateral-stability signal so far
+	    at iteration `1` (`mean episode length=39.49`,
+	    `sfp_corridor_lateral_violation=0.1133`), but regressed to `1.0000`
+	    lateral exits by iteration `52` as learned action std grew.
+	  - RSL-RL's current Gaussian distribution config exposes `init_std` and
+	    `std_type`, but not a max-std clamp. Lowered SFP PPO `init_std` to `0.005`,
+	    set entropy coefficient to `0.0`, and reduced learning rate to `3.0e-4`.
+	    This stabilized run is the first to sustain longer early episodes
+	    (`mean_episode_length=83.57`, lateral exits `0.4395` at iteration `4`);
+	    keep monitoring.
+	  - Low-noise PPO then became a timeout/backout local optimum. Added signed
+	    port-frame depth-action shaping, but the policy still selected the wrong
+	    raw `z` direction by iteration `32`.
+	  - Added a training-only SFP PPO actor-output initialization hook. The hook
+	    sets the initial actor output bias and can zero the actor output-head
+	    weights before PPO starts. This is not a scripted controller; PPO still
+	    updates the policy normally.
+	  - Zero-head SFP PPO with raw `z=-0.05` fixed the backing-out failure but
+	    plateaued as a timeout-only policy. Evaluation of `model_50.pt` over 64
+	    episodes produced `0/64` successes with good lateral/orientation alignment
+	    (`mean_lateral=0.004905`, `mean_orientation=0.023362`) but a depth
+	    shortfall (`mean_depth=-0.001481` vs coarse success `>0.005`).
+	  - Added final-depth curriculum `c3504ec`: reduce lateral-action reward,
+	    strengthen depth/action rewards, target a deeper depth, and initialize raw
+	    `z=-0.10`.
+	  - Final-depth PPO still produced `0/64` successes when evaluated at
+	    `model_50.pt`; depth improved only slightly to `mean_depth=-0.001222`,
+	    with no lateral or orientation misses under the coarse gate.
+	  - Forced raw-action diagnostic confirmed raw `tz-` still increases SFP
+	    depth, but only by about `+0.001539 m` over `150` steps from the
+	    near-port reset, ending at about `-0.001076 m`.
+	  - Added progress-gated final-depth curriculum `a79737c`: gate off
+	    entrance-distance rewards near the entrance, stop rewarding negative
+	    insertion depth, multiply raw depth-action reward by measured positive
+	    depth progress, raise SFP IK scale to `0.002`, and initialize raw
+	    `z=-0.20`.
+	  - Progress-gated PPO briefly recovered a nonzero training success signal,
+	    but collapsed to timeout-only behavior by iteration `64`. Evaluation of
+	    `model_50.pt` produced `1/64` coarse successes; failures still had no
+	    lateral/orientation misses but remained depth shortfalls
+	    (`mean_depth=-0.001483`).
+	  - Next remediation: gate `sfp_insertion_action` by measured positive depth
+	    progress as well, because it still pays large inward-intent reward while
+	    actual insertion depth remains negative.
+	  - Added insertion-action progress gate `f5d3eed`: `sfp_insertion_action`
+	    now also requires measured positive signed-depth progress, true-depth
+	    rewards were strengthened, sparse coarse-success bonus was increased to
+	    `100.0`, SFP IK scale moved to `0.003`, and the initial raw depth bias is
+	    `z=-0.25`.
+	  - Insertion-action-progress PPO had intermittent early training successes
+	    around iterations `51-56`, then collapsed to timeout-only behavior by
+	    iteration `100`.
+	  - Strong forced-action diagnostic with raw action magnitude `1.0` confirmed
+	    raw `tz-` can cross the depth threshold (`d_depth_mean=+0.036686`), but it
+	    also drifts laterally outside the coarse corridor (`after_lateral=0.031734`
+	    vs gate `0.020`).
+	  - Added coupled initial actor bias `6c3fbf2` with raw action
+	    `(x=0.13, y=0.10, z=-1.0)` to compensate the measured lateral drift while
+	    pushing inward.
+	  - Coupled-bias PPO briefly showed early training success, then collapsed to
+	    timeout-only behavior by iteration `72`. Evaluation of `model_50.pt`
+	    produced `0/64` successes, `mean_lateral=0.013022`,
+	    `mean_orientation=0.342141`, and `mean_depth=-0.003365`.
+	  - Current blocker: SFP final insertion requires a depth-advancing action
+	    that does not induce lateral drift. Before more PPO, extend
+	    `check_sfp_action_frame.py` to test custom combined action vectors and use
+	    that to derive the next reset/curriculum or action-shaping change.
 
 Later distilled outputs:
 
@@ -912,8 +1002,49 @@ Done when:
   - [x] Evaluate lateral-correction `model_200.pt` and confirm it still backs
     away from the port.
   - [x] Add PPO port-approach action reward.
-  - [ ] Run port-approach SFP PPO from fixed-NIC `model_50.pt`.
-  - [ ] Train SFP PPO specialist checkpoint.
+	  - [x] Run port-approach SFP PPO from fixed-NIC `model_50.pt`; stopped because
+	    it stayed at zero success with immediate corridor exits.
+	  - [x] Disable port-approach term from active SFP reward config.
+	  - [x] Run fresh-start lateral-correction SFP PPO.
+	  - [x] Reduce SFP PPO exploration noise after fresh-start PPO still left the
+	    corridor immediately.
+	  - [x] Reduce SFP relative-IK action scale to `0.005`.
+	  - [x] Split SFP corridor terminations by failure reason and confirm lateral
+	    violation is the dominant early failure.
+	  - [x] Add SFP lateral-error penalty.
+	  - [x] Monitor SFP PPO with the initial lateral-error penalty; stopped because
+	    lateral exits remained near `1.0000`.
+	  - [x] Strengthen SFP lateral-control reward weights.
+	  - [x] Monitor SFP PPO with strong lateral-control rewards; stopped because
+	    lateral exits remained `1.0000` through iteration `44`.
+	  - [x] Reduce SFP action scale to `0.001` and PPO `init_std` to `0.02`.
+	  - [x] Monitor SFP PPO with 0.001 action scale; stopped because learned std
+	    grew and lateral exits returned to `1.0000`.
+	  - [x] Stabilize SFP low-noise PPO with `init_std=0.005`, zero entropy
+	    coefficient, and lower learning rate.
+	  - [x] Monitor stabilized low-noise SFP PPO; stopped after it became a
+	    timeout/backout local optimum.
+	  - [x] Add signed SFP depth-action shaping.
+	  - [x] Add training-only SFP PPO actor output bias and zero-head
+	    initialization.
+	  - [x] Run zero-head SFP PPO; stopped after `model_50.pt` plateaued at
+	    timeout-only behavior.
+	  - [x] Evaluate zero-head `model_50.pt`; confirmed the remaining blocker is
+	    insertion depth, not lateral or orientation alignment.
+	  - [x] Add final-depth reward curriculum after zero-head evaluation showed a
+	    `6-7 mm` depth shortfall.
+	  - [x] Run final-depth SFP PPO and evaluate `model_50.pt`; still `0/64`
+	    coarse successes.
+	  - [x] Run forced SFP raw-action diagnostic for final-depth motion.
+	  - [x] Add progress-gated final-depth reward curriculum.
+	  - [x] Run progress-gated SFP PPO and evaluate `model_50.pt`; result was
+	    `1/64` coarse successes.
+	  - [x] Gate insertion-action reward by measured positive depth progress.
+	  - [x] Run insertion-action-progress SFP PPO.
+	  - [x] Run strong forced-action diagnostic for final SFP insertion motion.
+	  - [x] Add and evaluate coupled initial insertion push bias.
+	  - [ ] Add custom combined-action SFP diagnostic.
+	  - [ ] Train SFP PPO specialist checkpoint.
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria

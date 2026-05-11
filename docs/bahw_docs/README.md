@@ -1,9 +1,101 @@
 
 # BAHW Isaac Lab Work Notes
 
-Overall plan: `plan.md`
+This directory tracks the Isaac Lab training path for the AIC cable insertion
+work.
 
-Details for reproducing each step: `detailed/stepX.md` for each step X.
+- Current plan and checklist: `plan.md`
+- High-level strategy: `overview.md`
+- Setup notes: `setup.md`
+- Reproducible step logs: `detailed/stepX.md`
+
+## Current Status
+
+The main path is PPO with an asymmetric actor-critic in Isaac Lab. Actor
+observations are kept eval-compatible; critic observations can use privileged
+plug-to-port geometry.
+
+Completed work so far:
+
+- Step 0 verified the relevant Isaac/Gazebo asset frames. Isaac exposes
+  `robot.sfp_tip_link`; SFP port entrances exist as USD semantic prims and are
+  reproduced by fixed helper poses. SC needed a virtual gripped-tip helper
+  because the named `sc_tip_link` is not the controlled gripped insertion tip.
+- Steps 1-5 added shared insertion geometry helpers, active target selection,
+  policy observations, privileged observations, insertion rewards, and success
+  terminations.
+- Step 6 trained and evaluated the SC path. The accepted SC gate is the best
+  saved neural checkpoint at `233/256` successes, plus a saved video artifact.
+  This was accepted as enough to unblock SFP work.
+- Step 7 extended the same MDP structure to SFP with `AIC-SFP-Task-v0`, active
+  SFP port metadata, SFP helper geometry, SFP observations/rewards/terminations,
+  and SFP PPO config.
+- Step 8 is in progress. The SFP scripted controller was tested and rejected as
+  a BC expert because it systematically misses the port by a few millimeters.
+  Multiple PPO curriculum and reward variants have been tested.
+
+Current Step 8 best result:
+
+- Best detached SFP eval so far is
+  `step8_sfp_ppo_progressgate_a79737c/model_50.pt`: `1/64` coarse successes.
+- Latest coupled-bias PPO checkpoint
+  `step8_sfp_ppo_coupledbias_6c3fbf2/model_50.pt` evaluated at `0/64`.
+- The SFP policy can often stay within the temporary lateral/orientation gate,
+  but it does not reliably cross the final insertion-depth threshold.
+
+Current blocker:
+
+- The final SFP insertion motion is not yet controllable enough for PPO. The
+  forced-action diagnostic shows raw `tz-` increases signed insertion depth, but
+  it also creates lateral drift. Reward shaping and fixed actor bias have not
+  yet produced a stable depth-advancing, laterally centered insertion policy.
+
+Next recommended work:
+
+- Extend `scripts/check_sfp_action_frame.py` with a custom action-vector mode.
+  Use it to test combined pushes such as the estimated `x/y/z` compensation
+  vector from the forced-action diagnostic.
+- If a combined action can insert without lateral drift, use that measurement to
+  design the next PPO reset/curriculum or action-shaping term.
+- If no combined action inserts from the current reset, adjust the SFP reset
+  preset or action frame before running more PPO.
+- After SFP has a reliable specialist checkpoint, revisit Step 9 distillation
+  and final Gazebo routing.
+
+## Key Code References
+
+- Isaac task config:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py`
+- Geometry helpers:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py`
+- Observations:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/observations.py`
+- Rewards:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py`
+- Terminations:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/terminations.py`
+- SC PPO config:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_cfg.py`
+- SFP PPO config:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py`
+- Evaluation script:
+  `aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py`
+- SFP action-frame diagnostic:
+  `aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py`
+- Geometry inspection:
+  `aic_utils/aic_isaac/aic_isaaclab/scripts/inspect_aic_geometry.py`
+
+## Detailed Notes
+
+- Step 0 geometry inspection: `detailed/step0.md`
+- Step 1 geometry helper work: `detailed/step1.md`
+- Step 2 active target selection: `detailed/step2.md`
+- Step 3 observations/asymmetric critic: `detailed/step3.md`
+- Step 4 insertion rewards: `detailed/step4.md`
+- Step 5 success termination: `detailed/step5.md`
+- Step 6 SC training and accepted checkpoint: `detailed/step6.md`
+- Step 7 SFP task extension: `detailed/step7.md`
+- Step 8 SFP specialist PPO work: `detailed/step8.md`
 
 ## Per-Step Workflow
 

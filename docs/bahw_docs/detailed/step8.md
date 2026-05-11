@@ -51,214 +51,6 @@ py_compile passed
 git diff --check passed
 ```
 
-Host pull/copy:
-
-```bash
-tmux new-session -d -s isaac-step8-lateralguard-pull-3526909 \
-  "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py; echo STEP8_LATERALGUARD_PULL_EXIT:\$?; sleep 120'"
-```
-
-Reward smoke key output:
-
-```text
-Reward Manager contains 17 active terms.
-  sfp_lateral_progress weight: 5.0
-  sfp_lateral_alignment weight: 4.0
-  sfp_insertion_action weight: 15.0
-overall_finite: True
-STEP8_SFP_LATERALGUARD_REWARD_3526909_EXIT:0
-```
-
-Training command:
-
-```bash
-tmux new-session -d -s isaac-step8-sfp-ppo-lateralguard-3526909 \
-  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_05-09-54_step8_sfp_ppo_fixednic_977ac05 --checkpoint model_50.pt --run_name step8_sfp_ppo_lateralguard_3526909 --headless --enable_cameras\"; echo STEP8_SFP_PPO_LATERALGUARD_3526909_EXIT:\$?; sleep 120'"
-```
-
-Run directory:
-
-```text
-/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-47-49_step8_sfp_ppo_lateralguard_3526909
-```
-
-Key output:
-
-```text
-iteration 60:
-  Mean reward: 2.91
-  Mean episode length: 6.47
-  Episode_Reward/sfp_lateral_progress: -0.0341
-  Episode_Reward/sfp_insertion_depth: 0.0046
-  Episode_Reward/sfp_insertion_action: 0.0203
-  Episode_Termination/sfp_insertion_success: 0.0000
-  Episode_Termination/sfp_corridor_violation: 1.0000
-
-iteration 115:
-  Episode_Termination/sfp_insertion_success: 0.0000
-  Episode_Termination/sfp_corridor_violation: 1.0000
-```
-
-Interpretation:
-
-- The lateral guard reduced the inward-action reward substantially, but the
-  fixed-NIC warm-start policy still immediately left the corridor.
-- This run was stopped. Lateral state weighting alone was not enough.
-
-## Lateral-Correction Action Reward
-
-Code change:
-
-```text
-cee91e6 Reward SFP lateral correction actions
-```
-
-Change:
-
-- Added `mdp.sfp_lateral_correction_action_reward`.
-- The reward projects the raw relative-IK translation command into world frame,
-  computes the SFP plug-tip lateral vector away from the active port axis, and
-  rewards commands that move opposite that lateral vector.
-- Added `SfpRewardsCfg.sfp_lateral_correction_action` with weight `20.0`.
-- The reward is active only inside the temporary corridor:
-  lateral between `0.002` and `0.060`, orientation `<0.80`, and depth between
-  `-0.080` and `0.060`.
-- This is still PPO reward shaping, not BC or a scripted policy.
-
-Local checks:
-
-```bash
-python3 -m py_compile \
-  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
-  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
-  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
-git diff --check
-```
-
-Result:
-
-```text
-py_compile passed
-git diff --check passed
-```
-
-Host pull/copy:
-
-```bash
-tmux new-session -d -s isaac-step8-lateralcorrection-pull-6956029 \
-  "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py; echo STEP8_LATERALCORRECTION_PULL_EXIT:\$?; sleep 120'"
-```
-
-Reward smoke key output:
-
-```text
-Reward Manager contains 18 active terms.
-  sfp_lateral_correction_action weight: 20.0
-overall_finite: True
-STEP8_SFP_LATERALCORRECTION_REWARD_6956029_EXIT:0
-```
-
-Training command:
-
-```bash
-tmux new-session -d -s isaac-step8-sfp-ppo-lateralcorrection-6956029 \
-  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_05-09-54_step8_sfp_ppo_fixednic_977ac05 --checkpoint model_50.pt --run_name step8_sfp_ppo_lateralcorrection_6956029 --headless --enable_cameras\"; echo STEP8_SFP_PPO_LATERALCORRECTION_6956029_EXIT:\$?; sleep 120'"
-```
-
-Run directory:
-
-```text
-/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-59-21_step8_sfp_ppo_lateralcorrection_6956029
-```
-
-Key output:
-
-```text
-iteration 64:
-  Episode_Reward/sfp_lateral_correction_action: 0.0485
-  Episode_Termination/sfp_insertion_success: 0.0104
-  Episode_Termination/sfp_corridor_violation: 0.9896
-
-iteration 129:
-  Episode_Reward/sfp_lateral_correction_action: 0.0455
-  Episode_Termination/sfp_insertion_success: 0.0111
-  Episode_Termination/sfp_corridor_violation: 0.9889
-
-iteration 222:
-  Episode_Reward/sfp_lateral_correction_action: 0.0569
-  Episode_Termination/sfp_insertion_success: 0.0000
-  Episode_Termination/sfp_corridor_violation: 1.0000
-```
-
-Evaluation of `model_200.pt`:
-
-```bash
-tmux new-session -d -s isaac-step8-sfp-eval-lateralcorrection200-6956029 \
-  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 50 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-59-21_step8_sfp_ppo_lateralcorrection_6956029/model_200.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_LATERALCORRECTION200_6956029_EXIT:\$?; sleep 120'"
-```
-
-Key output:
-
-```text
-episodes: 64
-successes: 0
-success_rate: 0.000000
-mean_lateral_error_at_termination: 0.142818
-mean_signed_lateral_x_at_termination: 0.112403
-mean_signed_lateral_z_at_termination: -0.056010
-mean_orientation_error_at_termination: 1.119678
-mean_insertion_depth_at_termination: -0.170864
-STEP8_SFP_EVAL_LATERALCORRECTION200_6956029_EXIT:0
-```
-
-Interpretation:
-
-- The lateral-correction reward recovered intermittent coarse training success
-  but did not produce a usable checkpoint.
-- Evaluation shows the policy backs away from the port under rollout
-  (`mean_depth=-0.170864` after 50 steps), so the next PPO shaping should reward
-  pre-insertion actions that move toward the port entry.
-
-## Port-Approach Action Reward
-
-Code change:
-
-```text
-16159eb Reward SFP port approach actions
-```
-
-Change:
-
-- Added `mdp.sfp_port_approach_action_reward`.
-- The reward projects the raw relative-IK translation command onto the vector
-  from SFP plug tip to active port entry and rewards motion toward the entry.
-- The term is active before insertion: depth between `-0.080` and `0.005`,
-  distance between `0.001` and `0.120`, and orientation `<1.20`.
-- Added `SfpRewardsCfg.sfp_port_approach_action` with weight `20.0`.
-
-Reason:
-
-- `model_200.pt` from the lateral-correction run still backed away from the
-  port. This term gives PPO an immediate action-level reward for moving toward
-  the entry before the insertion-depth reward should dominate.
-
-Local checks:
-
-```bash
-python3 -m py_compile \
-  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
-  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
-  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
-git diff --check
-```
-
-Result:
-
-```text
-py_compile passed
-git diff --check passed
-```
-
 Next remote command after commit/push/host pull:
 
 ```bash
@@ -1332,3 +1124,1483 @@ Result:
 py_compile passed
 git diff --check passed
 ```
+
+Host pull/copy:
+
+```bash
+tmux new-session -d -s isaac-step8-lateralguard-pull-3526909 \
+  "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py; echo STEP8_LATERALGUARD_PULL_EXIT:\$?; sleep 120'"
+```
+
+Reward smoke key output:
+
+```text
+Reward Manager contains 17 active terms.
+  sfp_lateral_progress weight: 5.0
+  sfp_lateral_alignment weight: 4.0
+  sfp_insertion_action weight: 15.0
+overall_finite: True
+STEP8_SFP_LATERALGUARD_REWARD_3526909_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-lateralguard-3526909 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_05-09-54_step8_sfp_ppo_fixednic_977ac05 --checkpoint model_50.pt --run_name step8_sfp_ppo_lateralguard_3526909 --headless --enable_cameras\"; echo STEP8_SFP_PPO_LATERALGUARD_3526909_EXIT:\$?; sleep 120'"
+```
+
+Run directory:
+
+```text
+/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-47-49_step8_sfp_ppo_lateralguard_3526909
+```
+
+Key output:
+
+```text
+iteration 60:
+  Mean reward: 2.91
+  Mean episode length: 6.47
+  Episode_Reward/sfp_lateral_progress: -0.0341
+  Episode_Reward/sfp_insertion_depth: 0.0046
+  Episode_Reward/sfp_insertion_action: 0.0203
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+
+iteration 115:
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Interpretation:
+
+- The lateral guard reduced the inward-action reward substantially, but the
+  fixed-NIC warm-start policy still immediately left the corridor.
+- This run was stopped. Lateral state weighting alone was not enough.
+
+## Lateral-Correction Action Reward
+
+Code changes:
+
+```text
+cee91e6 Reward SFP lateral correction actions
+6956029 Document SFP lateral correction remediation
+```
+
+Change:
+
+- Added `mdp.sfp_lateral_correction_action_reward`.
+- The reward projects the raw relative-IK translation command into world frame,
+  computes the SFP plug-tip lateral vector away from the active port axis, and
+  rewards commands that move opposite that lateral vector.
+- Added `SfpRewardsCfg.sfp_lateral_correction_action` with weight `20.0`.
+- The reward is active only inside the temporary corridor:
+  lateral between `0.002` and `0.060`, orientation `<0.80`, and depth between
+  `-0.080` and `0.060`.
+- This is still PPO reward shaping, not BC or a scripted policy.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Reward smoke key output:
+
+```text
+Reward Manager contains 18 active terms.
+  sfp_lateral_correction_action weight: 20.0
+overall_finite: True
+STEP8_SFP_LATERALCORRECTION_REWARD_6956029_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-lateralcorrection-6956029 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_05-09-54_step8_sfp_ppo_fixednic_977ac05 --checkpoint model_50.pt --run_name step8_sfp_ppo_lateralcorrection_6956029 --headless --enable_cameras\"; echo STEP8_SFP_PPO_LATERALCORRECTION_6956029_EXIT:\$?; sleep 120'"
+```
+
+Run directory:
+
+```text
+/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-59-21_step8_sfp_ppo_lateralcorrection_6956029
+```
+
+Key output:
+
+```text
+iteration 64:
+  Episode_Reward/sfp_lateral_correction_action: 0.0485
+  Episode_Termination/sfp_insertion_success: 0.0104
+  Episode_Termination/sfp_corridor_violation: 0.9896
+
+iteration 129:
+  Episode_Reward/sfp_lateral_correction_action: 0.0455
+  Episode_Termination/sfp_insertion_success: 0.0111
+  Episode_Termination/sfp_corridor_violation: 0.9889
+
+iteration 222:
+  Episode_Reward/sfp_lateral_correction_action: 0.0569
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Evaluation of `model_200.pt`:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-lateralcorrection200-6956029 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 50 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_06-59-21_step8_sfp_ppo_lateralcorrection_6956029/model_200.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_LATERALCORRECTION200_6956029_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 0
+success_rate: 0.000000
+mean_lateral_error_at_termination: 0.142818
+mean_signed_lateral_x_at_termination: 0.112403
+mean_signed_lateral_z_at_termination: -0.056010
+mean_orientation_error_at_termination: 1.119678
+mean_insertion_depth_at_termination: -0.170864
+STEP8_SFP_EVAL_LATERALCORRECTION200_6956029_EXIT:0
+```
+
+Interpretation:
+
+- The lateral-correction reward recovered intermittent coarse training success
+  but did not produce a usable checkpoint.
+- Evaluation shows the policy backs away from the port under rollout
+  (`mean_depth=-0.170864` after 50 steps), so the next PPO shaping should reward
+  pre-insertion actions that move toward the port entry.
+
+## Port-Approach Action Reward
+
+Code changes:
+
+```text
+16159eb Reward SFP port approach actions
+87b0517 Document SFP port approach remediation
+```
+
+Change:
+
+- Added `mdp.sfp_port_approach_action_reward`.
+- The reward projects the raw relative-IK translation command onto the vector
+  from SFP plug tip to active port entry and rewards motion toward the entry.
+- The term is active before insertion: depth between `-0.080` and `0.005`,
+  distance between `0.001` and `0.120`, and orientation `<1.20`.
+- Added `SfpRewardsCfg.sfp_port_approach_action` with weight `20.0`.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Remote smoke key output:
+
+```text
+Reward Manager contains 19 active terms.
+  sfp_lateral_correction_action weight: 20.0
+  sfp_port_approach_action weight: 20.0
+overall_finite: True
+STEP8_SFP_PORTAPPROACH_REWARD_87B0517_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-portapproach-87b0517 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_05-09-54_step8_sfp_ppo_fixednic_977ac05 --checkpoint model_50.pt --run_name step8_sfp_ppo_portapproach_87b0517 --headless --enable_cameras\"; echo STEP8_SFP_PPO_PORTAPPROACH_87B0517_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+iteration 66:
+  Episode_Reward/sfp_lateral_correction_action: 0.0088
+  Episode_Reward/sfp_port_approach_action: 0.0378
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+
+iteration 130:
+  Episode_Reward/sfp_lateral_correction_action: 0.0089
+  Episode_Reward/sfp_port_approach_action: 0.0372
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Interpretation:
+
+- The port-approach term made the fixed-NIC warm-start run worse. It suppressed
+  the intermittent coarse successes seen in the lateral-correction run.
+- The run was stopped at iteration `130`.
+- The active config should not include this term for the next attempt.
+
+Follow-up code change:
+
+```text
+5100b1c Disable SFP port approach reward term
+```
+
+The function remains in `rewards.py` for provenance, but
+`SfpRewardsCfg.sfp_port_approach_action` was removed so the active reward set
+returns to the lateral-correction configuration.
+
+## Fresh-Start Lateral-Correction PPO
+
+The next run restarted PPO from scratch after disabling the port-approach term,
+instead of resuming the old fixed-NIC optimizer state.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-fresh-lateralcorrection-5100b1c \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_fresh_lateralcorrection_5100b1c --headless --enable_cameras\"; echo STEP8_SFP_PPO_FRESH_LATERALCORRECTION_5100B1C_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+iteration 112:
+  Mean action std: 0.20
+  Mean episode length: 5.60
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Interpretation:
+
+- Fresh PPO with default exploration noise still left the near-port corridor
+  almost immediately and produced no SFP successes.
+- The next remediation is to reduce PPO exploration noise instead of adding
+  another behavior-cloning path.
+
+## Low-Std Fresh PPO
+
+Code change:
+
+```text
+9ff4939 Reduce SFP PPO exploration noise
+```
+
+Change:
+
+- Reduced SFP PPO actor `init_std` from `0.2` to `0.05`.
+- Reduced SFP PPO entropy coefficient from `0.001` to `0.0002`.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-lowstd-9ff4939 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_lowstd_9ff4939 --headless --enable_cameras\"; echo STEP8_SFP_PPO_LOWSTD_9FF4939_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+Mean action std: 0.05
+Episode_Termination/sfp_insertion_success: 0.0000
+Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Interpretation:
+
+- Lower PPO exploration noise was active, but the policy still exited the
+  corridor in roughly 5-6 steps.
+- The next attempt reduced the relative-IK action scale further.
+
+## Reduced Scale 0.005 PPO
+
+Code change:
+
+```text
+2f06127 Reduce SFP relative IK scale further
+```
+
+Change:
+
+- Reduced `AICTaskSfpEnvCfg.actions.arm_action.scale` from `0.01` to `0.005`.
+- Reduced `sfp_lateral_correction_action` and `sfp_insertion_action` physical
+  action scales from `0.01` to `0.005`.
+- Reduced their command normalization scales from `0.004` to `0.002`.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-scale005-2f06127 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_scale005_2f06127 --headless --enable_cameras\"; echo STEP8_SFP_PPO_SCALE005_2F06127_EXIT:\$?; sleep 120'"
+```
+
+Early key output:
+
+```text
+iteration 16:
+  Mean action std: 0.05
+  Mean episode length: 7.80
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+
+iteration 56:
+  Mean action std: 0.05
+  Mean episode length: 8.05
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+
+iteration 152:
+  Mean action std: 0.06
+  Mean episode length: 7.87
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_violation: 1.0000
+```
+
+Interpretation:
+
+- The smaller action scale improved early episode length from roughly 5-6 steps
+  to roughly 8 steps, but has not yet produced a success signal.
+- The run stayed flat through iteration `152`, so it was stopped.
+- The next PPO remediation was to split the single `sfp_corridor_violation`
+  termination into reason-specific diagnostics so the logs report whether
+  lateral, orientation, min-depth, or max-depth ends each rollout.
+
+## Corridor-Reason Diagnostics
+
+Code change:
+
+```text
+2dedf4c Split SFP corridor termination diagnostics
+```
+
+Change:
+
+- Replaced the active aggregate `sfp_corridor_violation` termination with four
+  explicit termination terms:
+  `sfp_corridor_lateral_violation`,
+  `sfp_corridor_orientation_violation`,
+  `sfp_corridor_min_depth_violation`, and
+  `sfp_corridor_max_depth_violation`.
+- Kept the old aggregate helper function available for provenance.
+- Updated `scripts/rsl_rl/evaluate.py` to disable all four split corridor terms
+  during offline evaluation.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/terminations.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Remote smoke key output:
+
+```text
+Termination Manager contains 6 active terms:
+  time_out
+  sfp_insertion_success
+  sfp_corridor_lateral_violation
+  sfp_corridor_orientation_violation
+  sfp_corridor_min_depth_violation
+  sfp_corridor_max_depth_violation
+
+STEP8_SFP_CORRIDOR_REASONS_2DEDF4C_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-corridor-reasons-2dedf4c \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_corridor_reasons_2dedf4c --headless --enable_cameras\"; echo STEP8_SFP_PPO_CORRIDOR_REASONS_2DEDF4C_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+iteration 1:
+  Episode_Termination/sfp_corridor_lateral_violation: 0.8861
+  Episode_Termination/sfp_corridor_orientation_violation: 0.0000
+  Episode_Termination/sfp_corridor_min_depth_violation: 0.0000
+  Episode_Termination/sfp_corridor_max_depth_violation: 0.0000
+
+iteration 16:
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_lateral_violation: 1.0000
+  Episode_Termination/sfp_corridor_orientation_violation: 0.0000
+  Episode_Termination/sfp_corridor_min_depth_violation: 0.0000
+  Episode_Termination/sfp_corridor_max_depth_violation: 0.0000
+```
+
+Interpretation:
+
+- The dominant SFP failure is lateral drift out of the near-port corridor.
+- Orientation and depth are not the primary early termination causes in this
+  curriculum stage.
+
+## Lateral-Drift Penalty
+
+Code change:
+
+```text
+5848f4b Penalize SFP lateral corridor drift
+```
+
+Change:
+
+- Added `mdp.sfp_lateral_error_penalty`.
+- Added active reward term `sfp_lateral_error` with weight `-6.0`, scale
+  `0.060`, and clip `1.0`.
+- This remains PPO reward shaping from privileged training geometry; it is not BC
+  and does not add privileged actor observations.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/__init__.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Remote smoke key output:
+
+```text
+Reward Manager contains 19 active terms.
+  sfp_lateral_error weight: -6.0
+STEP8_SFP_LATERALPENALTY_SMOKE_5848F4B_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-lateralpenalty-5848f4b \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_lateralpenalty_5848f4b --headless --enable_cameras\"; echo STEP8_SFP_PPO_LATERALPENALTY_5848F4B_EXIT:\$?; sleep 120'"
+```
+
+Early key output:
+
+```text
+iteration 4:
+  Episode_Reward/sfp_lateral_error: -0.0378
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_lateral_violation: 1.0000
+```
+
+Current interpretation:
+
+- The penalty is active but early magnitude is still small relative to the rest
+  of the reward mix.
+- Continue only briefly; if lateral exits remain near `1.0000`, the next PPO
+  adjustment should make lateral control much more dominant.
+
+## Strong Lateral-Control Rewards
+
+Code change:
+
+```text
+9117c07 Strengthen SFP lateral control rewards
+```
+
+Change:
+
+- Increased `sfp_lateral_progress` weight from `5.0` to `20.0`.
+- Increased `sfp_lateral_error` penalty from weight `-6.0`, scale `0.060` to
+  weight `-40.0`, scale `0.020`.
+- Increased `sfp_lateral_correction_action` weight from `20.0` to `80.0`.
+- Reduced `sfp_lateral_correction_action` command scale from `0.002` to `0.001`.
+- Reduced `sfp_lateral_correction_action` lateral gain scale from `0.012` to
+  `0.006`.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Remote smoke key output:
+
+```text
+Reward Manager contains 19 active terms.
+  sfp_lateral_progress weight: 20.0
+  sfp_lateral_error weight: -40.0
+  sfp_lateral_correction_action weight: 80.0
+
+iteration 0:
+  Episode_Reward/sfp_lateral_error: -0.1002
+  Episode_Termination/sfp_corridor_lateral_violation: 0.0000
+STEP8_SFP_STRONGLATERAL_SMOKE_9117C07_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-stronglateral-9117c07 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_stronglateral_9117c07 --headless --enable_cameras\"; echo STEP8_SFP_PPO_STRONGLATERAL_9117C07_EXIT:\$?; sleep 120'"
+```
+
+Early key output:
+
+```text
+iteration 1:
+  Mean reward: -4.64
+  Episode_Reward/sfp_lateral_error: -0.7784
+  Episode_Reward/sfp_lateral_correction_action: 0.0854
+  Episode_Termination/sfp_corridor_lateral_violation: 0.6595
+
+iteration 4:
+  Mean reward: -4.68
+  Episode_Reward/sfp_lateral_error: -0.3232
+  Episode_Reward/sfp_lateral_correction_action: 0.0081
+  Episode_Termination/sfp_corridor_lateral_violation: 1.0000
+```
+
+Current interpretation:
+
+- The stronger terms are active and materially change reward scale.
+- Early rollouts still mostly leave through lateral violation, so monitor briefly
+  before deciding whether a reset/action-scale curriculum change is needed.
+
+## Reduced Scale 0.001 PPO
+
+Code change:
+
+```text
+e4df956 Reduce SFP action scale for lateral stability
+```
+
+Change:
+
+- Reduced SFP PPO actor `init_std` from `0.05` to `0.02`.
+- Reduced SFP PPO entropy coefficient from `0.0002` to `0.0001`.
+- Reduced `AICTaskSfpEnvCfg.actions.arm_action.scale` from `0.005` to `0.001`.
+- Reduced the SFP lateral-correction reward physical `action_scale` from
+  `0.005` to `0.001` and `command_scale` from `0.001` to `0.0002`.
+- Reduced the SFP insertion-action reward physical `action_scale` from `0.005`
+  to `0.001` and `command_scale` from `0.002` to `0.0004`.
+
+Reason:
+
+- Stronger lateral reward terms alone did not reduce lateral exits by iteration
+  `44`.
+- The SFP tolerance is millimeter-scale; the next curriculum change is to reduce
+  the actual action delta so random PPO actions do not immediately throw the tip
+  out of the lateral corridor.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Remote smoke key output:
+
+```text
+iteration 0:
+  Mean action std: 0.02
+  Mean episode length: 20.00
+  Episode_Reward/sfp_lateral_error: -0.0705
+  Episode_Termination/sfp_corridor_lateral_violation: 0.0000
+STEP8_SFP_SCALE001_SMOKE_E4DF956_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-scale001-e4df956 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_scale001_e4df956 --headless --enable_cameras\"; echo STEP8_SFP_PPO_SCALE001_E4DF956_EXIT:\$?; sleep 120'"
+```
+
+Early key output:
+
+```text
+iteration 1:
+  Mean action std: 0.02
+  Mean episode length: 39.49
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_lateral_violation: 0.1133
+
+iteration 4:
+  Mean episode length: 28.55
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_lateral_violation: 1.0000
+```
+
+Current interpretation:
+
+- The first update showed the best lateral-stability signal so far, but the run
+  initially regressed back to lateral exits.
+- Continue monitoring before deciding whether to stop or keep training.
+
+Later key output before stopping:
+
+```text
+iteration 52:
+  Mean action std: 0.03
+  Mean episode length: 15.93
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_lateral_violation: 1.0000
+```
+
+Interpretation:
+
+- The actual action scale helped initially, but the learned action std grew from
+  `0.02` to roughly `0.03`, and lateral exits returned to `1.0000`.
+- RSL-RL's current Gaussian distribution config exposes `init_std` and
+  `std_type`, but not an explicit maximum std clamp. The next attempt therefore
+  lowers initial std further, removes entropy pressure, and reduces learning
+  rate.
+
+## Stabilized Low-Noise PPO
+
+Code change:
+
+```text
+3f5ffd1 Stabilize SFP low-noise PPO
+```
+
+Change:
+
+- Reduced SFP PPO actor `init_std` from `0.02` to `0.005`.
+- Set SFP PPO entropy coefficient from `0.0001` to `0.0`.
+- Reduced SFP PPO learning rate from `1.0e-3` to `3.0e-4`.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Remote smoke key output:
+
+```text
+iteration 0:
+  Mean action std: 0.00
+  Mean episode length: 20.00
+  Episode_Termination/sfp_corridor_lateral_violation: 0.0000
+STEP8_SFP_STABLELOWSTD_SMOKE_3F5FFD1_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-stablelowstd-3f5ffd1 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_stablelowstd_3f5ffd1 --headless --enable_cameras\"; echo STEP8_SFP_PPO_STABLELOWSTD_3F5FFD1_EXIT:\$?; sleep 120'"
+```
+
+Early key output:
+
+```text
+iteration 2:
+  Mean episode length: 42.80
+  Episode_Termination/sfp_corridor_lateral_violation: 0.0059
+
+iteration 4:
+  Mean episode length: 83.57
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Termination/sfp_corridor_lateral_violation: 0.4395
+```
+
+Current interpretation:
+
+- This is the first SFP PPO run to sustain substantially longer episodes after
+  the first few updates.
+- Lateral stability is still not solved and insertion success remains zero, but
+  this run is worth monitoring longer than the immediately flat variants.
+
+## Signed Depth Action Shaping
+
+Code changes:
+
+```text
+7448d8b Use signed SFP depth action shaping
+```
+
+Change:
+
+- Changed `mdp.sfp_port_frame_depth_action_reward` from one-sided reward-only
+  shaping to signed shaping:
+  - raw `z-` is rewarded because the Step 8 action-frame diagnostic showed it is
+    the clearest positive SFP depth direction.
+  - raw `z+` is penalized so PPO receives an immediate signal when it chooses the
+    wrong depth direction.
+- Increased `sfp_port_frame_depth_action` weight from `80.0` to `120.0`.
+- Reduced its command normalization scale from `0.02` to `0.005`.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-signeddepth-7448d8b \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_signeddepth_7448d8b --headless --enable_cameras\"; echo STEP8_SFP_PPO_SIGNEDDEPTH_7448D8B_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+iteration 0:
+  Episode_Reward/sfp_port_frame_depth_action: -0.9328
+  Episode_Reward/sfp_depth_backout: 0.0000
+  Episode_Termination/sfp_insertion_success: 0.0000
+
+iteration 32:
+  Episode_Reward/sfp_port_frame_depth_action: -101.6597
+  Episode_Reward/sfp_depth_backout: -117.8170
+  Episode_Termination/sfp_insertion_success: 0.0000
+```
+
+Interpretation:
+
+- The signed term was active, but PPO still chose the wrong depth direction.
+- The run was stopped at iteration `32`.
+- The next remediation was to initialize the SFP PPO actor with a small inward
+  raw-action bias while keeping the policy fully trainable.
+
+## SFP Actor Output Bias
+
+Code changes:
+
+```text
+139c40d Bias SFP PPO initial depth action
+ab0c252 Fix SFP actor bias hook
+6b32679 Zero SFP actor output head initially
+```
+
+Change:
+
+- Added an AIC-local training hook in `scripts/rsl_rl/train.py` that can set an
+  initial actor output bias after the RSL-RL runner is constructed.
+- The hook strips the custom config keys before handing the config dictionary to
+  installed RSL-RL.
+- The installed RSL-RL PPO stores the actor at `runner.alg.actor`, so the hook
+  was fixed to target that attribute.
+- Set SFP initial actor output bias to raw action
+  `[0.0, 0.0, -0.05, 0.0, 0.0, 0.0]`.
+- Added `aic_actor_output_zero_weights=True` so the final actor output layer
+  starts from a known constant mean instead of random features overpowering the
+  bias.
+- This is PPO initialization only. The output head remains trainable, and no
+  scripted controller is deployed.
+
+Smoke output:
+
+```text
+[INFO] Applied AIC actor output bias to algorithm.actor:
+  [0.0, 0.0, -0.05000000074505806, 0.0, 0.0, 0.0]
+  (zero_output_weights=True)
+
+iteration 0:
+  Episode_Reward/sfp_port_frame_depth_action: 0.5314
+  Episode_Reward/sfp_depth_progress: 0.0004
+  Episode_Reward/sfp_insertion_action: 0.0433
+  STEP8_ZEROHEAD_SMOKE_EXIT:0
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-zerohead-6b32679 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_zerohead_6b32679 --headless --enable_cameras\"; echo STEP8_SFP_PPO_ZEROHEAD_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+iteration 0:
+  Episode_Reward/sfp_port_frame_depth_action: 0.8808
+  Episode_Reward/sfp_depth_progress: 0.0007
+  Episode_Reward/sfp_insertion_action: 0.0625
+  Episode_Termination/sfp_insertion_success: 0.0000
+
+iteration 56:
+  Episode_Reward/sfp_depth_backout: 0.0000
+  Episode_Reward/sfp_port_frame_depth_action: -9.1438
+  Episode_Reward/sfp_depth_progress: -0.0000
+  Episode_Termination/time_out: 1.0000
+  Episode_Termination/sfp_insertion_success: 0.0000
+```
+
+Interpretation:
+
+- Actor output-head zeroing fixed the early depth direction and prevented the
+  previous backing-out failure.
+- The run reached a timeout-only local optimum: no backout, no corridor exits,
+  but still no final insertion success.
+- The run was stopped after `model_50.pt` was saved.
+
+Evaluation of `model_50.pt`:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-zerohead50-6b32679 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_09-54-55_step8_sfp_ppo_zerohead_6b32679/model_50.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_ZEROHEAD50_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 0
+success_rate: 0.000000
+mean_lateral_error_at_termination: 0.004905
+mean_orientation_error_at_termination: 0.023362
+mean_insertion_depth_at_termination: -0.001481
+failure_breakdown:
+  timeout: 64
+  lateral_miss: 0
+  orientation_miss: 0
+  depth_shortfall: 64
+```
+
+Interpretation:
+
+- The policy is aligned laterally and angularly under the coarse SFP gate.
+- The remaining blocker is final insertion depth. Mean depth is about `6.5 mm`
+  short of the coarse success threshold (`-0.001481` vs `>0.005`).
+
+## Final-Depth Curriculum
+
+Code change:
+
+```text
+c3504ec Emphasize SFP final insertion depth
+```
+
+Change:
+
+- Reduced `sfp_port_frame_lateral_action` weight from `100.0` to `20.0` because
+  the previous policy collected large lateral-action reward while staying just
+  outside insertion success.
+- Increased `sfp_port_frame_depth_action` weight from `120.0` to `200.0`.
+- Increased its target depth from `0.005` to `0.012`.
+- Increased `sfp_depth_progress` weight from `2.0` to `10.0`.
+- Increased `sfp_insertion_depth` weight from `8.0` to `60.0`.
+- Increased `sfp_insertion_action` weight from `15.0` to `80.0` and reduced its
+  command scale from `0.0004` to `0.0002`.
+- Increased SFP actor output bias from raw `z=-0.05` to raw `z=-0.10`.
+
+Local checks:
+
+```bash
+python -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py
+```
+
+Result:
+
+```text
+py_compile passed
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-finaldepth-c3504ec \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_finaldepth_c3504ec --headless --enable_cameras\"; echo STEP8_SFP_PPO_FINALDEPTH_EXIT:\$?; sleep 120'"
+```
+
+Smoke result:
+
+```text
+[INFO] Applied AIC actor output bias to algorithm.actor:
+  [0.0, 0.0, -0.10000000149011612, 0.0, 0.0, 0.0]
+  (zero_output_weights=True)
+
+iteration 0:
+  Episode_Reward/sfp_port_frame_depth_action: 1.5506
+  Episode_Reward/sfp_depth_progress: 0.0022
+  Episode_Reward/sfp_insertion_depth: 0.4043
+  Episode_Reward/sfp_insertion_action: 0.9347
+  STEP8_FINALDEPTH_SMOKE_EXIT:0
+```
+
+Training monitor:
+
+```text
+iteration 0:
+  Episode_Reward/sfp_port_frame_depth_action: 2.4567
+  Episode_Reward/sfp_depth_progress: 0.0045
+  Episode_Reward/sfp_insertion_depth: 0.4874
+  Episode_Reward/sfp_insertion_action: 1.3323
+  Episode_Termination/sfp_insertion_success: 0.0000
+
+iteration 68:
+  Episode_Termination/time_out: 1.0000
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Reward/sfp_port_frame_depth_action: about 29-30
+  Episode_Reward/sfp_insertion_depth: about 9-11
+```
+
+The run was stopped after `model_50.pt` because training still had zero coarse
+success and timeout-only terminations.
+
+Evaluation command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-finaldepth50-c3504ec \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_11-20-10_step8_sfp_ppo_finaldepth_c3504ec/model_50.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_FINALDEPTH50_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 0
+success_rate: 0.000000
+mean_lateral_error_at_termination: 0.009654
+mean_orientation_error_at_termination: 0.023373
+mean_insertion_depth_at_termination: -0.001222
+failure_breakdown:
+  timeout: 64
+  lateral_miss: 0
+  orientation_miss: 0
+  depth_shortfall: 64
+per_target:
+  sfp_port_0: episodes=34 successes=0 mean_lateral=0.009905 mean_depth=-0.001218
+  sfp_port_1: episodes=30 successes=0 mean_lateral=0.009371 mean_depth=-0.001226
+STEP8_SFP_EVAL_FINALDEPTH50_EXIT:0
+```
+
+Interpretation:
+
+- The final-depth curriculum did not solve coarse insertion.
+- Mean insertion depth improved only slightly from the zero-head evaluation
+  (`-0.001481` to `-0.001222`).
+- Lateral alignment worsened but stayed inside the temporary coarse gate.
+- The main issue is not depth sign; it is that reward was available for raw
+  inward intent and slightly negative depth without actual final insertion.
+
+## Progress-Gated Final-Depth Curriculum
+
+Forced-action diagnostic:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-actionframe-c3504ec \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 16 --raw_action 0.1 --num_steps 150 --headless --enable_cameras\"; echo STEP8_SFP_ACTIONFRAME_C3504EC_EXIT:\$?; sleep 120'"
+```
+
+Critical rows:
+
+```text
+action=tz+
+  d_depth_mean=+0.000222
+  after_depth_mean=-0.002236
+
+action=tz-
+  d_depth_mean=+0.001539
+  after_depth_mean=-0.001076
+  sfp_port_0 d_depth_mean=+0.002615
+  sfp_port_1 d_depth_mean=+0.000893
+```
+
+The diagnostic was stopped after the `tz-` row because the remaining rotation
+probes were not needed. Result: raw `z-` is still the best positive-depth
+direction, but the measured motion is small enough that rewarding raw intent
+alone can plateau outside the port.
+
+Code change:
+
+```text
+a79737c Gate SFP final-depth rewards on progress
+```
+
+Change:
+
+- Gate SFP approach and distance-progress rewards off after
+  `insertion_depth >= -0.002` so entrance-distance rewards do not pull the
+  policy back toward the entrance once it should be inserting.
+- Add a separate SFP previous-depth buffer for action shaping.
+- Change `sfp_port_frame_depth_action_reward` so raw `z-` reward is multiplied
+  by realized positive signed-depth progress from the previous step.
+- Reduce the raw depth-action weight from `200.0` to `80.0` and increase its
+  command scale from `0.005` to `0.20`.
+- Make insertion-depth reward zero until positive depth by setting
+  `min_depth=0.0`, and increase the useful ramp with `depth_scale=0.006`,
+  weight `120.0`.
+- Increase SFP relative-IK scale from `0.001` to `0.002`.
+- Increase the training-only actor output bias from raw `z=-0.10` to
+  raw `z=-0.20`.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Host pull/copy:
+
+```bash
+tmux new-session -d -s isaac-step8-progressgate-pull-a79737c \
+  "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py; echo STEP8_PROGRESSGATE_PULL_EXIT:\$?; sleep 120'"
+```
+
+Result:
+
+```text
+Fast-forward to a79737c
+STEP8_PROGRESSGATE_PULL_EXIT:0
+```
+
+Smoke command:
+
+```bash
+tmux new-session -d -s isaac-step8-progressgate-smoke-a79737c \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 16 --max_iterations 1 --run_name step8_sfp_progressgate_smoke_a79737c --headless --enable_cameras\"; echo STEP8_PROGRESSGATE_SMOKE_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+Reward Manager:
+  sfp_port_frame_depth_action: 80.0
+  sfp_insertion_depth: 120.0
+
+[INFO] Applied AIC actor output bias to algorithm.actor:
+  [0.0, 0.0, -0.20000000298023224, 0.0, 0.0, 0.0]
+  (zero_output_weights=True)
+
+iteration 0:
+  Episode_Reward/sfp_port_frame_depth_action: 0.5218
+  Episode_Reward/sfp_depth_progress: 0.0039
+  Episode_Reward/sfp_insertion_depth: 0.0000
+  Episode_Reward/sfp_insertion_action: 1.7301
+  Episode_Termination/sfp_insertion_success: 0.0000
+STEP8_PROGRESSGATE_SMOKE_EXIT:0
+```
+
+Interpretation:
+
+- The new config loads.
+- The actor starts with the intended raw `z=-0.20` bias.
+- The progress-gated depth-action reward is positive when measured depth
+  increases.
+- The insertion-depth state reward no longer pays at negative depth.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-progressgate-a79737c \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_progressgate_a79737c --headless --enable_cameras\"; echo STEP8_SFP_PPO_PROGRESSGATE_EXIT:\$?; sleep 120'"
+```
+
+Status:
+
+```text
+Run started in tmux session isaac-step8-sfp-ppo-progressgate-a79737c.
+```
+
+Training monitor:
+
+```text
+iteration 12:
+  Episode_Reward/sfp_depth_progress: 0.0201
+  Episode_Reward/sfp_insertion_depth: 0.0000
+  Episode_Reward/sfp_insertion_action: 18.9017
+  Episode_Reward/sfp_insertion_success: 0.0278
+  Episode_Termination/sfp_insertion_success: 0.0078
+
+iteration 64:
+  Episode_Reward/sfp_depth_progress: 0.0050
+  Episode_Reward/sfp_insertion_depth: 0.0000
+  Episode_Reward/sfp_insertion_action: 23.2279
+  Episode_Reward/sfp_insertion_success: 0.0000
+  Episode_Termination/time_out: 1.0000
+  Episode_Termination/sfp_insertion_success: 0.0000
+```
+
+The run was stopped after `model_50.pt` because it collapsed back to timeout
+only after a brief early success signal.
+
+Evaluation command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-progressgate50-a79737c \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_11-41-28_step8_sfp_ppo_progressgate_a79737c/model_50.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_PROGRESSGATE50_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 1
+success_rate: 0.015625
+mean_lateral_error_at_termination: 0.009848
+mean_orientation_error_at_termination: 0.059943
+mean_insertion_depth_at_termination: -0.001483
+mean_success_lateral_error: 0.014801
+mean_success_insertion_depth: 0.005114
+failure_breakdown:
+  timeout: 63
+  lateral_miss: 0
+  orientation_miss: 0
+  depth_shortfall: 63
+per_target:
+  sfp_port_0: episodes=34 successes=1 mean_depth=-0.001388
+  sfp_port_1: episodes=30 successes=0 mean_depth=-0.001591
+STEP8_SFP_EVAL_PROGRESSGATE50_EXIT:0
+```
+
+Interpretation:
+
+- The patch produced the first nonzero detached SFP evaluation success, but only
+  `1/64`.
+- Mean depth is still essentially the old timeout plateau.
+- `sfp_insertion_action` remained large while measured depth stayed negative,
+  so the next patch should gate insertion-action reward by realized positive
+  signed-depth progress too, and increase the sparse success bonus now that PPO
+  occasionally samples a valid coarse success.
+
+## Insertion-Action Progress Gate
+
+Code change:
+
+```text
+f5d3eed Gate SFP insertion actions on progress
+```
+
+Change:
+
+- Add a separate previous-depth buffer for `sfp_insertion_action`.
+- Multiply `sfp_insertion_action_reward` by realized positive signed-depth
+  progress, just like the raw depth-action term.
+- Increase actual-depth signals:
+  - `sfp_depth_progress`: `10.0 -> 40.0`
+  - `sfp_insertion_depth`: `120.0 -> 160.0`
+  - `sfp_insertion_success`: `25.0 -> 100.0`
+- Reduce insertion-action weight from `80.0` to `60.0` because it is now only a
+  measured-progress-gated helper.
+- Increase SFP relative-IK scale from `0.002` to `0.003`.
+- Increase the initial actor raw depth bias from `z=-0.20` to `z=-0.25`.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py \
+  aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py
+git diff --check
+```
+
+Result:
+
+```text
+py_compile passed
+git diff --check passed
+```
+
+Host pull/copy:
+
+```bash
+tmux new-session -d -s isaac-step8-actionprogress-pull-f5d3eed \
+  "bash -lc 'cd ~/IsaacLab/aic && git pull --ff-only && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/geometry.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/mdp/rewards.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py && docker cp ~/IsaacLab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py isaac-lab-base:/workspace/isaaclab/aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py; echo STEP8_ACTIONPROGRESS_PULL_EXIT:\$?; sleep 120'"
+```
+
+Result:
+
+```text
+Fast-forward to f5d3eed
+STEP8_ACTIONPROGRESS_PULL_EXIT:0
+```
+
+Smoke command:
+
+```bash
+tmux new-session -d -s isaac-step8-actionprogress-smoke-f5d3eed \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 16 --max_iterations 1 --run_name step8_sfp_actionprogress_smoke_f5d3eed --headless --enable_cameras\"; echo STEP8_ACTIONPROGRESS_SMOKE_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+Reward Manager:
+  sfp_depth_progress: 40.0
+  sfp_insertion_depth: 160.0
+  sfp_insertion_action: 60.0
+  sfp_insertion_success: 100.0
+
+[INFO] Applied AIC actor output bias to algorithm.actor:
+  [0.0, 0.0, -0.25, 0.0, 0.0, 0.0]
+  (zero_output_weights=True)
+
+iteration 0:
+  Episode_Reward/sfp_port_frame_depth_action: 0.4345
+  Episode_Reward/sfp_depth_progress: 0.0204
+  Episode_Reward/sfp_insertion_depth: 0.0000
+  Episode_Reward/sfp_insertion_action: 0.9750
+  Episode_Reward/sfp_insertion_success: 0.0000
+STEP8_ACTIONPROGRESS_SMOKE_EXIT:0
+```
+
+Interpretation:
+
+- The new config loads.
+- `sfp_insertion_action` is no longer a large reward for command intent alone.
+- The run to monitor is `step8_sfp_ppo_actionprogress_f5d3eed`.
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-actionprogress-f5d3eed \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_actionprogress_f5d3eed --headless --enable_cameras\"; echo STEP8_SFP_PPO_ACTIONPROGRESS_EXIT:\$?; sleep 120'"
+```
+
+Training monitor:
+
+```text
+iteration 55:
+  Episode_Reward/sfp_insertion_success: 0.0694
+  Episode_Termination/sfp_insertion_success: 0.0189
+
+iteration 56:
+  Episode_Termination/sfp_insertion_success: 0.0169
+
+iteration 100:
+  Episode_Termination/time_out: 1.0000
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Reward/sfp_insertion_depth: 0.0000
+```
+
+Interpretation:
+
+- The measured-progress gate reduced the action-intent exploit, and PPO briefly
+  found coarse successes.
+- The run still collapsed to timeout-only behavior by iteration `100`.
+- The next diagnostic tested whether a stronger deterministic push can cross the
+  SFP depth threshold from the current near-port reset.
+
+## Strong SFP Forced-Action Diagnostic
+
+Command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-actionframe-strong-f5d3eed \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/check_sfp_action_frame.py --task AIC-SFP-Task-v0 --num_envs 16 --raw_action 1.0 --num_steps 150 --headless --enable_cameras\"; echo STEP8_SFP_ACTIONFRAME_STRONG_EXIT:\$?; sleep 120'"
+```
+
+Critical rows:
+
+```text
+action=tx+
+  d_lateral_x=+0.163086
+  d_lateral_y=-0.007386
+  d_depth=+0.014318
+  after_lateral=0.161685
+  after_depth=0.012513
+  orientation=0.078266
+
+action=ty+
+  d_lateral_x=+0.012965
+  d_lateral_y=-0.182977
+  d_depth=+0.014021
+  after_lateral=0.180083
+  after_depth=0.011559
+  orientation=0.027020
+
+action=tz+
+  d_lateral_x=+0.011740
+  d_lateral_y=-0.008985
+  d_depth=-0.156781
+  after_lateral=0.014415
+  after_depth=-0.158948
+  orientation=0.097445
+
+action=tz-
+  d_lateral_x=-0.021373
+  d_lateral_y=+0.018711
+  d_depth=+0.036686
+  after_lateral=0.031734
+  after_depth=0.033635
+  orientation=0.303476
+```
+
+Interpretation:
+
+- A strong raw `tz-` push can cross the coarse insertion-depth threshold.
+- The same push also creates lateral drift beyond the coarse lateral gate
+  (`0.031734` vs `0.020`).
+- Approximate linear compensation from the diagnostic suggested trying an
+  initial raw bias around `(x=0.13, y=0.10, z=-1.0)`.
+
+## Coupled Initial Insertion Push
+
+Code change:
+
+```text
+6c3fbf2 Initialize SFP PPO with coupled insertion push
+```
+
+Change:
+
+- Updated the SFP training-only actor-output bias from pure raw `z=-0.25` to
+  `(0.13, 0.10, -1.0, 0.0, 0.0, 0.0)`.
+- This is still a PPO initialization. It is not a hardcoded runtime policy;
+  PPO can immediately update the actor parameters.
+
+Smoke command:
+
+```bash
+tmux new-session -d -s isaac-step8-coupledbias-smoke-6c3fbf2 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 16 --max_iterations 1 --run_name step8_sfp_coupledbias_smoke_6c3fbf2 --headless --enable_cameras\"; echo STEP8_COUPLEDBIAS_SMOKE_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+[INFO] Applied AIC actor output bias to algorithm.actor:
+  [0.13, 0.10, -1.0, 0.0, 0.0, 0.0]
+  (zero_output_weights=True)
+
+iteration 0:
+  Mean episode length: 13.00
+  Episode_Reward/sfp_port_frame_lateral_action: 1.0487
+  Episode_Reward/sfp_port_frame_depth_action: 0.2607
+  Episode_Reward/sfp_depth_progress: 0.0353
+  Episode_Reward/sfp_insertion_depth: 0.0000
+  Episode_Reward/sfp_insertion_action: 0.5619
+  Episode_Termination/sfp_insertion_success: 0.0000
+```
+
+Training command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-ppo-coupledbias-6c3fbf2 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step8_sfp_ppo_coupledbias_6c3fbf2 --headless --enable_cameras\"; echo STEP8_SFP_PPO_COUPLEDBIAS_EXIT:\$?; sleep 120'"
+```
+
+Training monitor:
+
+```text
+iteration 9:
+  Episode_Reward/sfp_insertion_success: 0.0278
+  Episode_Termination/sfp_insertion_success: 0.0111
+
+iteration 72:
+  Episode_Termination/time_out: 1.0000
+  Episode_Termination/sfp_insertion_success: 0.0000
+  Episode_Reward/sfp_insertion_depth: 0.0000
+  Episode_Reward/sfp_depth_progress: -0.0325
+```
+
+The run was stopped after `model_50.pt` because it had collapsed to timeout-only
+behavior.
+
+Evaluation command:
+
+```bash
+tmux new-session -d -s isaac-step8-sfp-eval-coupledbias50-6c3fbf2 \
+  "bash -lc 'cd ~/IsaacLab && docker exec isaac-lab-base bash -lc \"cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 64 --max_episode_steps 150 --checkpoint /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_12-12-34_step8_sfp_ppo_coupledbias_6c3fbf2/model_50.pt --lateral_threshold 0.020 --orientation_threshold 0.50 --depth_threshold 0.005 --failure_sample_count 10 --headless --enable_cameras\"; echo STEP8_SFP_EVAL_COUPLEDBIAS50_EXIT:\$?; sleep 120'"
+```
+
+Key output:
+
+```text
+episodes: 64
+successes: 0
+success_rate: 0.000000
+mean_episode_length: 150.000
+mean_lateral_error_at_termination: 0.013022
+mean_signed_lateral_x_at_termination: -0.009134
+mean_signed_lateral_z_at_termination: 0.009250
+mean_orientation_error_at_termination: 0.342141
+mean_insertion_depth_at_termination: -0.003365
+failure_breakdown:
+  timeout: 64
+  lateral_miss: 0
+  orientation_miss: 0
+  depth_shortfall: 64
+per_target:
+  sfp_port_0: episodes=34 successes=0 mean_depth=-0.003395
+  sfp_port_1: episodes=30 successes=0 mean_depth=-0.003330
+STEP8_SFP_EVAL_COUPLEDBIAS50_EXIT:0
+```
+
+Interpretation:
+
+- The coupled initial bias did not improve the detached checkpoint; it regressed
+  mean depth relative to the progress-gated checkpoint.
+- The SFP blocker is now clearly a final-insertion control problem, not missing
+  semantic geometry.
+- The next step should be a custom combined-action diagnostic in
+  `check_sfp_action_frame.py`, then a reset/curriculum or reward update based
+  on measured combined-action behavior.
