@@ -824,7 +824,7 @@ class SfpRewardsCfg:
     )
     sfp_depth_progress = RewTerm(
         func=mdp.sfp_depth_progress_reward,
-        weight=1.0,
+        weight=2.0,
         params={"scale": 0.01, "clip": 1.0},
     )
     sfp_coarse_lateral_alignment = RewTerm(
@@ -849,11 +849,12 @@ class SfpRewardsCfg:
     )
     sfp_insertion_depth = RewTerm(
         func=mdp.sfp_insertion_depth_reward,
-        weight=4.0,
+        weight=8.0,
         params={
-            "depth_scale": 0.025,
+            "depth_scale": 0.018,
             "max_depth": 0.045,
-            "lateral_threshold": 0.008,
+            "min_depth": -0.006,
+            "lateral_threshold": 0.010,
             "orientation_threshold": 0.35,
         },
     )

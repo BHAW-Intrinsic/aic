@@ -403,17 +403,23 @@ def sfp_insertion_depth_reward(
     env: ManagerBasedRLEnv,
     depth_scale: float = 0.025,
     max_depth: float = 0.045,
+    min_depth: float = 0.0,
     lateral_threshold: float = 0.008,
     orientation_threshold: float = 0.35,
 ) -> torch.Tensor:
-    """Reward SFP insertion depth only when lateral/angular alignment are acceptable."""
+    """Reward SFP insertion depth once lateral/angular alignment is acceptable.
+
+    ``min_depth`` can be slightly negative for early curricula so a plug just
+    outside the entrance still receives a shaped ramp toward positive depth.
+    """
     lateral_error = geometry.sfp_lateral_error(env)
     orientation_error = geometry.sfp_orientation_error(env)
-    depth = torch.clamp(geometry.sfp_insertion_depth(env), min=0.0, max=max_depth)
+    depth = torch.clamp(geometry.sfp_insertion_depth(env), min=min_depth, max=max_depth)
     aligned = (lateral_error < lateral_threshold) & (
         orientation_error < orientation_threshold
     )
-    return aligned.float() * torch.clamp(depth / depth_scale, max=1.0)
+    depth_span = max(depth_scale - min_depth, 1.0e-6)
+    return aligned.float() * torch.clamp((depth - min_depth) / depth_span, max=1.0)
 
 
 def sfp_insertion_success_bonus(
