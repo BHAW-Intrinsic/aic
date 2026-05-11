@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Check whether privileged SC geometry can drive the existing IK action to insertion."""
+"""Check whether privileged connector geometry can drive the existing IK action."""
 
 from __future__ import annotations
 
@@ -15,8 +15,14 @@ from typing import Any
 from isaaclab.app import AppLauncher
 
 
-parser = argparse.ArgumentParser(description="Run a scripted SC insertion controller.")
+parser = argparse.ArgumentParser(description="Run a scripted connector insertion controller.")
 parser.add_argument("--task", type=str, default="AIC-Task-v0", help="Task name.")
+parser.add_argument(
+    "--connector",
+    choices=("auto", "sc", "sfp"),
+    default="auto",
+    help="Connector geometry to script. 'auto' selects SFP for SFP tasks, else SC.",
+)
 parser.add_argument("--num_envs", type=int, default=8, help="Number of envs.")
 parser.add_argument("--max_steps", type=int, default=1500, help="Maximum sim steps.")
 parser.add_argument("--report_every", type=int, default=50, help="Report interval.")
@@ -50,10 +56,13 @@ parser.add_argument(
 parser.add_argument(
     "--diagnostic_body_names",
     type=str,
-    default="wrist_3_link,gripper_tcp,ati_tool_link,tool0,sc_plug_link",
+    default=(
+        "wrist_3_link,gripper_tcp,ati_tool_link,tool0,sc_plug_link,"
+        "sfp_module_link,sfp_tip_link"
+    ),
     help=(
-        "Comma-separated body names whose relative transforms to sc_tip_link "
-        "are logged at reset and summary time."
+        "Comma-separated body names whose relative transforms to the active "
+        "connector tip are logged at reset and summary time."
     ),
 )
 parser.add_argument(
@@ -82,9 +91,9 @@ parser.add_argument(
 )
 parser.add_argument("--align_lateral_threshold", type=float, default=0.02)
 parser.add_argument("--align_orientation_threshold", type=float, default=0.50)
-parser.add_argument("--success_lateral_threshold", type=float, default=0.005)
-parser.add_argument("--success_orientation_threshold", type=float, default=0.20)
-parser.add_argument("--success_depth_threshold", type=float, default=0.012)
+parser.add_argument("--success_lateral_threshold", type=float, default=None)
+parser.add_argument("--success_orientation_threshold", type=float, default=None)
+parser.add_argument("--success_depth_threshold", type=float, default=None)
 parser.add_argument(
     "--disable_fabric",
     action="store_true",
@@ -128,6 +137,13 @@ ARM_JOINT_NAMES = (
     "wrist_2_joint",
     "wrist_3_joint",
 )
+
+SC_DEFAULT_SUCCESS_LATERAL = 0.005
+SC_DEFAULT_SUCCESS_ORIENTATION = 0.20
+SC_DEFAULT_SUCCESS_DEPTH = 0.012
+SFP_DEFAULT_SUCCESS_LATERAL = 0.004
+SFP_DEFAULT_SUCCESS_ORIENTATION = 0.20
+SFP_DEFAULT_SUCCESS_DEPTH = 0.015
 
 
 class Reporter:
@@ -276,9 +292,98 @@ def _body_pose(env: Any, body_name: str) -> tuple[torch.Tensor, torch.Tensor]:
     return robot.data.body_pos_w[:, body_id], robot.data.body_quat_w[:, body_id]
 
 
+def _connector_name() -> str:
+    if args_cli.connector != "auto":
+        return args_cli.connector
+    return "sfp" if "sfp" in args_cli.task.lower() else "sc"
+
+
+def _connector_label() -> str:
+    return _connector_name().upper()
+
+
+def _target_names() -> tuple[str, ...]:
+    return mdp.SFP_TARGET_NAMES if _connector_name() == "sfp" else mdp.SC_TARGET_NAMES
+
+
+def _active_target_ids(env: Any) -> torch.Tensor:
+    if _connector_name() == "sfp":
+        return mdp.active_sfp_target_ids(env)
+    return mdp.active_sc_target_ids(env)
+
+
+def _plug_tip_pose(env: Any) -> tuple[torch.Tensor, torch.Tensor]:
+    if _connector_name() == "sfp":
+        return mdp.sfp_plug_tip_pose(env)
+    return mdp.sc_plug_tip_pose(env)
+
+
+def _plug_axis(env: Any) -> torch.Tensor:
+    if _connector_name() == "sfp":
+        return mdp.sfp_plug_axis(env)
+    return mdp.sc_plug_axis(env)
+
+
+def _port_entry_pose(env: Any) -> tuple[torch.Tensor, torch.Tensor]:
+    if _connector_name() == "sfp":
+        return mdp.sfp_port_entry_pose(env)
+    return mdp.sc_port_entry_pose(env)
+
+
+def _port_insertion_axis(env: Any) -> torch.Tensor:
+    if _connector_name() == "sfp":
+        return mdp.sfp_port_insertion_axis(env)
+    return mdp.sc_port_insertion_axis(env)
+
+
+def _lateral_error(env: Any) -> torch.Tensor:
+    if _connector_name() == "sfp":
+        return mdp.sfp_lateral_error(env)
+    return mdp.sc_lateral_error(env)
+
+
+def _orientation_error(env: Any) -> torch.Tensor:
+    if _connector_name() == "sfp":
+        return mdp.sfp_orientation_error(env)
+    return mdp.sc_orientation_error(env)
+
+
+def _insertion_depth(env: Any) -> torch.Tensor:
+    if _connector_name() == "sfp":
+        return mdp.sfp_insertion_depth(env)
+    return mdp.sc_insertion_depth(env)
+
+
+def _success_thresholds() -> tuple[float, float, float]:
+    if _connector_name() == "sfp":
+        lateral_default = SFP_DEFAULT_SUCCESS_LATERAL
+        orientation_default = SFP_DEFAULT_SUCCESS_ORIENTATION
+        depth_default = SFP_DEFAULT_SUCCESS_DEPTH
+    else:
+        lateral_default = SC_DEFAULT_SUCCESS_LATERAL
+        orientation_default = SC_DEFAULT_SUCCESS_ORIENTATION
+        depth_default = SC_DEFAULT_SUCCESS_DEPTH
+    lateral = (
+        lateral_default
+        if args_cli.success_lateral_threshold is None
+        else args_cli.success_lateral_threshold
+    )
+    orientation = (
+        orientation_default
+        if args_cli.success_orientation_threshold is None
+        else args_cli.success_orientation_threshold
+    )
+    depth = (
+        depth_default
+        if args_cli.success_depth_threshold is None
+        else args_cli.success_depth_threshold
+    )
+    return lateral, orientation, depth
+
+
 def _body_to_tip_pose(env: Any, body_name: str) -> tuple[torch.Tensor, torch.Tensor]:
     body_pos_w, body_quat_w = _body_pose(env, body_name)
-    tip_pos_w, tip_quat_w = mdp.sc_plug_tip_pose(env)
+    tip_pos_w, tip_quat_w = _plug_tip_pose(env)
     body_inv = _quat_conjugate(body_quat_w)
     rel_pos = _quat_apply(body_inv, tip_pos_w - body_pos_w)
     rel_quat = _quat_mul(body_inv, tip_quat_w)
@@ -326,11 +431,11 @@ def _report_diagnostic_offsets(
 ) -> None:
     for body_name, (rel_pos, rel_quat) in offsets.items():
         report.line(
-            f"{prefix}_{body_name}_to_sc_tip_pos env0: "
+            f"{prefix}_{body_name}_to_{_connector_name()}_tip_pos env0: "
             f"{rel_pos[0].detach().cpu().tolist()}"
         )
         report.line(
-            f"{prefix}_{body_name}_to_sc_tip_quat env0: "
+            f"{prefix}_{body_name}_to_{_connector_name()}_tip_quat env0: "
             f"{rel_quat[0].detach().cpu().tolist()}"
         )
 
@@ -348,16 +453,16 @@ def _root_frame_pose(
 
 
 def _scripted_actions(env: Any, inactive: torch.Tensor) -> torch.Tensor:
-    """Compute raw relative-IK actions from privileged SC insertion geometry."""
+    """Compute raw relative-IK actions from privileged insertion geometry."""
     robot = env.scene["robot"]
 
-    plug_pos_w, plug_quat_w = mdp.sc_plug_tip_pose(env)
-    plug_axis_w = mdp.sc_plug_axis(env)
-    entry_pos_w, _ = mdp.sc_port_entry_pose(env)
-    port_axis_w = mdp.sc_port_insertion_axis(env)
+    plug_pos_w, plug_quat_w = _plug_tip_pose(env)
+    plug_axis_w = _plug_axis(env)
+    entry_pos_w, _ = _port_entry_pose(env)
+    port_axis_w = _port_insertion_axis(env)
 
-    lateral = mdp.sc_lateral_error(env)
-    orientation = mdp.sc_orientation_error(env)
+    lateral = _lateral_error(env)
+    orientation = _orientation_error(env)
     aligned = (
         (lateral < args_cli.align_lateral_threshold)
         & (orientation < args_cli.align_orientation_threshold)
@@ -428,11 +533,19 @@ def _scripted_actions(env: Any, inactive: torch.Tensor) -> torch.Tensor:
 
 
 def _success_mask(env: Any) -> torch.Tensor:
-    return mdp.sc_insertion_success(
+    lateral_threshold, orientation_threshold, depth_threshold = _success_thresholds()
+    if _connector_name() == "sfp":
+        return mdp.sfp_insertion_success_mask(
+            env,
+            lateral_threshold=lateral_threshold,
+            orientation_threshold=orientation_threshold,
+            depth_threshold=depth_threshold,
+        )
+    return mdp.sc_insertion_success_mask(
         env,
-        lateral_threshold=args_cli.success_lateral_threshold,
-        orientation_threshold=args_cli.success_orientation_threshold,
-        depth_threshold=args_cli.success_depth_threshold,
+        lateral_threshold=lateral_threshold,
+        orientation_threshold=orientation_threshold,
+        depth_threshold=depth_threshold,
     )
 
 
@@ -448,6 +561,8 @@ def main() -> int:
             env_cfg.terminations.time_out = None
         if hasattr(env_cfg.terminations, "sc_insertion_success"):
             env_cfg.terminations.sc_insertion_success = None
+        if hasattr(env_cfg.terminations, "sfp_insertion_success"):
+            env_cfg.terminations.sfp_insertion_success = None
 
     if hasattr(env_cfg, "actions") and hasattr(env_cfg.actions, "arm_action"):
         env_cfg.actions.arm_action.body_name = args_cli.action_body_name
@@ -467,12 +582,19 @@ def main() -> int:
     report = Reporter(log_path)
     env = None
     try:
-        report.line("== AIC Scripted SC Insertion Check ==")
+        report.line(f"== AIC Scripted {_connector_label()} Insertion Check ==")
         report.line(f"task: {args_cli.task}")
+        report.line(f"connector: {_connector_name()}")
         report.line(f"num_envs: {args_cli.num_envs}")
         report.line(f"max_steps: {args_cli.max_steps}")
         report.line(f"control_frame: {args_cli.control_frame}")
         report.line(f"action_body_name: {args_cli.action_body_name}")
+        lateral_threshold, orientation_threshold, depth_threshold = _success_thresholds()
+        report.line(
+            "success_thresholds: "
+            f"lateral={lateral_threshold} "
+            f"orientation={orientation_threshold} depth={depth_threshold}"
+        )
         if log_path is not None:
             report.line(f"log_path: {log_path}")
 
@@ -482,7 +604,7 @@ def main() -> int:
 
         robot = env.scene["robot"]
         arm_joint_indices = _joint_indices(robot, ARM_JOINT_NAMES)
-        target_ids = mdp.active_sc_target_ids(env).detach().clone()
+        target_ids = _active_target_ids(env).detach().clone()
         diagnostic_body_names = _parse_body_names(args_cli.diagnostic_body_names)
         initial_offsets = _diagnostic_offsets(env, diagnostic_body_names, report)
         _report_diagnostic_offsets(report, "initial", initial_offsets)
@@ -504,9 +626,9 @@ def main() -> int:
             ]
 
         for step in range(args_cli.max_steps + 1):
-            lateral = mdp.sc_lateral_error(env)
-            orientation = mdp.sc_orientation_error(env)
-            depth = mdp.sc_insertion_depth(env)
+            lateral = _lateral_error(env)
+            orientation = _orientation_error(env)
+            depth = _insertion_depth(env)
             success = _success_mask(env)
             newly_successful = success & (first_success_step < 0)
             first_success_step[newly_successful] = step
@@ -533,7 +655,7 @@ def main() -> int:
         report.line(f"successes: {int((first_success_step >= 0).sum().item())}/{env.num_envs}")
         report.line(f"first_success_steps: {first_success_step.detach().cpu().tolist()}")
         report.line("per_target:")
-        for target_id, target_name in enumerate(mdp.SC_TARGET_NAMES):
+        for target_id, target_name in enumerate(_target_names()):
             mask = target_ids == target_id
             episodes = int(mask.sum().item())
             successes = int(((first_success_step >= 0) & mask).sum().item())
@@ -547,14 +669,14 @@ def main() -> int:
             step = int(first_success_step[env_id].detach().cpu().item())
             if step < 0:
                 continue
-            target_name = mdp.SC_TARGET_NAMES[int(target_ids[env_id].cpu().item())]
+            target_name = _target_names()[int(target_ids[env_id].cpu().item())]
             values = first_success_joint_pos[env_id].detach().cpu().tolist()
             report.line(
                 f"first_success_joint_pos env={env_id} target={target_name} "
                 f"step={step}: {values}"
             )
         report.line("first_success_joint_pos_mean_per_target:")
-        for target_id, target_name in enumerate(mdp.SC_TARGET_NAMES):
+        for target_id, target_name in enumerate(_target_names()):
             mask = (target_ids == target_id) & (first_success_step >= 0)
             if not bool(mask.any()):
                 report.line(f"  {target_name}: unavailable")
@@ -562,9 +684,9 @@ def main() -> int:
             values = first_success_joint_pos[mask].mean(dim=0).detach().cpu().tolist()
             report.line(f"  {target_name}: {values}")
 
-        final_lateral = mdp.sc_lateral_error(env)
-        final_orientation = mdp.sc_orientation_error(env)
-        final_depth = mdp.sc_insertion_depth(env)
+        final_lateral = _lateral_error(env)
+        final_orientation = _orientation_error(env)
+        final_depth = _insertion_depth(env)
         final_offsets = _diagnostic_offsets(env, diagnostic_body_names, report)
         report.line(f"final_lateral: {_summary(final_lateral)}")
         report.line(f"final_orientation: {_summary(final_orientation)}")
@@ -574,7 +696,10 @@ def main() -> int:
                 continue
             initial_pos, _ = initial_offsets[body_name]
             offset_drift = torch.norm(final_pos - initial_pos, dim=-1)
-            report.line(f"{body_name}_to_sc_tip_pos_drift: {_summary(offset_drift)}")
+            report.line(
+                f"{body_name}_to_{_connector_name()}_tip_pos_drift: "
+                f"{_summary(offset_drift)}"
+            )
         _report_diagnostic_offsets(report, "final", final_offsets)
         return 0 if bool((first_success_step >= 0).all().item()) else 1
     finally:
