@@ -54,25 +54,24 @@ SC_NEAR_PORT_JOINT_PRESETS = {
 }
 
 # Mean joint positions after Step 8 intermediate-gate SFP pre-correction
-# diagnostics. Port 0 uses an additional target-specific lateral correction
-# because pure z-negative insertion remained weaker there. Port 1 keeps the
-# earlier positive pre-correction seed, which was already near-reliable.
+# diagnostics. Both ports use the short negative lateral correction that gave
+# the best first-hit SFP insertion result before the final z-negative push.
 SFP_NEAR_PORT_JOINT_PRESETS = {
     "sfp_port_0": (
-        0.8307705522,
-        -1.5449107885,
-        -1.8956825733,
-        -1.0964404345,
-        1.8381533623,
-        2.1011598110,
+        0.8302846551,
+        -1.5486999750,
+        -1.8918046951,
+        -1.0959614515,
+        1.8380267620,
+        2.1012129784,
     ),
     "sfp_port_1": (
-        0.8004823923,
-        -1.5945894718,
-        -1.8431059122,
-        -1.1004146338,
-        1.8384238482,
-        2.1075541973,
+        0.8000932336,
+        -1.5981711149,
+        -1.8391590118,
+        -1.1001185179,
+        1.8383054733,
+        2.1077697277,
     ),
 }
 
