@@ -873,8 +873,8 @@ class SfpRewardsCfg:
             "command_scale": 0.02,
             "min_depth": -0.080,
             "target_depth": 0.005,
-            "lateral_threshold": 0.120,
-            "orientation_threshold": 1.50,
+            "lateral_threshold": 10.0,
+            "orientation_threshold": 3.20,
         },
     )
     sfp_lateral_correction_action = RewTerm(
