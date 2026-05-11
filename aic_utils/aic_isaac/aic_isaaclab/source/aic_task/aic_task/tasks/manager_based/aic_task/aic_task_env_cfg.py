@@ -853,7 +853,7 @@ class SfpRewardsCfg:
     )
     sfp_port_frame_lateral_action = RewTerm(
         func=mdp.sfp_port_frame_lateral_action_reward,
-        weight=100.0,
+        weight=20.0,
         params={
             "action_name": "arm_action",
             "command_scale": 0.02,
@@ -867,12 +867,12 @@ class SfpRewardsCfg:
     )
     sfp_port_frame_depth_action = RewTerm(
         func=mdp.sfp_port_frame_depth_action_reward,
-        weight=120.0,
+        weight=200.0,
         params={
             "action_name": "arm_action",
             "command_scale": 0.005,
             "min_depth": -0.080,
-            "target_depth": 0.005,
+            "target_depth": 0.012,
             "lateral_threshold": 10.0,
             "orientation_threshold": 3.20,
         },
@@ -900,7 +900,7 @@ class SfpRewardsCfg:
     )
     sfp_depth_progress = RewTerm(
         func=mdp.sfp_depth_progress_reward,
-        weight=2.0,
+        weight=10.0,
         params={"scale": 0.01, "clip": 1.0},
     )
     sfp_coarse_lateral_alignment = RewTerm(
@@ -925,7 +925,7 @@ class SfpRewardsCfg:
     )
     sfp_insertion_depth = RewTerm(
         func=mdp.sfp_insertion_depth_reward,
-        weight=8.0,
+        weight=60.0,
         params={
             "depth_scale": 0.018,
             "max_depth": 0.045,
@@ -936,12 +936,12 @@ class SfpRewardsCfg:
     )
     sfp_insertion_action = RewTerm(
         func=mdp.sfp_insertion_action_reward,
-        weight=15.0,
+        weight=80.0,
         params={
             "action_name": "arm_action",
             "asset_name": "robot",
             "action_scale": 0.001,
-            "command_scale": 0.0004,
+            "command_scale": 0.0002,
             "lateral_threshold": 0.010,
             "orientation_threshold": 0.35,
             "lateral_std": 0.008,
