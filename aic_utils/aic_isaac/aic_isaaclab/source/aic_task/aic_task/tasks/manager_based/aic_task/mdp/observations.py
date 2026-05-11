@@ -35,6 +35,14 @@ def active_sc_target_one_hot(env: ManagerBasedRLEnv) -> torch.Tensor:
     ).to(dtype=torch.float32)
 
 
+def active_sfp_target_one_hot(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Eval-compatible SFP target metadata as one-hot ``[sfp_port_0, sfp_port_1]``."""
+    target_ids = geometry.active_sfp_target_ids(env)
+    return torch.nn.functional.one_hot(
+        target_ids, num_classes=len(geometry.SFP_TARGET_NAMES)
+    ).to(dtype=torch.float32)
+
+
 def sc_plug_to_port_vec(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Privileged vector from SC plug tip to active SC port entrance."""
     return geometry.sc_plug_to_port_vector(env)
@@ -64,6 +72,38 @@ def sc_active_port_pose(env: ManagerBasedRLEnv) -> torch.Tensor:
 def sc_plug_tip_pose_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Privileged SC plug tip pose, xyz + quat wxyz."""
     pos_w, quat_w = geometry.sc_plug_tip_pose(env)
+    return torch.cat((pos_w, quat_w), dim=-1)
+
+
+def sfp_plug_to_port_vec(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged vector from SFP plug tip to active SFP port entrance."""
+    return geometry.sfp_plug_to_port_vector(env)
+
+
+def sfp_lateral_error_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SFP plug-tip lateral error as ``(num_envs, 1)``."""
+    return _as_column(geometry.sfp_lateral_error(env))
+
+
+def sfp_insertion_depth_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SFP insertion depth as ``(num_envs, 1)``."""
+    return _as_column(geometry.sfp_insertion_depth(env))
+
+
+def sfp_orientation_error_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SFP plug-to-port orientation error as ``(num_envs, 1)``."""
+    return _as_column(geometry.sfp_orientation_error(env))
+
+
+def sfp_active_port_pose(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged active SFP port entrance pose, xyz + quat wxyz."""
+    pos_w, quat_w = geometry.sfp_port_entry_pose(env)
+    return torch.cat((pos_w, quat_w), dim=-1)
+
+
+def sfp_plug_tip_pose_obs(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Privileged SFP plug tip pose, xyz + quat wxyz."""
+    pos_w, quat_w = geometry.sfp_plug_tip_pose(env)
     return torch.cat((pos_w, quat_w), dim=-1)
 
 

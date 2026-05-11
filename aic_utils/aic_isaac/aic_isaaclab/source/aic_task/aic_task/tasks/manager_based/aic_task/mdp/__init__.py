@@ -22,7 +22,7 @@ from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 from .observations import *  # noqa: F401, F403
 from .geometry import *  # noqa: F401, F403
-from .terminations import sc_insertion_success  # noqa: F401
+from .terminations import sc_insertion_success, sfp_insertion_success  # noqa: F401
 from .rewards import (  # noqa: F401
     body_lin_acc_l2,
     ee_reaching_bonus,
@@ -46,4 +46,13 @@ from .rewards import (  # noqa: F401
     reset_sc_scripted_action_prior_buffer,
     sc_scripted_action_prior_reward,
     sc_scripted_raw_action,
+    sfp_approach_reward,
+    sfp_depth_progress_reward,
+    sfp_distance_progress_reward,
+    sfp_insertion_depth_reward,
+    sfp_insertion_success_bonus,
+    sfp_lateral_alignment_reward,
+    sfp_lateral_progress_reward,
+    sfp_orientation_alignment_reward,
+    sfp_orientation_progress_reward,
 )

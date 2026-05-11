@@ -30,3 +30,18 @@ def sc_insertion_success(
         orientation_threshold=orientation_threshold,
         depth_threshold=depth_threshold,
     )
+
+
+def sfp_insertion_success(
+    env: ManagerBasedRLEnv,
+    lateral_threshold: float = 0.004,
+    orientation_threshold: float = 0.20,
+    depth_threshold: float = 0.015,
+) -> torch.Tensor:
+    """Terminate when the SFP module is plausibly inserted in the active port."""
+    return geometry.sfp_insertion_success_mask(
+        env,
+        lateral_threshold=lateral_threshold,
+        orientation_threshold=orientation_threshold,
+        depth_threshold=depth_threshold,
+    )

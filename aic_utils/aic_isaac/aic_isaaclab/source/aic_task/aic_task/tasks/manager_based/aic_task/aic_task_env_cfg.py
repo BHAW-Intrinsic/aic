@@ -626,6 +626,257 @@ class RewardsCfg:
     )
 
 
+@configclass
+class SfpEventCfg:
+    """Reset events for the SFP insertion task variant."""
+
+    reset_robot_joints = EventTerm(
+        func=mdp.reset_joints_by_offset,
+        mode="reset",
+        params={
+            "position_range": (-0.05, 0.05),
+            "velocity_range": (0.0, 0.0),
+        },
+    )
+    randomize_light = EventTerm(
+        func=randomize_dome_light,
+        mode="reset",
+        params={
+            "intensity_range": (1500.0, 3500.0),
+            "color_range": ((0.5, 0.5, 0.5), (1.0, 1.0, 1.0)),
+        },
+    )
+    randomize_board_and_parts = EventTerm(
+        func=randomize_board_and_parts,
+        mode="reset",
+        params={
+            "board_scene_name": "task_board",
+            "board_default_pos": (0.2837, 0.229, 0.0),
+            "board_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)},
+            "parts": [
+                {
+                    "scene_name": "sc_port",
+                    "offset": (0.0067, -0.0362, 0.005),
+                    "pose_range": {"x": (0.0, 0.0)},
+                },
+                {
+                    "scene_name": "sc_port_2",
+                    "offset": (0.0076, -0.0783, 0.005),
+                    "pose_range": {"x": (0.0, 0.0)},
+                },
+                {
+                    "scene_name": "nic_card",
+                    "offset": (-0.03235, 0.02329, 0.0743),
+                    "pose_range": {"y": (0.0, 0.12)},
+                    "snap_step": {"y": 0.04},
+                },
+            ],
+        },
+    )
+    sample_active_sfp_target = EventTerm(
+        func=mdp.sample_active_sfp_target,
+        mode="reset",
+    )
+    reset_sfp_progress_buffers = EventTerm(
+        func=mdp.reset_sfp_progress_buffers,
+        mode="reset",
+    )
+
+
+@configclass
+class SfpTerminationsCfg:
+    """Termination terms for the SFP insertion task variant."""
+
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    sfp_insertion_success = DoneTerm(
+        func=mdp.sfp_insertion_success,
+        params={
+            "lateral_threshold": 0.004,
+            "orientation_threshold": 0.20,
+            "depth_threshold": 0.015,
+        },
+    )
+
+
+@configclass
+class SfpObservationsCfg:
+    """Observation groups for the SFP insertion task variant."""
+
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Eval-compatible observations for the deployed SFP actor."""
+
+        task_metadata = ObsTerm(func=mdp.active_sfp_target_one_hot)
+        joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01)
+        )
+        joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.01, n_max=0.01)
+        )
+        eef_pose = ObsTerm(
+            func=mdp.body_pose_w,
+            params={"asset_cfg": SceneEntityCfg("robot", body_names="gripper_tcp")},
+            noise=Unoise(n_min=-0.001, n_max=0.001),
+        )
+        body_forces = ObsTerm(
+            func=mdp.body_incoming_wrench,
+            scale=0.1,
+            params={
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    body_names=[
+                        "base_link",
+                        "shoulder_link",
+                        "upper_arm_link",
+                        "forearm_link",
+                        "wrist_1_link",
+                        "wrist_2_link",
+                        "wrist_3_link",
+                    ],
+                )
+            },
+        )
+        center_rgb = ObsTerm(
+            func=mdp.image_features,
+            params={
+                "sensor_cfg": SceneEntityCfg("center_camera"),
+                "data_type": "rgb",
+                "model_name": "resnet18",
+            },
+        )
+        left_rgb = ObsTerm(
+            func=mdp.image_features,
+            params={
+                "sensor_cfg": SceneEntityCfg("left_camera"),
+                "data_type": "rgb",
+                "model_name": "resnet18",
+            },
+        )
+        right_rgb = ObsTerm(
+            func=mdp.image_features,
+            params={
+                "sensor_cfg": SceneEntityCfg("right_camera"),
+                "data_type": "rgb",
+                "model_name": "resnet18",
+            },
+        )
+        actions = ObsTerm(func=mdp.last_action)
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    @configclass
+    class PrivilegedCfg(ObsGroup):
+        """Training-only SFP plug-to-port geometry observations for the critic."""
+
+        plug_to_port_vec = ObsTerm(func=mdp.sfp_plug_to_port_vec)
+        lateral_error = ObsTerm(func=mdp.sfp_lateral_error_obs)
+        orientation_error = ObsTerm(func=mdp.sfp_orientation_error_obs)
+        insertion_depth = ObsTerm(func=mdp.sfp_insertion_depth_obs)
+        active_port_pose = ObsTerm(func=mdp.sfp_active_port_pose)
+        plug_tip_pose = ObsTerm(func=mdp.sfp_plug_tip_pose_obs)
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    policy: PolicyCfg = PolicyCfg()
+    privileged: PrivilegedCfg = PrivilegedCfg()
+
+
+@configclass
+class SfpRewardsCfg:
+    """SFP insertion reward terms."""
+
+    sfp_approach = RewTerm(
+        func=mdp.sfp_approach_reward,
+        weight=3.0,
+        params={"std": 1.00},
+    )
+    sfp_distance_progress = RewTerm(
+        func=mdp.sfp_distance_progress_reward,
+        weight=2.0,
+        params={"scale": 0.02, "clip": 1.0},
+    )
+    sfp_lateral_progress = RewTerm(
+        func=mdp.sfp_lateral_progress_reward,
+        weight=1.0,
+        params={"scale": 0.005, "clip": 1.0},
+    )
+    sfp_orientation_progress = RewTerm(
+        func=mdp.sfp_orientation_progress_reward,
+        weight=0.5,
+        params={"scale": 0.10, "clip": 1.0},
+    )
+    sfp_depth_progress = RewTerm(
+        func=mdp.sfp_depth_progress_reward,
+        weight=1.0,
+        params={"scale": 0.01, "clip": 1.0},
+    )
+    sfp_coarse_lateral_alignment = RewTerm(
+        func=mdp.sfp_lateral_alignment_reward,
+        weight=10.0,
+        params={"std": 0.30},
+    )
+    sfp_coarse_orientation_alignment = RewTerm(
+        func=mdp.sfp_orientation_alignment_reward,
+        weight=2.0,
+        params={"std": 2.00},
+    )
+    sfp_lateral_alignment = RewTerm(
+        func=mdp.sfp_lateral_alignment_reward,
+        weight=1.0,
+        params={"std": 0.02},
+    )
+    sfp_orientation_alignment = RewTerm(
+        func=mdp.sfp_orientation_alignment_reward,
+        weight=0.5,
+        params={"std": 0.35},
+    )
+    sfp_insertion_depth = RewTerm(
+        func=mdp.sfp_insertion_depth_reward,
+        weight=4.0,
+        params={
+            "depth_scale": 0.025,
+            "max_depth": 0.045,
+            "lateral_threshold": 0.008,
+            "orientation_threshold": 0.35,
+        },
+    )
+    sfp_insertion_success = RewTerm(
+        func=mdp.sfp_insertion_success_bonus,
+        weight=10.0,
+        params={
+            "lateral_threshold": 0.004,
+            "orientation_threshold": 0.20,
+            "depth_threshold": 0.015,
+        },
+    )
+
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-1.0e-5,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    joint_acc = RewTerm(
+        func=mdp.joint_acc_l2,
+        weight=-1.0e-8,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    joint_torques = RewTerm(
+        func=mdp.joint_torques_l2,
+        weight=-1.0e-7,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    joint_pos_limits = RewTerm(
+        func=mdp.joint_pos_limits,
+        weight=-0.1,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+
+
 ##
 # Environment configuration
 ##
@@ -706,3 +957,13 @@ class AICTaskEnvCfg(ManagerBasedRLEnvCfg):
                 ),
             },
         )
+
+
+@configclass
+class AICTaskSfpEnvCfg(AICTaskEnvCfg):
+    """AIC task variant for SFP insertion."""
+
+    observations: SfpObservationsCfg = SfpObservationsCfg()
+    rewards: SfpRewardsCfg = SfpRewardsCfg()
+    terminations: SfpTerminationsCfg = SfpTerminationsCfg()
+    events: SfpEventCfg = SfpEventCfg()

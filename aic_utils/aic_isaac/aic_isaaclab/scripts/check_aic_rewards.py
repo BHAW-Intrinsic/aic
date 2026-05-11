@@ -106,6 +106,69 @@ def _summary(value: torch.Tensor) -> tuple[bool, float, float, float]:
 
 
 def _reward_checks() -> tuple[tuple[str, Callable[[Any], torch.Tensor]], ...]:
+    if "SFP" in args_cli.task.upper():
+        return (
+            ("sfp_approach", lambda env: mdp.sfp_approach_reward(env, std=1.00)),
+            (
+                "sfp_distance_progress",
+                lambda env: mdp.sfp_distance_progress_reward(
+                    env, scale=0.02, clip=1.0
+                ),
+            ),
+            (
+                "sfp_lateral_progress",
+                lambda env: mdp.sfp_lateral_progress_reward(
+                    env, scale=0.005, clip=1.0
+                ),
+            ),
+            (
+                "sfp_orientation_progress",
+                lambda env: mdp.sfp_orientation_progress_reward(
+                    env, scale=0.10, clip=1.0
+                ),
+            ),
+            (
+                "sfp_depth_progress",
+                lambda env: mdp.sfp_depth_progress_reward(
+                    env, scale=0.01, clip=1.0
+                ),
+            ),
+            (
+                "sfp_coarse_lateral_alignment",
+                lambda env: mdp.sfp_lateral_alignment_reward(env, std=0.30),
+            ),
+            (
+                "sfp_coarse_orientation_alignment",
+                lambda env: mdp.sfp_orientation_alignment_reward(env, std=2.00),
+            ),
+            (
+                "sfp_lateral_alignment",
+                lambda env: mdp.sfp_lateral_alignment_reward(env, std=0.02),
+            ),
+            (
+                "sfp_orientation_alignment",
+                lambda env: mdp.sfp_orientation_alignment_reward(env, std=0.35),
+            ),
+            (
+                "sfp_insertion_depth",
+                lambda env: mdp.sfp_insertion_depth_reward(
+                    env,
+                    depth_scale=0.025,
+                    max_depth=0.045,
+                    lateral_threshold=0.008,
+                    orientation_threshold=0.35,
+                ),
+            ),
+            (
+                "sfp_insertion_success",
+                lambda env: mdp.sfp_insertion_success_bonus(
+                    env,
+                    lateral_threshold=0.004,
+                    orientation_threshold=0.20,
+                    depth_threshold=0.015,
+                ),
+            ),
+        )
     return (
         ("sc_approach", lambda env: mdp.sc_approach_reward(env, std=1.00)),
         (

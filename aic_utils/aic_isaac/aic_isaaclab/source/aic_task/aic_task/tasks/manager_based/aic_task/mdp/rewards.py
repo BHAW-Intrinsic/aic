@@ -302,6 +302,135 @@ def sc_insertion_success_bonus(
     ).float()
 
 
+# ---------------------------------------------------------------------------
+# SFP insertion rewards
+# ---------------------------------------------------------------------------
+
+
+def sfp_lateral_alignment_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.02,
+) -> torch.Tensor:
+    """Reward centering the SFP plug tip on the active port insertion axis."""
+    lateral_error = geometry.sfp_lateral_error(env)
+    return 1.0 - torch.tanh(lateral_error / std)
+
+
+def sfp_orientation_alignment_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.35,
+) -> torch.Tensor:
+    """Reward aligning the SFP plug axis with the active port insertion axis."""
+    orientation_error = geometry.sfp_orientation_error(env)
+    return 1.0 - torch.tanh(orientation_error / std)
+
+
+def sfp_approach_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.50,
+) -> torch.Tensor:
+    """Reward moving the SFP plug tip toward the active port entrance."""
+    distance = torch.norm(geometry.sfp_plug_to_port_vector(env), dim=-1)
+    return 1.0 - torch.tanh(distance / std)
+
+
+def sfp_distance_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.02,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward reducing plug-tip distance to the active SFP port entrance."""
+    distance = torch.norm(geometry.sfp_plug_to_port_vector(env), dim=-1)
+    return _metric_progress_reward(
+        env,
+        geometry.SFP_PREV_DISTANCE_ATTR,
+        distance,
+        improvement="decrease",
+        scale=scale,
+        clip=clip,
+    )
+
+
+def sfp_lateral_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.005,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward reducing lateral error to the active SFP port axis."""
+    return _metric_progress_reward(
+        env,
+        geometry.SFP_PREV_LATERAL_ATTR,
+        geometry.sfp_lateral_error(env),
+        improvement="decrease",
+        scale=scale,
+        clip=clip,
+    )
+
+
+def sfp_orientation_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.10,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward reducing SFP plug-to-port angular error."""
+    return _metric_progress_reward(
+        env,
+        geometry.SFP_PREV_ORIENTATION_ATTR,
+        geometry.sfp_orientation_error(env),
+        improvement="decrease",
+        scale=scale,
+        clip=clip,
+    )
+
+
+def sfp_depth_progress_reward(
+    env: ManagerBasedRLEnv,
+    scale: float = 0.01,
+    clip: float = 1.0,
+) -> torch.Tensor:
+    """Reward increasing signed SFP insertion depth."""
+    return _metric_progress_reward(
+        env,
+        geometry.SFP_PREV_DEPTH_ATTR,
+        geometry.sfp_insertion_depth(env),
+        improvement="increase",
+        scale=scale,
+        clip=clip,
+    )
+
+
+def sfp_insertion_depth_reward(
+    env: ManagerBasedRLEnv,
+    depth_scale: float = 0.025,
+    max_depth: float = 0.045,
+    lateral_threshold: float = 0.008,
+    orientation_threshold: float = 0.35,
+) -> torch.Tensor:
+    """Reward SFP insertion depth only when lateral/angular alignment are acceptable."""
+    lateral_error = geometry.sfp_lateral_error(env)
+    orientation_error = geometry.sfp_orientation_error(env)
+    depth = torch.clamp(geometry.sfp_insertion_depth(env), min=0.0, max=max_depth)
+    aligned = (lateral_error < lateral_threshold) & (
+        orientation_error < orientation_threshold
+    )
+    return aligned.float() * torch.clamp(depth / depth_scale, max=1.0)
+
+
+def sfp_insertion_success_bonus(
+    env: ManagerBasedRLEnv,
+    lateral_threshold: float = 0.004,
+    orientation_threshold: float = 0.20,
+    depth_threshold: float = 0.015,
+) -> torch.Tensor:
+    """Sparse bonus for a plausible SFP insertion state."""
+    return geometry.sfp_insertion_success_mask(
+        env,
+        lateral_threshold=lateral_threshold,
+        orientation_threshold=orientation_threshold,
+        depth_threshold=depth_threshold,
+    ).float()
+
+
 def _quat_conjugate(quat: torch.Tensor) -> torch.Tensor:
     return torch.cat((quat[..., 0:1], -quat[..., 1:]), dim=-1)
 

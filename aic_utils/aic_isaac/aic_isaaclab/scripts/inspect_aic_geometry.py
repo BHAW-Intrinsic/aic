@@ -418,6 +418,73 @@ def _print_geometry_helper_values(report: Reporter, env: Any) -> None:
             f"    port_insertion_axis_w: {_format_vector(_tensor_row(target_axis))}"
         )
 
+    report.line()
+    report.line("== AIC SFP Geometry Helper Values ==")
+    try:
+        active_ids = aic_geometry.active_sfp_target_ids(env)
+        active_names = aic_geometry.active_sfp_target_names(env)
+        plug_pos, plug_quat = aic_geometry.sfp_plug_tip_pose(env)
+        port_pos, port_quat = aic_geometry.sfp_port_entry_pose(env)
+        plug_axis = aic_geometry.sfp_plug_axis(env)
+        port_axis = aic_geometry.sfp_port_insertion_axis(env)
+        plug_to_port = aic_geometry.sfp_plug_to_port_vector(env)
+        lateral_error = aic_geometry.sfp_lateral_error(env)
+        insertion_depth = aic_geometry.sfp_insertion_depth(env)
+        orientation_error = aic_geometry.sfp_orientation_error(env)
+    except Exception as exc:
+        report.line(
+            f"SFP geometry helper inspection failed: {type(exc).__name__}: {exc}"
+        )
+        return
+
+    report.line(f"active_sfp_target_ids all envs: {active_ids.detach().cpu().tolist()}")
+    report.line(f"active_sfp_target_names: {active_names}")
+    report.line(f"sfp_port_link_pos_local: {aic_geometry.SFP_PORT_LINK_POS_LOCAL}")
+    report.line(f"sfp_port_entry_pos_local: {aic_geometry.SFP_PORT_ENTRY_POS_LOCAL}")
+    report.line(
+        "sfp_port_insertion_axis_local: "
+        f"{aic_geometry.SFP_PORT_INSERTION_AXIS_LOCAL}"
+    )
+    report.line(f"sfp_plug_axis_local: {aic_geometry.SFP_PLUG_AXIS_LOCAL}")
+    report.line("SFP helper tensor shapes:")
+    report.line(f"  plug_tip_pos_w:        {_tensor_shape(plug_pos)}")
+    report.line(f"  plug_tip_quat_w:       {_tensor_shape(plug_quat)}")
+    report.line(f"  port_entry_pos_w:      {_tensor_shape(port_pos)}")
+    report.line(f"  port_entry_quat_w:     {_tensor_shape(port_quat)}")
+    report.line(f"  plug_axis_w:           {_tensor_shape(plug_axis)}")
+    report.line(f"  port_insertion_axis_w: {_tensor_shape(port_axis)}")
+    report.line(f"  plug_to_port_vec_w:    {_tensor_shape(plug_to_port)}")
+    report.line(f"  lateral_error:         {_tensor_shape(lateral_error)}")
+    report.line(f"  insertion_depth:       {_tensor_shape(insertion_depth)}")
+    report.line(f"  orientation_error:     {_tensor_shape(orientation_error)}")
+    report.line(f"sfp_plug_tip_pos_w env0:       {_format_vector(_tensor_row(plug_pos))}")
+    report.line(f"sfp_plug_tip_quat_w env0:      {_format_vector(_tensor_row(plug_quat))}")
+    report.line(f"sfp_port_entry_pos_w env0:     {_format_vector(_tensor_row(port_pos))}")
+    report.line(f"sfp_port_entry_quat_w env0:    {_format_vector(_tensor_row(port_quat))}")
+    report.line(f"sfp_plug_axis_w env0:          {_format_vector(_tensor_row(plug_axis))}")
+    report.line(f"sfp_port_insertion_axis_w env0:{_format_vector(_tensor_row(port_axis))}")
+    report.line(f"sfp_plug_to_port_vec_w env0:   {_format_vector(_tensor_row(plug_to_port))}")
+    report.line(f"sfp_lateral_error env0:        {_format_scalar(lateral_error)}")
+    report.line(f"sfp_insertion_depth env0:      {_format_scalar(insertion_depth)}")
+    report.line(f"sfp_orientation_error env0:    {_format_scalar(orientation_error)}")
+
+    report.line("per-target SFP helper poses env0:")
+    for target_name in aic_geometry.SFP_TARGET_NAMES:
+        target_pos, target_quat = aic_geometry.sfp_port_entry_pose_for_target(
+            env, target_name
+        )
+        target_axis = aic_geometry.sfp_port_insertion_axis_for_target(env, target_name)
+        report.line(f"  {target_name}:")
+        report.line(
+            f"    port_entry_pos_w:      {_format_vector(_tensor_row(target_pos))}"
+        )
+        report.line(
+            f"    port_entry_quat_w:     {_format_vector(_tensor_row(target_quat))}"
+        )
+        report.line(
+            f"    port_insertion_axis_w: {_format_vector(_tensor_row(target_axis))}"
+        )
+
 
 def main() -> None:
     """Create the task and print geometry names/poses needed by stage 0."""
