@@ -504,6 +504,46 @@ def sfp_lateral_correction_action_reward(
     return active.float() * lateral_gain * scaled_command
 
 
+def sfp_port_approach_action_reward(
+    env: ManagerBasedRLEnv,
+    action_name: str = "arm_action",
+    asset_name: str = "robot",
+    action_scale: float = 0.01,
+    command_scale: float = 0.004,
+    min_distance: float = 0.001,
+    max_distance: float = 0.120,
+    min_depth: float = -0.080,
+    depth_threshold: float = 0.005,
+    orientation_threshold: float = 1.20,
+) -> torch.Tensor:
+    """Reward relative-IK commands that move the SFP tip toward the port entry."""
+    delta_pos_w = _relative_ik_delta_pos_w(
+        env,
+        action_name=action_name,
+        asset_name=asset_name,
+        action_scale=action_scale,
+    )
+
+    to_entry = geometry.sfp_plug_to_port_vector(env)
+    distance = torch.norm(to_entry, dim=-1)
+    direction = to_entry / torch.clamp(distance, min=1.0e-6).unsqueeze(-1)
+    approach_command = torch.sum(delta_pos_w * direction, dim=-1)
+    scaled_command = torch.clamp(
+        approach_command / max(command_scale, 1.0e-6), min=0.0, max=1.0
+    )
+
+    depth = geometry.sfp_insertion_depth(env)
+    orientation_error = geometry.sfp_orientation_error(env)
+    active = (
+        (distance > min_distance)
+        & (distance < max_distance)
+        & (depth > min_depth)
+        & (depth < depth_threshold)
+        & (orientation_error < orientation_threshold)
+    )
+    return active.float() * scaled_command
+
+
 def sfp_insertion_action_reward(
     env: ManagerBasedRLEnv,
     action_name: str = "arm_action",

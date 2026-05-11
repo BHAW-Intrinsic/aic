@@ -846,6 +846,21 @@ class SfpRewardsCfg:
             "max_depth": 0.060,
         },
     )
+    sfp_port_approach_action = RewTerm(
+        func=mdp.sfp_port_approach_action_reward,
+        weight=20.0,
+        params={
+            "action_name": "arm_action",
+            "asset_name": "robot",
+            "action_scale": 0.01,
+            "command_scale": 0.004,
+            "min_distance": 0.001,
+            "max_distance": 0.120,
+            "min_depth": -0.080,
+            "depth_threshold": 0.005,
+            "orientation_threshold": 1.20,
+        },
+    )
     sfp_orientation_progress = RewTerm(
         func=mdp.sfp_orientation_progress_reward,
         weight=0.5,
