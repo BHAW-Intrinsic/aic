@@ -253,6 +253,13 @@ def _summary(value: torch.Tensor) -> str:
     )
 
 
+def _vector_component_summary(value: torch.Tensor, labels: tuple[str, ...]) -> str:
+    parts = []
+    for index, label in enumerate(labels):
+        parts.append(f"{label}({_summary(value[:, index])})")
+    return " ".join(parts)
+
+
 def _body_index(asset: Any, body_name: str) -> int:
     body_names = getattr(asset, "body_names", None)
     if body_names is None:
@@ -352,6 +359,12 @@ def _insertion_depth(env: Any) -> torch.Tensor:
     if _connector_name() == "sfp":
         return mdp.sfp_insertion_depth(env)
     return mdp.sc_insertion_depth(env)
+
+
+def _port_frame_delta(env: Any) -> torch.Tensor:
+    plug_pos_w, _ = _plug_tip_pose(env)
+    entry_pos_w, entry_quat_w = _port_entry_pose(env)
+    return _quat_apply(_quat_conjugate(entry_quat_w), plug_pos_w - entry_pos_w)
 
 
 def _success_thresholds() -> tuple[float, float, float]:
@@ -629,6 +642,7 @@ def main() -> int:
             lateral = _lateral_error(env)
             orientation = _orientation_error(env)
             depth = _insertion_depth(env)
+            port_delta = _port_frame_delta(env)
             success = _success_mask(env)
             newly_successful = success & (first_success_step < 0)
             first_success_step[newly_successful] = step
@@ -642,7 +656,8 @@ def main() -> int:
                     f"step={step} successes={int(success.sum().item())}/{env.num_envs} "
                     f"lateral({_summary(lateral)}) "
                     f"orientation({_summary(orientation)}) "
-                    f"depth({_summary(depth)})"
+                    f"depth({_summary(depth)}) "
+                    f"port_delta({_vector_component_summary(port_delta, ('x', 'y', 'z'))})"
                 )
             if bool(success.all()) or step >= args_cli.max_steps:
                 break
@@ -687,10 +702,15 @@ def main() -> int:
         final_lateral = _lateral_error(env)
         final_orientation = _orientation_error(env)
         final_depth = _insertion_depth(env)
+        final_port_delta = _port_frame_delta(env)
         final_offsets = _diagnostic_offsets(env, diagnostic_body_names, report)
         report.line(f"final_lateral: {_summary(final_lateral)}")
         report.line(f"final_orientation: {_summary(final_orientation)}")
         report.line(f"final_depth: {_summary(final_depth)}")
+        report.line(
+            "final_port_frame_delta: "
+            f"{_vector_component_summary(final_port_delta, ('x', 'y', 'z'))}"
+        )
         for body_name, (final_pos, _) in final_offsets.items():
             if body_name not in initial_offsets:
                 continue
