@@ -17,6 +17,7 @@ from __future__ import annotations
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import math
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,7 @@ simulation_app = app_launcher.app
 import gymnasium as gym
 import omni.usd
 import torch
+from pxr import Usd, UsdGeom
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
@@ -151,6 +153,12 @@ def _format_scalar(value: torch.Tensor | None, precision: int = 6) -> str:
     if not row:
         return "unavailable"
     return f"{row[0]:.{precision}f}"
+
+
+def _format_optional_scalar(value: float | None, precision: int = 6) -> str:
+    if value is None:
+        return "unavailable"
+    return f"{value:.{precision}f}"
 
 
 def _tensor_shape(value: torch.Tensor | None) -> str:
@@ -321,6 +329,66 @@ def _usd_prim_matches(stage: Any, target: str) -> list[str]:
     return matches
 
 
+def _first_env0_usd_match(stage: Any, target: str) -> str | None:
+    """Return the first USD prim path for ``target`` in env_0."""
+    matches = _usd_prim_matches(stage, target)
+    for path in matches:
+        if "/env_0/" in path:
+            return path
+    return matches[0] if matches else None
+
+
+def _usd_world_pose(
+    stage: Any, prim_path: str
+) -> tuple[list[float] | None, list[float] | None]:
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid():
+        return None, None
+    try:
+        matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(
+            Usd.TimeCode.Default()
+        )
+        translation = matrix.ExtractTranslation()
+        rotation = matrix.ExtractRotationQuat()
+    except Exception:
+        return None, None
+    imaginary = rotation.GetImaginary()
+    pos = [float(translation[i]) for i in range(3)]
+    quat = [float(rotation.GetReal())] + [float(imaginary[i]) for i in range(3)]
+    return pos, quat
+
+
+def _quat_abs_dot(
+    quat_a: list[float] | None, quat_b: list[float] | None
+) -> float | None:
+    if quat_a is None or quat_b is None:
+        return None
+    norm_a = math.sqrt(sum(v * v for v in quat_a))
+    norm_b = math.sqrt(sum(v * v for v in quat_b))
+    if norm_a <= 1.0e-12 or norm_b <= 1.0e-12:
+        return None
+    return abs(sum(a * b for a, b in zip(quat_a, quat_b)) / (norm_a * norm_b))
+
+
+def _quat_angle_error(
+    quat_a: list[float] | None, quat_b: list[float] | None
+) -> float | None:
+    dot = _quat_abs_dot(quat_a, quat_b)
+    if dot is None:
+        return None
+    return 2.0 * math.acos(max(-1.0, min(1.0, dot)))
+
+
+def _position_delta(
+    helper_pos: list[float] | None, usd_pos: list[float] | None
+) -> tuple[list[float] | None, float | None]:
+    if helper_pos is None or usd_pos is None:
+        return None, None
+    delta = [helper_pos[i] - usd_pos[i] for i in range(3)]
+    norm = math.sqrt(sum(value * value for value in delta))
+    return delta, norm
+
+
 def _print_semantic_search(
     report: Reporter, scene: Any, asset_names: list[str], stage: Any
 ) -> None:
@@ -332,6 +400,20 @@ def _print_semantic_search(
         report.line(f"{target}:")
         report.line(f"  runtime matches: {runtime_matches if runtime_matches else 'none'}")
         report.line(f"  USD prim matches: {usd_matches if usd_matches else 'none'}")
+
+
+def _print_usd_semantic_world_poses(report: Reporter, stage: Any) -> None:
+    report.line()
+    report.line("== USD Semantic Frame World Poses Env0 ==")
+    for target in SEMANTIC_NAMES:
+        prim_path = _first_env0_usd_match(stage, target)
+        if prim_path is None:
+            report.line(f"{target}: no USD prim match")
+            continue
+        pos, quat = _usd_world_pose(stage, prim_path)
+        report.line(f"{target}: {prim_path}")
+        report.line(f"  usd_pos_w:  {_format_vector(pos)}")
+        report.line(f"  usd_quat_w: {_format_vector(quat)}")
 
 
 def _print_broad_usd_search(report: Reporter, stage: Any, max_matches: int) -> None:
@@ -486,6 +568,56 @@ def _print_geometry_helper_values(report: Reporter, env: Any) -> None:
         )
 
 
+def _print_helper_usd_deltas(report: Reporter, env: Any, stage: Any) -> None:
+    report.line()
+    report.line("== SFP Helper Vs USD Semantic Frames Env0 ==")
+    report.line(
+        "SC plug training currently uses the gripped virtual helper, so this "
+        "section compares only the SFP helper frames that should match USD."
+    )
+    helper_specs = (
+        ("sfp_tip_link", "sfp plug tip", aic_geometry.sfp_plug_tip_pose),
+        (
+            "sfp_port_0_link_entrance",
+            "sfp_port_0 entry",
+            lambda env: aic_geometry.sfp_port_entry_pose_for_target(env, "sfp_port_0"),
+        ),
+        (
+            "sfp_port_1_link_entrance",
+            "sfp_port_1 entry",
+            lambda env: aic_geometry.sfp_port_entry_pose_for_target(env, "sfp_port_1"),
+        ),
+    )
+    for target, label, helper_fn in helper_specs:
+        prim_path = _first_env0_usd_match(stage, target)
+        if prim_path is None:
+            report.line(f"{label}: no USD prim match for {target}")
+            continue
+        try:
+            helper_pos_tensor, helper_quat_tensor = helper_fn(env)
+        except Exception as exc:
+            report.line(f"{label}: helper failed: {type(exc).__name__}: {exc}")
+            continue
+        helper_pos = _tensor_row(helper_pos_tensor)
+        helper_quat = _tensor_row(helper_quat_tensor)
+        usd_pos, usd_quat = _usd_world_pose(stage, prim_path)
+        pos_delta, pos_delta_norm = _position_delta(helper_pos, usd_pos)
+        quat_angle_error = _quat_angle_error(helper_quat, usd_quat)
+        report.line(f"{label}: {prim_path}")
+        report.line(f"  helper_pos_w:       {_format_vector(helper_pos)}")
+        report.line(f"  usd_pos_w:          {_format_vector(usd_pos)}")
+        report.line(f"  helper_minus_usd_m: {_format_vector(pos_delta)}")
+        report.line(
+            f"  pos_delta_norm_m:   {_format_optional_scalar(pos_delta_norm)}"
+        )
+        report.line(f"  helper_quat_w:      {_format_vector(helper_quat)}")
+        report.line(f"  usd_quat_w:         {_format_vector(usd_quat)}")
+        report.line(
+            "  quat_angle_error_rad: "
+            f"{_format_optional_scalar(quat_angle_error)}"
+        )
+
+
 def main() -> None:
     """Create the task and print geometry names/poses needed by stage 0."""
     log_path = None
@@ -533,7 +665,9 @@ def main() -> None:
         _print_asset_details(report, scene, asset_names)
         _print_body_pose_matches(report, scene, asset_names)
         _print_semantic_search(report, scene, asset_names, stage)
+        _print_usd_semantic_world_poses(report, stage)
         _print_geometry_helper_values(report, base_env)
+        _print_helper_usd_deltas(report, base_env, stage)
         _print_broad_usd_search(report, stage, args_cli.max_usd_matches)
 
         report.line()
