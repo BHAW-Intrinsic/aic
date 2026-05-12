@@ -1,6 +1,6 @@
 # Step 9: Distillation And Routing
 
-Status: blocked.
+Status: blocked pending randomized SFP reliability pass.
 
 Step 9 should not start until the specialist policies are reliable enough to be
 worth distilling or exporting. The actor observation groups are already
@@ -30,12 +30,43 @@ Current blocker:
   randomization directly would move the target away from the fixed reset
   curriculum.
 
-Next required work before Step 9:
+Pre-Step-9 randomized SFP plan:
 
-1. Derive per-NIC-offset SFP reset presets, or implement an adaptive reset helper
-   that can place the robot near the active randomized SFP port.
-2. Reintroduce NIC/card y randomization gradually.
-3. Resume/evaluate SFP PPO until the randomized SFP specialist is reliable.
-4. Then decide between direct export and distillation.
-5. Add final Gazebo wrapper routing using official `Task.msg` metadata:
+1. Change the SFP reset/randomization curriculum so the target port location can
+   vary independently of the robot joint state. The policy should not be able to
+   solve the randomized task by memorizing fixed near-port joint presets.
+2. Keep the actor eval-compatible. It may use the existing wrist-camera ResNet18
+   image features, proprioception, forces, last action, and official task
+   metadata. It must not receive privileged plug-to-port geometry.
+3. Run two PPO tracks under the same randomized SFP setup:
+   - Track A: warm-start from the best fixed-NIC checkpoint as a weight
+     initialization only:
+     `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt`
+   - Track B: PPO from scratch as a control, using the same randomized reset,
+     rewards, observations, and evaluation gates.
+4. Evaluate both tracks with deterministic playback and per-target metrics. If
+   the scratch control learns better randomized insertion, prefer the scratch
+   checkpoint over the warm-started checkpoint.
+5. Only after randomized SFP is reliable, decide between direct export and
+   distillation.
+6. Add final Gazebo wrapper routing using official `Task.msg` metadata:
    `plug_type` / `port_type` select SC vs SFP checkpoint.
+
+Reason for the two-track plan:
+
+- The current fixed-NIC checkpoint contains useful insertion behavior, but may
+  also encode a fixed-location shortcut.
+- The scratch run tests whether the randomized setup is learnable without that
+  shortcut.
+- The selected SFP candidate should be the policy that performs best under the
+  randomized evaluation, not necessarily the one initialized from the older
+  checkpoint.
+
+Open decisions before launching remote runs:
+
+- Initial NIC/card y-randomization range for the first curriculum stage.
+- Whether to keep the existing ResNet18 camera features first, or add a
+  separate port-entrance detector only if randomized PPO stalls.
+- Whether acceptance remains `>90%` deterministic Isaac success with both SFP
+  targets above `90%`, using the current intermediate gate
+  (`lateral <0.015`, `orientation <0.25`, `depth >0.015`).

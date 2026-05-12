@@ -33,6 +33,10 @@ Scope:
   acceptable for unblocking SFP work, provided a video artifact is saved. The
   current BC checkpoint is a neural actor, not a runtime hardcoded CheatCode,
   but PPO remains the preferred final/generalizable training path.
+- Step 9 precondition decision: before distillation/export, run a randomized SFP
+  reliability pass with two PPO tracks: one warm-started from the successful
+  fixed-NIC SFP checkpoint and one control run from scratch. If the scratch run
+  learns better randomized insertion, prefer it over the warm-started run.
 
 ## Relevant Files
 
@@ -1137,10 +1141,19 @@ Done when:
 	    (`0.002` joint noise: `121/128`, both ports above `94%`).
 	  - [ ] Reintroduce SFP reset/NIC randomization after the deterministic
 	    final-stage checkpoint is reliable under the tighter gate.
-	    - Do not simply enable NIC y randomization yet; the current SFP reset
-	      uses fixed joint presets and does not adapt to randomized NIC pose.
-	      Next step is adaptive/per-offset reset presets or another reset
-	      curriculum before NIC/card randomization.
+	    - Current decision: train randomized SFP with two PPO tracks. Track A
+	      warm-starts from the best fixed-NIC SFP checkpoint as a weight
+	      initialization only; Track B starts PPO from scratch under the same
+	      randomized setup as a control.
+	    - Randomize NIC/port pose independently enough that joint state alone
+	      cannot identify the target correction, so the actor must use camera
+	      features plus proprioception.
+	    - Do not simply enable NIC y randomization against the old fixed reset
+	      without changing the reset curriculum; the current SFP reset uses
+	      fixed joint presets and does not adapt to randomized NIC pose.
+	    - Prefer the better randomized policy. If the scratch control does
+	      better than the warm-started checkpoint, use the scratch run as the
+	      SFP candidate.
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria
