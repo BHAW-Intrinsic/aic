@@ -1148,6 +1148,11 @@ Done when:
 	    - Randomize NIC/port pose independently enough that joint state alone
 	      cannot identify the target correction, so the actor must use camera
 	      features plus proprioception.
+	    - First accepted curriculum stage uses continuous NIC/card `y`
+	      randomization in `[-0.002, 0.002]` meters and keeps the existing
+	      ResNet18 camera features. `snap_step.y` must stay `0.0` for this
+	      stage, otherwise the old `0.04` meter grid silently disables the small
+	      randomization range.
 	    - Do not simply enable NIC y randomization against the old fixed reset
 	      without changing the reset curriculum; the current SFP reset uses
 	      fixed joint presets and does not adapt to randomized NIC pose.

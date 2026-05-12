@@ -64,9 +64,25 @@ Reason for the two-track plan:
 
 Open decisions before launching remote runs:
 
-- Initial NIC/card y-randomization range for the first curriculum stage.
-- Whether to keep the existing ResNet18 camera features first, or add a
+- Initial NIC/card y-randomization range for the first curriculum stage:
+  accepted at `[-0.002, 0.002]` meters.
+- Perception path: keep the existing ResNet18 camera features first. Add a
   separate port-entrance detector only if randomized PPO stalls.
-- Whether acceptance remains `>90%` deterministic Isaac success with both SFP
-  targets above `90%`, using the current intermediate gate
-  (`lateral <0.015`, `orientation <0.25`, `depth >0.015`).
+- Acceptance: `>90%` deterministic Isaac success over randomized port
+  positions, with both SFP targets above `90%`, using the current intermediate
+  gate (`lateral <0.015`, `orientation <0.25`, `depth >0.015`).
+- Training schedule: run the warm-start and scratch PPO tracks in parallel if
+  the remote 4090 has enough available capacity.
+
+Implementation start:
+
+- Changed `SfpEventCfg.randomize_board_and_parts` so `nic_card` samples
+  continuous `y` offsets from `[-0.002, 0.002]` meters.
+- Set `snap_step.y` to `0.0` for this SFP curriculum. Keeping the previous
+  `0.04` meter snap grid would make all samples in the `[-0.002, 0.002]` range
+  snap back to `0.0`, silently disabling the intended randomization.
+- Actor observations are unchanged and remain eval-compatible.
+- Updated `scripts/rsl_rl/evaluate.py` to print
+  `active_port_entry_y_range_env` plus per-target port-entry `y` min/max, so
+  success logs show that the evaluated episodes used randomized target
+  positions.
