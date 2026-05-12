@@ -86,3 +86,88 @@ Implementation start:
   `active_port_entry_y_range_env` plus per-target port-entry `y` min/max, so
   success logs show that the evaluated episodes used randomized target
   positions.
+
+## Randomized SFP Stage 1 Runs
+
+Commit:
+
+```text
+f2cd192 Add randomized SFP port curriculum
+```
+
+Remote sync:
+
+```bash
+cd ~/IsaacLab/aic
+git fetch origin
+git switch aloy
+git pull --ff-only
+git status --short
+```
+
+Result:
+
+```text
+Fast-forward to f2cd192
+?? logs/
+```
+
+Smoke session:
+
+```bash
+tmux new-session -d -s isaac-step9-smoke-f2cd192
+tmux send-keys -t isaac-step9-smoke-f2cd192 "cd ~/IsaacLab" C-m
+tmux send-keys -t isaac-step9-smoke-f2cd192 \
+  "docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./_isaac_sim/python.sh -m py_compile aic/aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/aic_task_env_cfg.py aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 8 --max_iterations 1 --run_name step9_sfp_randy002_smoke_f2cd192 --headless --enable_cameras'; echo STEP9_SMOKE_EXIT:\$?" C-m
+```
+
+Smoke result:
+
+```text
+STEP9_SMOKE_EXIT:0
+log_dir: /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-38-11_step9_sfp_randy002_smoke_f2cd192
+```
+
+Warm-start PPO session:
+
+```bash
+tmux new-session -d -s isaac-step9-warm-randy002-f2cd192
+tmux send-keys -t isaac-step9-warm-randy002-f2cd192 "cd ~/IsaacLab" C-m
+tmux send-keys -t isaac-step9-warm-randy002-f2cd192 \
+  "docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --resume --load_run 2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b --checkpoint model_19.pt --run_name step9_sfp_randy002_warm_f2cd192 --headless --enable_cameras'; echo STEP9_WARM_RANDY002_EXIT:\$?" C-m
+```
+
+Initial warm-start output:
+
+```text
+log_dir: /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-39-53_step9_sfp_randy002_warm_f2cd192
+Learning iteration 19/1519
+Episode_Termination/sfp_insertion_success: 0.2909
+Episode_Termination/time_out: 0.3468
+```
+
+Scratch PPO session:
+
+```bash
+tmux new-session -d -s isaac-step9-scratch-randy002-f2cd192
+tmux send-keys -t isaac-step9-scratch-randy002-f2cd192 "cd ~/IsaacLab" C-m
+tmux send-keys -t isaac-step9-scratch-randy002-f2cd192 \
+  "docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 64 --max_iterations 1500 --run_name step9_sfp_randy002_scratch_f2cd192 --headless --enable_cameras'; echo STEP9_SCRATCH_RANDY002_EXIT:\$?" C-m
+```
+
+Initial scratch output:
+
+```text
+log_dir: /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192
+Learning iteration 0/1500
+Episode_Termination/sfp_insertion_success: 0.3098
+Episode_Termination/time_out: 0.3425
+```
+
+Resource check after both long runs started:
+
+```text
+GPU: NVIDIA GeForce RTX 4090
+memory_used: 22233 MiB / 24564 MiB
+processes: two Isaac Python training processes, about 10.8 GiB each
+```
