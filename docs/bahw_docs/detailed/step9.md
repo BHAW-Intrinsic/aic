@@ -171,3 +171,26 @@ GPU: NVIDIA GeForce RTX 4090
 memory_used: 22233 MiB / 24564 MiB
 processes: two Isaac Python training processes, about 10.8 GiB each
 ```
+
+Progress check after both runs had trained for roughly two hours:
+
+```text
+warm latest checkpoint: model_140.pt
+warm latest observed rollout success termination: 0.8826 to 0.9322
+scratch latest checkpoint: model_120.pt
+scratch latest observed rollout success termination: 0.8669 to 0.9120
+GPU memory while both train: about 22249 MiB / 24564 MiB
+```
+
+Because the two training runs nearly fill the RTX 4090, do not start evaluation
+concurrently with both training processes unless one exits or memory headroom
+changes. A third Isaac process is likely to starve or OOM.
+
+Post-training evaluation watcher:
+
+```bash
+tmux new-session -d -s isaac-step9-eval-after-train-f2cd192
+tmux send-keys -t isaac-step9-eval-after-train-f2cd192 "cd ~/IsaacLab" C-m
+tmux send-keys -t isaac-step9-eval-after-train-f2cd192 \
+  "while docker exec isaac-lab-base bash -lc 'pgrep -f \"step9_sfp_randy002_warm_f2cd192|step9_sfp_randy002_scratch_f2cd192\" >/dev/null'; do date; echo waiting_for_step9_training; sleep 300; done; docker exec isaac-lab-base bash -lc 'cd /workspace/isaaclab && warm=\$(ls -v logs/rsl_rl/aic_sfp_insert/2026-05-12_01-39-53_step9_sfp_randy002_warm_f2cd192/model_*.pt | tail -n 1) && scratch=\$(ls -v logs/rsl_rl/aic_sfp_insert/2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192/model_*.pt | tail -n 1) && echo WARM_CKPT:\$warm && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 256 --max_episode_steps 150 --checkpoint \$warm --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras && echo SCRATCH_CKPT:\$scratch && ./isaaclab.sh -p aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py --task AIC-SFP-Task-v0 --agent rsl_rl_sfp_cfg_entry_point --num_envs 32 --num_eval_episodes 256 --max_episode_steps 150 --checkpoint \$scratch --lateral_threshold 0.015 --orientation_threshold 0.25 --depth_threshold 0.015 --failure_sample_count 10 --headless --enable_cameras'; echo STEP9_POSTTRAIN_EVAL_EXIT:\$?" C-m
+```
