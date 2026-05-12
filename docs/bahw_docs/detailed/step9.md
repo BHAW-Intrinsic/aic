@@ -214,3 +214,71 @@ tmux send-keys -t isaac-step9-eval-after-python-f2cd192 \
 The first watcher session, `isaac-step9-eval-after-train-f2cd192`, was
 interrupted with `Ctrl-C` and replaced by the stricter Python-process watcher
 above so the polling command does not accidentally match its own shell.
+
+## Official Gazebo Eval Wrapper Scaffold
+
+While the randomized SFP training runs continue, an official Gazebo evaluation
+wrapper scaffold was added for the eventual selected checkpoint:
+
+- `aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py`
+  starts the official `aic_eval` Gazebo/AIC engine path, the `aic_model`
+  participant policy process, and optional wrist-camera topic recording in
+  separate tmux sessions.
+- `aic_model/aic_model/RslRlCheckpointPolicy.py` is the ROS policy scaffold.
+  It receives raw checkpoint paths or exported policy artifact paths through
+  environment variables and logs official `Task` / `Observation` metadata.
+- `docs/bahw_docs/eval_wrapper/README.md` documents usage, expected outputs,
+  and the remaining adapter work.
+
+This is intentionally not marked as a functional checkpoint replay path yet.
+The official Gazebo eval stack runs `aic_model.Policy.insert_cable()` against
+ROS `Observation` messages, while the Isaac RSL-RL `.pt` checkpoints expect the
+Isaac actor observation vector:
+
+```text
+task_metadata
+joint_pos_rel
+joint_vel_rel
+eef_pose
+body_forces
+center_rgb_resnet18
+left_rgb_resnet18
+right_rgb_resnet18
+last_action
+```
+
+The remaining deployment work is to export/load the actor artifact, reconstruct
+that observation vector from official Gazebo observations and task metadata,
+and translate the six-dimensional relative-IK actor action into safe
+`MotionUpdate` or `JointMotionUpdate` commands. Until then,
+`RslRlCheckpointPolicy` returns failure after logging the received task and
+observation snapshot.
+
+Static checks run locally:
+
+```bash
+python3 -m py_compile \
+  aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  aic_model/aic_model/RslRlCheckpointPolicy.py
+```
+
+Dry-run command:
+
+```bash
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --checkpoint /tmp/model.pt \
+  --session-prefix dryrun-rslrl \
+  --record-camera-bag \
+  --camera-bag-duration-sec 10 \
+  --dry-run
+```
+
+Dry-run result:
+
+```text
+eval_session: dryrun-rslrl-eval
+model_session: dryrun-rslrl-model
+camera_session: dryrun-rslrl-camera-bag
+Expected scoring output:
+/Users/aloy/projects/aic/logs/gazebo_eval/<timestamp>/scoring.yaml
+```

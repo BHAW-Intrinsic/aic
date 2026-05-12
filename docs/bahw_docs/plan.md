@@ -994,6 +994,20 @@ High-level work later:
 - [ ] Export student policies.
   - If the reliable specialist policy already uses only eval-compatible actor
     observations, direct export may be valid and distillation may be unnecessary.
+- [x] Add official Gazebo eval wrapper scaffold for checkpoint-backed policies.
+  - Added `aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py`
+    to start official `aic_eval`, `aic_model`, and optional camera-topic rosbag
+    recording in separate tmux sessions.
+  - Added `aic_model/aic_model/RslRlCheckpointPolicy.py` as the ROS policy
+    scaffold that receives checkpoint/artifact paths and logs official task and
+    observation metadata.
+  - Documented usage and limitations in `docs/bahw_docs/eval_wrapper/README.md`.
+- [ ] Implement the Gazebo `Observation` + `Task` to Isaac actor-observation
+  adapter for exported SC/SFP actor artifacts.
+- [ ] Convert actor actions into safe Gazebo `MotionUpdate` or
+  `JointMotionUpdate` commands.
+- [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
+  `scoring.yaml`, scoring bags, and optional camera rosbags.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
   - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
   - [ ] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
