@@ -1159,6 +1159,12 @@ Done when:
 	    - Prefer the better randomized policy. If the scratch control does
 	      better than the warm-started checkpoint, use the scratch run as the
 	      SFP candidate.
+	    - Status on 2026-05-12 14:50 +08: both randomized SFP PPO tracks were
+	      still training in remote tmux. Warm-start had reached `model_290.pt`
+	      with recent rollout success around `0.91-0.93`; scratch had reached
+	      `model_270.pt` with recent rollout success around `0.91-0.95`. These
+	      are training health signals only; the item stays open until
+	      deterministic randomized SFP eval passes overall and per-target gates.
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria

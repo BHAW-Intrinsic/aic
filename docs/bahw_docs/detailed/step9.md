@@ -182,6 +182,22 @@ scratch latest observed rollout success termination: 0.8669 to 0.9120
 GPU memory while both train: about 22249 MiB / 24564 MiB
 ```
 
+Progress check after roughly five hours:
+
+```text
+watcher state: still waiting for both Step 9 Python training processes
+warm latest checkpoint: model_290.pt
+warm latest observed rollout success termination: 0.9091 to 0.9271
+scratch latest checkpoint: model_270.pt
+scratch latest observed rollout success termination: 0.9145 to 0.9534
+GPU memory while both train: about 22249 MiB / 24564 MiB
+```
+
+These are training-time rollout termination rates. They are useful health
+signals, but they are not the Step 9 acceptance result. Acceptance still depends
+on the queued deterministic randomized SFP evaluation reporting overall and
+per-target success above `90%`.
+
 Because the two training runs nearly fill the RTX 4090, do not start evaluation
 concurrently with both training processes unless one exits or memory headroom
 changes. A third Isaac process is likely to starve or OOM.
