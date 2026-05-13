@@ -5,30 +5,33 @@ qualification evaluation path against our checkpoint policy package.
 
 ## Current State
 
-The wrapper now handles official evaluation orchestration:
+The wrapper now handles official evaluation orchestration and a first SFP
+TorchScript actor adapter:
 
 - starts the `aic_eval` Gazebo/AIC engine container in a tmux session
 - starts `aic_model` in a separate tmux session
 - passes checkpoint/artifact paths into the ROS policy via environment variables
 - writes official scoring output under a unique `AIC_RESULTS_DIR`
 - can optionally record wrist camera image topics to a separate rosbag
+- converts recorded camera rosbags to MP4 with
+  `aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py`
 
-The raw Isaac Lab RSL-RL `.pt` checkpoint is not directly deployable in Gazebo
-yet. The missing implementation is the runtime adapter that converts official
-Gazebo `Observation` + `Task` messages into the exact Isaac actor observation
-vector, runs the exported actor, and converts the actor action into
-`MotionUpdate` or `JointMotionUpdate`.
+Raw Isaac Lab RSL-RL `.pt` checkpoints are still not directly deployable in
+Gazebo. Export the actor first with Isaac Lab `play.py` and pass the exported
+TorchScript artifact with `--sfp-policy-artifact` or `--policy-artifact`.
 
-Until that adapter is implemented, `aic_model.RslRlCheckpointPolicy` is a
-scaffold. It verifies lifecycle, task metadata, checkpoint-path plumbing, and
-scoring-output collection, then returns `False` for the task.
+`aic_model.RslRlCheckpointPolicy` currently implements the SFP adapter only.
+The SC adapter and final SC/SFP routing still need to be completed before this
+is a full qualification policy.
 
 ## Files
 
 - `aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py`
   starts the official eval/model/camera-recording tmux sessions.
 - `aic_model/aic_model/RslRlCheckpointPolicy.py`
-  is the ROS policy scaffold for checkpoint-backed Gazebo eval.
+  is the ROS policy for exported actor-backed Gazebo eval.
+- `aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py`
+  converts recorded image-topic bags into MP4 review videos.
 - `docs/bahw_docs/eval_wrapper/README.md`
   is this usage and implementation guide.
 
@@ -39,7 +42,8 @@ Run this from the host repo copy, not inside the Isaac Lab container:
 ```bash
 cd ~/ws_aic/src/aic
 python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
-  --checkpoint /path/to/model.pt \
+  --sfp-policy-artifact /path/to/exported/policy.pt \
+  --task-kind sfp \
   --session-prefix gazebo-rslrl-sfp-candidate \
   --record-camera-bag \
   --camera-bag-duration-sec 900
@@ -70,13 +74,12 @@ checkout.
 
 ## Final SC/SFP Routing Shape
 
-For final submission-style routing, pass separate checkpoint or exported actor
-artifacts:
+For final submission-style routing, pass separate exported actor artifacts:
 
 ```bash
 python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
-  --sc-checkpoint /path/to/sc_model.pt \
-  --sfp-checkpoint /path/to/sfp_model.pt \
+  --sc-policy-artifact /path/to/sc_exported/policy.pt \
+  --sfp-policy-artifact /path/to/sfp_exported/policy.pt \
   --session-prefix gazebo-rslrl-final \
   --record-camera-bag \
   --camera-bag-duration-sec 900
@@ -125,11 +128,18 @@ Use `--camera-topics` to record a subset, for example:
 --record-camera-bag --camera-topics /center_camera/image
 ```
 
-For visual inspection as an actual video, use one of these paths:
+For visual inspection as an actual video, convert the camera bag:
 
-- Run with `--gazebo-gui --launch-rviz` and manually screen-record the remote
-  desktop.
-- Record camera rosbags with the wrapper and convert or replay them later.
+```bash
+python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+  logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
+  --topic /center_camera/image \
+  --output logs/gazebo_eval/<timestamp>/videos/center_camera.mp4 \
+  --fps 20
+```
+
+Repeat with `/left_camera/image` and `/right_camera/image` if needed. The MP4s
+remain host-side review artifacts under `~/ws_aic/src/aic/logs/gazebo_eval/...`.
 
 The scoring rosbags are not camera videos; they are for official scoring topics.
 
@@ -159,17 +169,29 @@ joint_states
 controller_state
 ```
 
-The adapter still needs to define and validate:
+The SFP adapter currently defines:
 
-- Isaac-compatible joint position and velocity normalization from Gazebo
-  `joint_states`.
-- The `gripper_tcp` pose convention from Gazebo `controller_state.tcp_pose`.
-- The body-force observation replacement. Gazebo exposes wrist wrench, while
-  Isaac used incoming wrench terms over multiple robot bodies.
-- ResNet18 preprocessing parity for the three camera images.
-- Last-action bookkeeping in the ROS policy loop.
-- Conversion from the six-dimensional relative IK actor action to safe Gazebo
-  `MotionUpdate` or `JointMotionUpdate` commands.
+- target one-hot from official `Task.port_name` / `target_module_name`
+- six UR arm joint relative positions and velocities from `joint_states`
+- a Gazebo-to-Isaac shoulder-pan sign conversion, matching the known home-joint
+  convention difference
+- TCP pose from `controller_state.tcp_pose`
+- wrist wrench padded into the final six slots of the 42D force observation
+- three torchvision ResNet18 ImageNet-V1 1000D camera logits using Isaac Lab's
+  preprocessing convention
+- last-action bookkeeping in the ROS policy loop
+- optional legal SFP warm-start joint preset selected only by official
+  `Task.port_name`
+- actor action conversion to small Cartesian `MotionUpdate` position targets
+  in `base_link`
+
+Still required:
+
+- validate the Cartesian action-frame mapping in Gazebo
+- implement the SC adapter
+- decide whether the warm-start should remain in the final policy or be
+  replaced by a learned approach stage
+- produce qualification-like `ground_truth:=false` scoring and MP4 evidence
 
 ## Remote Resource Note
 
