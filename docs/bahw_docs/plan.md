@@ -37,6 +37,13 @@ Scope:
   reliability pass with two PPO tracks: one warm-started from the successful
   fixed-NIC SFP checkpoint and one control run from scratch. If the scratch run
   learns better randomized insertion, prefer it over the warm-started run.
+- Step 9 result: the scratch randomized SFP PPO run is the selected candidate.
+  Deterministic Isaac eval was `238/256` overall, with `123/132` on
+  `sfp_port_0` and `115/124` on `sfp_port_1`. The warm-start run passed
+  overall but failed the per-port gate on `sfp_port_0`.
+- Official Gazebo eval wrapper status: scaffold orchestration works and writes
+  `scoring.yaml`/trial bags, but final functional Gazebo eval remains blocked
+  on the observation/action adapter.
 
 ## Relevant Files
 
@@ -1002,12 +1009,21 @@ High-level work later:
     scaffold that receives checkpoint/artifact paths and logs official task and
     observation metadata.
   - Documented usage and limitations in `docs/bahw_docs/eval_wrapper/README.md`.
+  - Fixed the wrapper to launch branch-local policy modules inside the pixi
+    shell, avoiding stale installed `aic_model` packages.
+  - Ran the scaffold wrapper with `ground_truth:=false` against the selected
+    randomized SFP checkpoint. Tier-1 model validation passed for all three
+    official trials; tier-2/tier-3 scores remained zero as expected because the
+    policy scaffold still returns failure.
 - [ ] Implement the Gazebo `Observation` + `Task` to Isaac actor-observation
   adapter for exported SC/SFP actor artifacts.
 - [ ] Convert actor actions into safe Gazebo `MotionUpdate` or
   `JointMotionUpdate` commands.
 - [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
   `scoring.yaml`, scoring bags, and optional camera rosbags.
+  - Scaffold smoke run completed under
+    `logs/gazebo_eval/20260513_193949/`; keep this unchecked until the adapter
+    drives the robot and produces functional scores.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
   - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
   - [ ] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint

@@ -215,6 +215,26 @@ The first watcher session, `isaac-step9-eval-after-train-f2cd192`, was
 interrupted with `Ctrl-C` and replaced by the stricter Python-process watcher
 above so the polling command does not accidentally match its own shell.
 
+Post-training deterministic randomized SFP evaluation result:
+
+```text
+warm checkpoint:
+  /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-39-53_step9_sfp_randy002_warm_f2cd192/model_1518.pt
+  log: /workspace/isaaclab/aic/logs/aic_eval/20260513_061332_AIC-SFP-Task-v0.log
+  overall: 235/256 = 0.917969
+  sfp_port_0: 114/129 = 0.883721
+  sfp_port_1: 121/127 = 0.952756
+  decision: reject for Step 9 acceptance because sfp_port_0 is below 90%.
+
+scratch checkpoint:
+  /workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192/model_1499.pt
+  log: /workspace/isaaclab/aic/logs/aic_eval/20260513_061729_AIC-SFP-Task-v0.log
+  overall: 238/256 = 0.929688
+  sfp_port_0: 123/132 = 0.931818
+  sfp_port_1: 115/124 = 0.927419
+  decision: select scratch model_1499.pt as the randomized SFP candidate.
+```
+
 ## Official Gazebo Eval Wrapper Scaffold
 
 While the randomized SFP training runs continue, an official Gazebo evaluation
@@ -282,3 +302,42 @@ camera_session: dryrun-rslrl-camera-bag
 Expected scoring output:
 /Users/aloy/projects/aic/logs/gazebo_eval/<timestamp>/scoring.yaml
 ```
+
+Host scaffold run against selected SFP checkpoint:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --checkpoint /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_model_1499.pt \
+  --task-kind sfp \
+  --session-prefix gazebo-rslrl-sfp-model1499 \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace
+```
+
+Run notes:
+
+```text
+local wrapper fixes pushed on aloy:
+  8f1b390 Fix Gazebo eval wrapper policy import path
+  1d75df4 Run Gazebo model policy inside pixi shell
+
+selected checkpoint copied from Isaac container to host:
+  /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_model_1499.pt
+
+wrapper result directory:
+  /var/home/bahw/ws_aic/src/aic/logs/gazebo_eval/20260513_193949
+
+official scoring:
+  total: 3
+  trial_1 tier_1 score: 1, tier_2 score: 0, tier_3 score: 0
+  trial_2 tier_1 score: 1, tier_2 score: 0, tier_3 score: 0
+  trial_3 tier_1 score: 1, tier_2 score: 0, tier_3 score: 0
+```
+
+The scaffold run is useful because it proves the official Gazebo stack can
+launch, load the branch-local `RslRlCheckpointPolicy`, receive official task
+metadata and camera observations, and write `scoring.yaml` plus trial bags. The
+zero tier-2/tier-3 scores are expected: the scaffold returns `False` until the
+Gazebo observation/action adapter is implemented.

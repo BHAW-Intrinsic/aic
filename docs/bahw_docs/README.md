@@ -30,47 +30,36 @@ Completed work so far:
 - Step 7 extended the same MDP structure to SFP with `AIC-SFP-Task-v0`, active
   SFP port metadata, SFP helper geometry, SFP observations/rewards/terminations,
   and SFP PPO config.
-- Step 8 now has a deterministic fixed-NIC SFP PPO checkpoint above the accepted
-  `>90%` gate under the intermediate insertion threshold. The SFP scripted
-  controller was tested and rejected as a BC expert because it systematically
-  misses the port by a few millimeters. The current SFP path uses a
-  pre-corrected final-insertion reset derived from action-sequence diagnostics,
-  plus full-episode PPO rollouts so the first update sees insertion successes.
-
-Current Step 8 best result:
-
-- Final pre-corrected SFP reset plus pure raw `z-` action reaches `122/128`
-  first-hit successes under the intermediate gate.
-- Current accepted deterministic SFP PPO checkpoint:
-  `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt`.
-- Detached eval of that checkpoint reached `118/128` successes (`92.1875%`) at
-  `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
-- Per-target SFP eval: `sfp_port_0` was `67/74` (`90.54%`) and `sfp_port_1`
-  was `51/54` (`94.44%`).
-- With small SFP reset joint noise `position_noise=0.002`, the same checkpoint
-  reached `121/128` successes (`94.53%`), with both ports above `94%`.
+- Step 8 produced the fixed-NIC SFP PPO checkpoint that unblocked randomized SFP
+  work.
+- Step 9 trained two randomized SFP PPO tracks. The scratch run beat the warm
+  start and is the selected randomized SFP candidate:
+  `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192/model_1499.pt`.
+- Deterministic randomized Isaac eval for that checkpoint reached `238/256`
+  overall (`92.97%`), with `123/132` on `sfp_port_0` (`93.18%`) and `115/124`
+  on `sfp_port_1` (`92.74%`).
+- The official Gazebo eval wrapper scaffold now launches `aic_eval`, loads the
+  branch-local `RslRlCheckpointPolicy`, receives official task/camera
+  observations, and writes `scoring.yaml` plus trial bags.
 
 Current blocker:
 
-- The current SFP result is deterministic fixed-NIC final-stage validation, not
-  randomized SFP insertion.
-- Small reset noise is stable at `0.002`. A `0.005` reset-noise PPO resume
-  reached `118/128` overall, but `sfp_port_0` stayed below `90%`, so the
-  checked-in default is backed off to `0.002`.
-- NIC/card randomization still needs a reset-curriculum change. The current SFP
-  reset uses fixed per-target joint presets and does not adapt to randomized
-  NIC pose.
-- Step 9 distillation/export work can be revisited, but final qualification
-  confidence still depends on preserving SFP success under randomization.
+- The raw Isaac RSL-RL checkpoint is not yet a functional Gazebo policy. The
+  missing piece is the adapter from official Gazebo `Observation` + `Task`
+  messages into the Isaac actor observation vector, plus conversion from actor
+  actions into safe Gazebo robot commands.
+- The wrapper scaffold run passed tier-1 model validation for all three official
+  trials, but tier-2/tier-3 scores remain zero because the scaffold policy
+  intentionally returns failure until the adapter exists.
 
 Next recommended work:
 
-- Derive adaptive or per-NIC-offset SFP reset presets so the near-port reset can
-  track randomized NIC/card y positions.
-- After that, reintroduce NIC/card y randomization and resume PPO from the best
-  SFP checkpoint.
-- Revisit Step 9 distillation/export and final Gazebo routing once the
-  randomized SFP checkpoint is stable enough.
+- Export or load the selected Isaac actor in a format the ROS policy can execute.
+- Implement and validate the Gazebo observation adapter, including image
+  preprocessing, joint normalization, TCP pose convention, wrist/body force
+  mapping, task metadata routing, and last-action bookkeeping.
+- Convert the six-dimensional actor action into safe `MotionUpdate` or
+  `JointMotionUpdate` commands, then rerun the official Gazebo wrapper.
 
 ## Key Code References
 
