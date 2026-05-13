@@ -341,3 +341,118 @@ launch, load the branch-local `RslRlCheckpointPolicy`, receive official task
 metadata and camera observations, and write `scoring.yaml` plus trial bags. The
 zero tier-2/tier-3 scores are expected: the scaffold returns `False` until the
 Gazebo observation/action adapter is implemented.
+
+## First SFP Actor Artifact Export and Official Eval Run
+
+The selected randomized SFP checkpoint was exported to a lightweight
+TorchScript MLP actor without launching Isaac Sim, because the Isaac
+`play.py` export path timed out before writing `exported/policy.pt`.
+
+Host export command:
+
+```bash
+cd ~/ws_aic/src/aic
+pixi run python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
+  --checkpoint logs/checkpoints/step9_sfp_randy002_scratch_model_1499.pt \
+  --output logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --obs-dim 3149 \
+  --action-dim 6
+```
+
+Exported artifact:
+
+```text
+/var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt
+```
+
+The SFP ROS adapter was then implemented in
+`aic_model/aic_model/RslRlCheckpointPolicy.py`:
+
+- loads the exported TorchScript artifact
+- routes SFP using official `Task` metadata
+- uses only official `Observation` fields
+- reconstructs the 3149D Isaac actor input
+- fills six Gazebo UR joints into the 46D Isaac joint slots
+- applies the known Gazebo-to-Isaac shoulder-pan sign conversion
+- extracts ResNet18 ImageNet-V1 logits from `center_image`, `left_image`, and
+  `right_image`
+- converts the 6D actor output to small Cartesian `MotionUpdate` deltas
+
+First actor-backed official eval command:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-sfp-adapter-04cbb82 \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace
+```
+
+Run directory:
+
+```text
+/var/home/bahw/ws_aic/src/aic/logs/gazebo_eval/20260513_203832
+```
+
+Official scoring result:
+
+```text
+total: 3
+trial_1:
+  tier_1: 1
+  tier_2: 0
+  tier_3: 0
+  message: No insertion detected. Final plug port distance: 0.30m.
+trial_2:
+  tier_1: 1
+  tier_2: 0
+  tier_3: 0
+  message: No insertion detected. Final plug port distance: 0.20m.
+trial_3:
+  tier_1: 1
+  tier_2: 0
+  tier_3: 0
+  message: Task not completed.
+```
+
+Interpretation:
+
+- Tier 1 passed on all official trials, so the model package was accepted by
+  the official Gazebo path.
+- The two SFP trials did not insert. The current action conversion is therefore
+  not a functional Gazebo deployment mapping yet.
+- The third official trial was SC. The current adapter rejects SC because only
+  SFP is implemented.
+- The first camera recorder used direct camera topics and exited without
+  writing a bag. The wrapper was updated to record `/observations` by default,
+  because that is the official policy observation stream and includes all three
+  wrist images.
+
+Updated video-evidence path:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-sfp-adapter-obsvideo \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace
+```
+
+After the run, convert one camera field from the observation bag:
+
+```bash
+cd ~/ws_aic/src/aic
+pixi run python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+  logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
+  --topic /observations \
+  --image-field center_image \
+  --output logs/gazebo_eval/<timestamp>/videos/center_image.mp4 \
+  --fps 20
+```
+
+Repeat with `--image-field left_image` or `--image-field right_image` for
+additional review videos.

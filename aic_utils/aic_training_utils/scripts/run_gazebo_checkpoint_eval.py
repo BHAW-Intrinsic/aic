@@ -160,15 +160,21 @@ def parse_args() -> argparse.Namespace:
         "--record-camera-bag",
         action="store_true",
         help=(
-            "Start a third tmux session recording wrist camera image topics. "
-            "This produces rosbag evidence, not MP4."
+            "Start a third tmux session recording camera evidence topics. "
+            "This produces rosbag evidence, not MP4. The default records "
+            "/observations because it is the legal policy observation stream "
+            "and includes all three wrist images."
         ),
     )
     parser.add_argument(
         "--camera-topics",
         nargs="+",
-        default=["/left_camera/image", "/center_camera/image", "/right_camera/image"],
-        help="ROS image topics to record when --record-camera-bag is set.",
+        default=["/observations"],
+        help=(
+            "ROS image or observation topics to record when --record-camera-bag "
+            "is set. Direct camera topics can be passed explicitly if they are "
+            "available."
+        ),
     )
     parser.add_argument(
         "--camera-bag-duration-sec",
@@ -290,7 +296,8 @@ def main() -> int:
         )
         if args.camera_bag_duration_sec > 0:
             rosbag_command = (
-                f"timeout {_quote(str(args.camera_bag_duration_sec))} {rosbag_command}"
+                "timeout --signal=INT "
+                f"{_quote(str(args.camera_bag_duration_sec))} {rosbag_command}"
             )
         record_cmd_parts.append(rosbag_command)
         _tmux_new(camera_session, " && ".join(record_cmd_parts), dry_run=args.dry_run)

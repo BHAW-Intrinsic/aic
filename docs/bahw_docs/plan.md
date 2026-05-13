@@ -1017,16 +1017,34 @@ High-level work later:
     policy scaffold still returns failure.
 - [ ] Implement the Gazebo `Observation` + `Task` to Isaac actor-observation
   adapter for exported SC/SFP actor artifacts.
+  - SFP adapter is implemented for the selected exported actor artifact. It
+    uses only official `Task` and `Observation` fields, reconstructs the
+    3149D Isaac actor input, and runs the TorchScript actor in
+    `aic_model.RslRlCheckpointPolicy`.
+  - SC adapter is still missing, so this remains unchecked for final routing.
 - [ ] Convert actor actions into safe Gazebo `MotionUpdate` or
   `JointMotionUpdate` commands.
+  - First SFP pass converts the 6D actor output to small Cartesian
+    `MotionUpdate` deltas in `base_link`. Official Gazebo scoring shows this
+    mapping is not yet functionally correct: SFP trials ended `0.30m` and
+    `0.20m` from the target port.
 - [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
   `scoring.yaml`, scoring bags, and optional camera rosbags.
   - Scaffold smoke run completed under
     `logs/gazebo_eval/20260513_193949/`; keep this unchecked until the adapter
     drives the robot and produces functional scores.
+  - First actor-backed official run completed under
+    `logs/gazebo_eval/20260513_203832/` with `ground_truth:=false`.
+    Tier 1 passed for all three trials. Tier 2 and Tier 3 scored zero:
+    SFP trials did not insert, and the third official trial was SC, which is
+    not implemented in the adapter yet.
+  - Wrapper video evidence was revised to record `/observations` by default,
+    then extract `left_image`, `center_image`, or `right_image` to MP4. The
+    first direct-camera recorder produced no bag, so direct camera topics should
+    be treated as optional.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
   - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
-  - [ ] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
+  - [x] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
 
 Done when:
 

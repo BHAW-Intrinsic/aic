@@ -82,6 +82,45 @@ def _write_video(frames: list[np.ndarray], output: Path, fps: float) -> None:
         imageio.mimsave(output, frames, fps=fps)
 
 
+class _StreamingVideoWriter:
+    def __init__(self, output: Path, fps: float):
+        self.output = output
+        self.fps = fps
+        self._cv2 = None
+        self._writer = None
+        self._frames: list[np.ndarray] = []
+
+    def write(self, frame: np.ndarray) -> None:
+        if self._writer is None and self._cv2 is None:
+            try:
+                import cv2
+
+                self._cv2 = cv2
+                self.output.parent.mkdir(parents=True, exist_ok=True)
+                height, width = frame.shape[:2]
+                self._writer = cv2.VideoWriter(
+                    str(self.output),
+                    cv2.VideoWriter_fourcc(*"mp4v"),
+                    self.fps,
+                    (width, height),
+                )
+                if not self._writer.isOpened():
+                    raise RuntimeError("cv2.VideoWriter failed to open")
+            except Exception:
+                self._cv2 = False
+
+        if self._writer is not None:
+            self._writer.write(self._cv2.cvtColor(frame, self._cv2.COLOR_RGB2BGR))
+        else:
+            self._frames.append(frame)
+
+    def close(self) -> None:
+        if self._writer is not None:
+            self._writer.release()
+            return
+        _write_video(self._frames, self.output, self.fps)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert one ROS 2 sensor_msgs/Image topic from a bag to MP4."
@@ -90,7 +129,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--topic",
         default="/center_camera/image",
-        help="Image topic to convert",
+        help=(
+            "Topic to convert. Supports sensor_msgs/msg/Image directly and "
+            "aic_model_interfaces/msg/Observation when --image-field is set."
+        ),
+    )
+    parser.add_argument(
+        "--image-field",
+        choices=("left_image", "center_image", "right_image"),
+        default="center_image",
+        help=(
+            "Image field to extract when --topic is an Observation message. "
+            "Ignored for direct sensor_msgs/msg/Image topics."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -133,19 +184,30 @@ def main() -> int:
         available = ", ".join(sorted(topic_types))
         raise SystemExit(f"Topic {args.topic!r} not found. Available topics: {available}")
 
-    msg_type = get_message(topic_types[args.topic])
-    frames: list[np.ndarray] = []
+    topic_type = topic_types[args.topic]
+    msg_type = get_message(topic_type)
+    writer = _StreamingVideoWriter(args.output, args.fps)
+    frame_count = 0
     while reader.has_next():
         topic, data, _timestamp = reader.read_next()
         if topic != args.topic:
             continue
-        image_msg = deserialize_message(data, msg_type)
-        frames.append(_image_array(image_msg))
-        if args.max_frames > 0 and len(frames) >= args.max_frames:
+        msg = deserialize_message(data, msg_type)
+        if topic_type == "sensor_msgs/msg/Image":
+            image_msg = msg
+        elif topic_type == "aic_model_interfaces/msg/Observation":
+            image_msg = getattr(msg, args.image_field)
+        else:
+            raise SystemExit(
+                f"Topic {args.topic!r} has unsupported type {topic_type!r}."
+            )
+        writer.write(_image_array(image_msg))
+        frame_count += 1
+        if args.max_frames > 0 and frame_count >= args.max_frames:
             break
 
-    _write_video(frames, args.output, args.fps)
-    print(f"wrote {len(frames)} frames to {args.output}")
+    writer.close()
+    print(f"wrote {frame_count} frames to {args.output}")
     return 0
 
 

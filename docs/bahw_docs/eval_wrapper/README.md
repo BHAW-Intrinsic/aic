@@ -12,8 +12,9 @@ TorchScript actor adapter:
 - starts `aic_model` in a separate tmux session
 - passes checkpoint/artifact paths into the ROS policy via environment variables
 - writes official scoring output under a unique `AIC_RESULTS_DIR`
-- can optionally record wrist camera image topics to a separate rosbag
-- converts recorded camera rosbags to MP4 with
+- can optionally record the legal `/observations` stream, including all three
+  wrist images, to a separate rosbag
+- converts recorded observation/image rosbags to MP4 with
   `aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py`
 - can export simple RSL-RL MLP actor checkpoints with
   `aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py`
@@ -37,11 +38,11 @@ is a full qualification policy.
 ## Files
 
 - `aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py`
-  starts the official eval/model/camera-recording tmux sessions.
+  starts the official eval/model/observation-recording tmux sessions.
 - `aic_model/aic_model/RslRlCheckpointPolicy.py`
   is the ROS policy for exported actor-backed Gazebo eval.
 - `aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py`
-  converts recorded image-topic bags into MP4 review videos.
+  converts recorded observation or image-topic bags into MP4 review videos.
 - `aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py`
   exports simple RSL-RL MLP actor checkpoints without launching Isaac Sim.
 - `docs/bahw_docs/eval_wrapper/README.md`
@@ -119,8 +120,8 @@ a qualification-like result.
 ## Verification Video
 
 The official Gazebo eval stack does not provide a built-in MP4/video artifact.
-It writes `scoring.yaml` and scoring rosbags. The wrapper can also record wrist
-camera image topics:
+It writes `scoring.yaml` and scoring rosbags. The wrapper can also record the
+official participant observation stream:
 
 ```bash
 --record-camera-bag
@@ -129,29 +130,40 @@ camera image topics:
 By default this records:
 
 ```text
-/left_camera/image
-/center_camera/image
-/right_camera/image
+/observations
 ```
 
-Use `--camera-topics` to record a subset, for example:
+`/observations` is the same legal message stream consumed by `aic_model`; it
+contains `left_image`, `center_image`, `right_image`, camera info, wrench, joint
+state, and controller state. Direct camera topics are also official participant
+topics, but in the first host run a separate recorder against only
+`/left_camera/image`, `/center_camera/image`, and `/right_camera/image` exited
+without writing a bag. Recording `/observations` is therefore the preferred
+review-video path.
+
+Use `--camera-topics` only when a direct topic is known to be available, for
+example:
 
 ```bash
 --record-camera-bag --camera-topics /center_camera/image
 ```
 
-For visual inspection as an actual video, convert the camera bag:
+For visual inspection as an actual video, convert one image field from the
+observation bag:
 
 ```bash
 python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
   logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
-  --topic /center_camera/image \
+  --topic /observations \
+  --image-field center_image \
   --output logs/gazebo_eval/<timestamp>/videos/center_camera.mp4 \
   --fps 20
 ```
 
-Repeat with `/left_camera/image` and `/right_camera/image` if needed. The MP4s
-remain host-side review artifacts under `~/ws_aic/src/aic/logs/gazebo_eval/...`.
+Repeat with `--image-field left_image` and `--image-field right_image` if
+needed. For a direct `sensor_msgs/msg/Image` topic, keep
+`--topic /center_camera/image`; `--image-field` is ignored. The MP4s remain
+host-side review artifacts under `~/ws_aic/src/aic/logs/gazebo_eval/...`.
 
 The scoring rosbags are not camera videos; they are for official scoring topics.
 
