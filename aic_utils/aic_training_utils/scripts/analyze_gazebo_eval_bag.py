@@ -29,6 +29,13 @@ class TopicInfo:
     count: int = 0
 
 
+@dataclass
+class TransformEntry:
+    parent: str
+    xyz: np.ndarray
+    quat_xyzw: np.ndarray
+
+
 def _reader(bag_uri: str) -> rosbag2_py.SequentialReader:
     reader = rosbag2_py.SequentialReader()
     storage_options = rosbag2_py.StorageOptions(uri=bag_uri, storage_id="")
@@ -64,6 +71,66 @@ def _quat_to_xyzw(pose) -> np.ndarray:
     )
 
 
+def _transform_quat_to_xyzw(transform) -> np.ndarray:
+    rot = transform.transform.rotation
+    return np.array([rot.x, rot.y, rot.z, rot.w], dtype=np.float64)
+
+
+def _quat_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    x1, y1, z1, w1 = q1
+    x2, y2, z2, w2 = q2
+    return np.array(
+        [
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        ],
+        dtype=np.float64,
+    )
+
+
+def _quat_apply(q: np.ndarray, v: np.ndarray) -> np.ndarray:
+    q_xyz = q[:3]
+    q_w = q[3]
+    t = 2.0 * np.cross(q_xyz, v)
+    return v + q_w * t + np.cross(q_xyz, t)
+
+
+def _world_transforms(tree: dict[str, TransformEntry]) -> dict[str, TransformEntry]:
+    cache: dict[str, TransformEntry] = {}
+
+    def resolve(child: str, stack: set[str]) -> TransformEntry:
+        if child in cache:
+            return cache[child]
+        entry = tree[child]
+        if not entry.parent or entry.parent not in tree:
+            world = TransformEntry(
+                parent="",
+                xyz=entry.xyz.copy(),
+                quat_xyzw=entry.quat_xyzw.copy(),
+            )
+        elif child in stack:
+            world = TransformEntry(
+                parent="",
+                xyz=entry.xyz.copy(),
+                quat_xyzw=entry.quat_xyzw.copy(),
+            )
+        else:
+            parent_world = resolve(entry.parent, stack | {child})
+            world = TransformEntry(
+                parent="",
+                xyz=parent_world.xyz + _quat_apply(parent_world.quat_xyzw, entry.xyz),
+                quat_xyzw=_quat_multiply(parent_world.quat_xyzw, entry.quat_xyzw),
+            )
+        cache[child] = world
+        return world
+
+    for child in tree:
+        resolve(child, set())
+    return cache
+
+
 def _format_vec(values: Iterable[float], precision: int = 4) -> str:
     return "[" + ", ".join(f"{value:.{precision}f}" for value in values) + "]"
 
@@ -97,8 +164,8 @@ def analyze_bag(bag_uri: str, sample_limit: int, include_scoring_tf: bool) -> No
     pose_delta_norms = []
     last_controller_tcp = None
     pose_command_delta_from_tcp = []
-    tf_first = {}
-    tf_last = {}
+    tf_first: dict[str, TransformEntry] = {}
+    tf_last: dict[str, TransformEntry] = {}
 
     while reader.has_next():
         topic, data, timestamp_ns = reader.read_next()
@@ -151,9 +218,14 @@ def analyze_bag(bag_uri: str, sample_limit: int, include_scoring_tf: bool) -> No
                 child = transform.child_frame_id
                 translation = transform.transform.translation
                 xyz = np.array([translation.x, translation.y, translation.z], dtype=np.float64)
+                entry = TransformEntry(
+                    parent=transform.header.frame_id,
+                    xyz=xyz,
+                    quat_xyzw=_transform_quat_to_xyzw(transform),
+                )
                 if child not in tf_first:
-                    tf_first[child] = xyz.copy()
-                tf_last[child] = xyz.copy()
+                    tf_first[child] = entry
+                tf_last[child] = entry
 
     print(f"bag: {bag_uri}")
     for topic in sorted(infos):
@@ -200,6 +272,8 @@ def analyze_bag(bag_uri: str, sample_limit: int, include_scoring_tf: bool) -> No
             )
 
     if include_scoring_tf and tf_last:
+        world_first = _world_transforms(tf_first)
+        world_last = _world_transforms(tf_last)
         interesting = sorted(
             name
             for name in tf_last
@@ -207,10 +281,11 @@ def analyze_bag(bag_uri: str, sample_limit: int, include_scoring_tf: bool) -> No
         )
         print("scoring_tf_interesting_frames:")
         for name in interesting:
-            first = tf_first[name]
-            last = tf_last[name]
+            first = world_first[name].xyz
+            last = world_last[name].xyz
+            parent = tf_last[name].parent
             print(
-                f"  {name}: first={_format_vec(first)} last={_format_vec(last)} "
+                f"  {name}: parent={parent!r} first_w={_format_vec(first)} last_w={_format_vec(last)} "
                 f"delta={_format_vec(last - first)}"
             )
         for plug_name in interesting:
@@ -219,7 +294,7 @@ def analyze_bag(bag_uri: str, sample_limit: int, include_scoring_tf: bool) -> No
             for port_name in interesting:
                 if "port" not in port_name.lower():
                     continue
-                distance = _norm(tf_last[plug_name] - tf_last[port_name])
+                distance = _norm(world_last[plug_name].xyz - world_last[port_name].xyz)
                 if math.isfinite(distance) and distance < 1.0:
                     print(f"  final_distance {plug_name} -> {port_name}: {distance:.5f}")
 
