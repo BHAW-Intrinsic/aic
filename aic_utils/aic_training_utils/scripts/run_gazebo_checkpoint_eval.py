@@ -57,6 +57,11 @@ def _ros_env_exports() -> list[str]:
     ]
 
 
+def _repo_pythonpath_exports(repo: Path) -> list[str]:
+    """Prefer branch-local ROS Python policy modules over stale pixi installs."""
+    return [f"export PYTHONPATH={_quote(repo / 'aic_model')}:${{PYTHONPATH:-}}"]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -245,6 +250,7 @@ def main() -> int:
         f"cd {_quote(repo)}",
         "sleep 10",
         *_ros_env_exports(),
+        *_repo_pythonpath_exports(repo),
         *model_env,
         "pixi run ros2 run aic_model aic_model --ros-args "
         "-p use_sim_time:=true "

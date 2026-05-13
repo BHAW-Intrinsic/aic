@@ -62,6 +62,11 @@ logs/gazebo_eval/<timestamp>/bag_<trial>_<timestamp>/
 logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras/
 ```
 
+The model session prepends `<repo>/aic_model` to `PYTHONPATH` before launching
+`pixi run ros2 run aic_model ...`. This makes branch-local policy modules, such
+as `aic_model.RslRlCheckpointPolicy`, importable even when the pixi environment
+was built before the latest branch checkout.
+
 ## Final SC/SFP Routing Shape
 
 For final submission-style routing, pass separate checkpoint or exported actor
@@ -171,4 +176,3 @@ Do not run this while the Isaac 4090 is saturated by training unless you intend
 to stop one training job first. During the Step 9 randomized SFP runs, the host
 had roughly `22249 MiB / 24564 MiB` VRAM in use, leaving too little headroom for
 another Gazebo/GUI/eval workload.
-
