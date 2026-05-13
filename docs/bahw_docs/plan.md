@@ -1038,6 +1038,13 @@ High-level work later:
     Tier 1 passed for all three trials. Tier 2 and Tier 3 scored zero:
     SFP trials did not insert, and the third official trial was SC, which is
     not implemented in the adapter yet.
+  - Final video-recorded actor-backed run completed under
+    `logs/gazebo_eval/20260513_205601/`. It reproduced the same outcome:
+    Tier 1 passed for all three trials; Tier 2 and Tier 3 scored zero. Final
+    SFP plug-to-port distances were `0.27m` and `0.17m`.
+  - Review videos were exported from the official `/observations` bag to:
+    `videos/center_image.mp4`, `videos/left_image.mp4`, and
+    `videos/right_image.mp4`.
   - Wrapper video evidence was revised to record `/observations` by default
     from the sourced `aic_eval` container, then extract `left_image`,
     `center_image`, or `right_image` to MP4. The host pixi environment lacks

@@ -462,3 +462,111 @@ distrobox enter -r aic_eval -- bash -lc '
 
 Repeat with `--image-field left_image` or `--image-field right_image` for
 additional review videos.
+
+## Final Video-Recorded Official Eval Run
+
+After fixing the recorder to use the sourced `aic_eval` container, the
+video-recorded official run was repeated from a clean process state.
+
+Command:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-sfp-obsvideo-final-7d9f825 \
+  --record-camera-bag \
+  --camera-bag-duration-sec 240 \
+  --replace
+```
+
+Run directory:
+
+```text
+/var/home/bahw/ws_aic/src/aic/logs/gazebo_eval/20260513_205601
+```
+
+Observation bag:
+
+```text
+logs/gazebo_eval/20260513_205601/camera_bags/wrist_cameras/
+  metadata.yaml
+  wrist_cameras_0.mcap
+```
+
+Bag metadata:
+
+```text
+topic: /observations
+type: aic_model_interfaces/msg/Observation
+message_count: 2021
+duration: 137.578657180s
+bag size: about 20G
+```
+
+Official scoring:
+
+```text
+total: 3
+trial_1:
+  tier_1: 1
+  tier_2: 0
+  tier_3: 0
+  message: No insertion detected. Final plug port distance: 0.27m.
+trial_2:
+  tier_1: 1
+  tier_2: 0
+  tier_3: 0
+  message: No insertion detected. Final plug port distance: 0.17m.
+trial_3:
+  tier_1: 1
+  tier_2: 0
+  tier_3: 0
+  message: Task not completed.
+```
+
+MP4 export command:
+
+```bash
+cd ~/ws_aic/src/aic
+distrobox enter -r aic_eval -- bash -lc '
+  cd /var/home/bahw/ws_aic/src/aic &&
+  source /ws_aic/install/setup.bash &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260513_205601/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field center_image \
+    --output logs/gazebo_eval/20260513_205601/videos/center_image.mp4 \
+    --fps 20 &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260513_205601/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field left_image \
+    --output logs/gazebo_eval/20260513_205601/videos/left_image.mp4 \
+    --fps 20 &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260513_205601/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field right_image \
+    --output logs/gazebo_eval/20260513_205601/videos/right_image.mp4 \
+    --fps 20
+'
+```
+
+Video outputs:
+
+```text
+logs/gazebo_eval/20260513_205601/videos/center_image.mp4  22M
+logs/gazebo_eval/20260513_205601/videos/left_image.mp4    20M
+logs/gazebo_eval/20260513_205601/videos/right_image.mp4   28M
+```
+
+Each MP4 contains `2021` frames at `20 FPS`.
+
+Current blockers after this run:
+
+- The SFP actor runs legally from official task/observation inputs, but the
+  Gazebo action conversion does not reproduce Isaac insertion behavior.
+- The SC adapter is not implemented, so any official SC trial returns failure.
+- Next deployment work should focus on validating the action-frame/control
+  mapping before more training.
