@@ -124,6 +124,16 @@ def parse_args() -> argparse.Namespace:
         help="Checkpoint task kind passed through to the policy wrapper.",
     )
     parser.add_argument(
+        "--model-env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "Additional environment variable to export in the aic_model tmux "
+            "session. May be supplied multiple times for deployment tuning."
+        ),
+    )
+    parser.add_argument(
         "--repo",
         default=str(_repo_root()),
         help="Host repo path containing the pixi workspace.",
@@ -261,6 +271,13 @@ def main() -> int:
         f"export AIC_RSLRL_SFP_POLICY_ARTIFACT={_quote(args.sfp_policy_artifact)}",
         f"export AIC_RSLRL_TASK_KIND={_quote(args.task_kind)}",
     ]
+    for item in args.model_env:
+        if "=" not in item:
+            raise SystemExit(f"--model-env expects KEY=VALUE, got: {item!r}")
+        key, value = item.split("=", 1)
+        if not key or not key.replace("_", "").isalnum() or key[0].isdigit():
+            raise SystemExit(f"Invalid --model-env variable name: {key!r}")
+        model_env.append(f"export {key}={_quote(value)}")
     model_cmd_parts = [
         "set -e",
         f"cd {_quote(repo)}",

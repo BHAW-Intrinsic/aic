@@ -63,23 +63,23 @@ GAZEBO_DEFAULT_ARM_JOINT_POS = np.array(
 SFP_NEAR_PORT_JOINT_PRESETS = {
     "sfp_port_0": np.array(
         [
-            0.8343623281,
-            -1.5769010782,
-            -1.8567240238,
-            -1.0969889164,
-            1.8369734287,
-            2.1079621315,
+            0.8302846551,
+            -1.5486999750,
+            -1.8918046951,
+            -1.0959614515,
+            1.8380267620,
+            2.1012129784,
         ],
         dtype=np.float64,
     ),
     "sfp_port_1": np.array(
         [
-            0.8025181293,
-            -1.6159480810,
-            -1.8159053326,
-            -1.1020359993,
-            1.8379788399,
-            2.1117913723,
+            0.8000932336,
+            -1.5981711149,
+            -1.8391590118,
+            -1.1001185179,
+            1.8383054733,
+            2.1077697277,
         ],
         dtype=np.float64,
     ),
@@ -114,6 +114,44 @@ def _env_int(name: str, default: int) -> int:
     if value is None or value == "":
         return default
     return int(value)
+
+
+def _quat_multiply_xyzw(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    x1, y1, z1, w1 = q1
+    x2, y2, z2, w2 = q2
+    return np.array(
+        [
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        ],
+        dtype=np.float64,
+    )
+
+
+def _axis_angle_to_quat_xyzw(axis_angle: np.ndarray) -> np.ndarray:
+    angle = float(np.linalg.norm(axis_angle))
+    if angle < 1.0e-9:
+        return np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+    axis = axis_angle.astype(np.float64, copy=False) / angle
+    half_angle = 0.5 * angle
+    return np.array(
+        [
+            axis[0] * np.sin(half_angle),
+            axis[1] * np.sin(half_angle),
+            axis[2] * np.sin(half_angle),
+            np.cos(half_angle),
+        ],
+        dtype=np.float64,
+    )
+
+
+def _normalize_quat_xyzw(quat: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(quat))
+    if norm < 1.0e-9:
+        return np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+    return quat / norm
 
 
 class RslRlCheckpointPolicy(Policy):
@@ -158,10 +196,13 @@ class RslRlCheckpointPolicy(Policy):
         self._resnet18_failed = False
         self._last_action = np.zeros(6, dtype=np.float32)
         self._sfp_control_hz = _env_float("AIC_RSLRL_CONTROL_HZ", 10.0)
-        self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 55.0)
+        self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 5.0)
         self._sfp_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SFP_PREPOSE", True)
         self._sfp_prepose_sec = _env_float("AIC_RSLRL_SFP_PREPOSE_SEC", 6.0)
         self._sfp_position_scale = _env_float("AIC_RSLRL_SFP_POSITION_SCALE", 0.003)
+        self._sfp_rotation_scale = _env_float(
+            "AIC_RSLRL_SFP_ROTATION_SCALE", self._sfp_position_scale
+        )
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
 
         self.get_logger().info(
@@ -174,7 +215,9 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SFP_POLICY_ARTIFACT={self.sfp_policy_artifact_path!r}, "
             f"AIC_RSLRL_TASK_KIND={self.task_kind!r}, "
             f"AIC_RSLRL_ENABLE_SFP_PREPOSE={self._sfp_prepose_enabled!r}, "
-            f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}"
+            f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
+            f"AIC_RSLRL_SFP_POSITION_SCALE={self._sfp_position_scale!r}, "
+            f"AIC_RSLRL_SFP_ROTATION_SCALE={self._sfp_rotation_scale!r}"
         )
 
         artifact_paths = {
@@ -450,20 +493,29 @@ class RslRlCheckpointPolicy(Policy):
 
     def _make_position_update(self, observation, action: np.ndarray) -> MotionUpdate:
         current = observation.controller_state.tcp_pose
+        delta_position = np.clip(action[:3], -1.0, 1.0) * self._sfp_position_scale
+        delta_axis_angle = np.clip(action[3:6], -1.0, 1.0) * self._sfp_rotation_scale
+        current_quat = np.array(
+            [
+                current.orientation.x,
+                current.orientation.y,
+                current.orientation.z,
+                current.orientation.w,
+            ],
+            dtype=np.float64,
+        )
+        target_quat = _normalize_quat_xyzw(
+            _quat_multiply_xyzw(_axis_angle_to_quat_xyzw(delta_axis_angle), current_quat)
+        )
+
         target = Pose()
-        target.position.x = float(
-            current.position.x
-            + np.clip(action[0], -1.0, 1.0) * self._sfp_position_scale
-        )
-        target.position.y = float(
-            current.position.y
-            + np.clip(action[1], -1.0, 1.0) * self._sfp_position_scale
-        )
-        target.position.z = float(
-            current.position.z
-            + np.clip(action[2], -1.0, 1.0) * self._sfp_position_scale
-        )
-        target.orientation = current.orientation
+        target.position.x = float(current.position.x + delta_position[0])
+        target.position.y = float(current.position.y + delta_position[1])
+        target.position.z = float(current.position.z + delta_position[2])
+        target.orientation.x = float(target_quat[0])
+        target.orientation.y = float(target_quat[1])
+        target.orientation.z = float(target_quat[2])
+        target.orientation.w = float(target_quat[3])
 
         motion_update = MotionUpdate()
         motion_update.header.frame_id = "base_link"
