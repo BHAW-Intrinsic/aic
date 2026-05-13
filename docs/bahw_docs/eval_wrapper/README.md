@@ -62,10 +62,11 @@ logs/gazebo_eval/<timestamp>/bag_<trial>_<timestamp>/
 logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras/
 ```
 
-The model session prepends `<repo>/aic_model` to `PYTHONPATH` before launching
-`pixi run ros2 run aic_model ...`. This makes branch-local policy modules, such
-as `aic_model.RslRlCheckpointPolicy`, importable even when the pixi environment
-was built before the latest branch checkout.
+The model session launches `ros2 run ...` inside `pixi run bash -lc ...` and
+prepends `<repo>/aic_model` to `PYTHONPATH` inside that pixi shell. This makes
+branch-local policy modules, such as `aic_model.RslRlCheckpointPolicy`,
+importable even when the pixi environment was built before the latest branch
+checkout.
 
 ## Final SC/SFP Routing Shape
 

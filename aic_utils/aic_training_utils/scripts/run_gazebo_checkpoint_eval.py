@@ -62,6 +62,16 @@ def _repo_pythonpath_exports(repo: Path) -> list[str]:
     return [f"export PYTHONPATH={_quote(repo / 'aic_model')}:${{PYTHONPATH:-}}"]
 
 
+def _pixi_model_command(repo: Path, policy: str) -> str:
+    inner_cmd_parts = [
+        *_repo_pythonpath_exports(repo),
+        "ros2 run aic_model aic_model --ros-args "
+        "-p use_sim_time:=true "
+        f"-p policy:={_quote(policy)}",
+    ]
+    return "pixi run bash -lc " + _quote(" && ".join(inner_cmd_parts))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -250,11 +260,8 @@ def main() -> int:
         f"cd {_quote(repo)}",
         "sleep 10",
         *_ros_env_exports(),
-        *_repo_pythonpath_exports(repo),
         *model_env,
-        "pixi run ros2 run aic_model aic_model --ros-args "
-        "-p use_sim_time:=true "
-        f"-p policy:={_quote(args.policy)}",
+        _pixi_model_command(repo, args.policy),
     ]
     model_cmd = " && ".join(model_cmd_parts)
 
