@@ -197,7 +197,7 @@ class RslRlCheckpointPolicy(Policy):
         self._resnet18_failed = False
         self._last_action = np.zeros(6, dtype=np.float32)
         self._sfp_control_hz = _env_float("AIC_RSLRL_CONTROL_HZ", 10.0)
-        self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 5.0)
+        self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 9.0)
         self._sfp_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SFP_PREPOSE", False)
         self._sfp_prepose_sec = _env_float("AIC_RSLRL_SFP_PREPOSE_SEC", 6.0)
         self._sfp_position_scale = _env_float("AIC_RSLRL_SFP_POSITION_SCALE", 0.003)
@@ -621,6 +621,7 @@ class RslRlCheckpointPolicy(Policy):
         self._run_sfp_prepose(task, move_robot, send_feedback)
 
         actor_input_dim = None
+        self._load_resnet18()
         start_time = time.monotonic()
         task_limit_sec = (
             float(task.time_limit)
