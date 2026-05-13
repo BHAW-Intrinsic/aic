@@ -91,7 +91,8 @@ SFP_PORT_ONE_HOT = {
 }
 
 IMAGE_FEATURE_DIM = 1000
-SFP_ACTOR_OBSERVATION_DIM = 3069
+SFP_JOINT_OBSERVATION_DIM = 46
+SFP_ACTOR_OBSERVATION_DIM = 3149
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -271,7 +272,13 @@ class RslRlCheckpointPolicy(Policy):
         isaac_joint_vel = gazebo_joint_vel.copy()
         isaac_joint_pos[0] *= -1.0
         isaac_joint_vel[0] *= -1.0
-        return isaac_joint_pos - ISAAC_DEFAULT_ARM_JOINT_POS, isaac_joint_vel
+        joint_pos_rel = np.zeros(SFP_JOINT_OBSERVATION_DIM, dtype=np.float32)
+        joint_vel_rel = np.zeros(SFP_JOINT_OBSERVATION_DIM, dtype=np.float32)
+        joint_pos_rel[: len(ARM_JOINT_NAMES)] = (
+            isaac_joint_pos - ISAAC_DEFAULT_ARM_JOINT_POS
+        )
+        joint_vel_rel[: len(ARM_JOINT_NAMES)] = isaac_joint_vel
+        return joint_pos_rel, joint_vel_rel
 
     def _eef_pose(self, observation) -> np.ndarray:
         pose = observation.controller_state.tcp_pose

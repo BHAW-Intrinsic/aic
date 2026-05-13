@@ -15,10 +15,20 @@ TorchScript actor adapter:
 - can optionally record wrist camera image topics to a separate rosbag
 - converts recorded camera rosbags to MP4 with
   `aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py`
+- can export simple RSL-RL MLP actor checkpoints with
+  `aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py`
 
 Raw Isaac Lab RSL-RL `.pt` checkpoints are still not directly deployable in
 Gazebo. Export the actor first with Isaac Lab `play.py` and pass the exported
 TorchScript artifact with `--sfp-policy-artifact` or `--policy-artifact`.
+If `play.py` fails before export, the selected SFP checkpoint can be exported
+with the lightweight MLP exporter:
+
+```bash
+python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
+  --checkpoint logs/checkpoints/step9_sfp_randy002_scratch_model_1499.pt \
+  --output logs/checkpoints/step9_sfp_randy002_scratch_policy.pt
+```
 
 `aic_model.RslRlCheckpointPolicy` currently implements the SFP adapter only.
 The SC adapter and final SC/SFP routing still need to be completed before this
@@ -32,6 +42,8 @@ is a full qualification policy.
   is the ROS policy for exported actor-backed Gazebo eval.
 - `aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py`
   converts recorded image-topic bags into MP4 review videos.
+- `aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py`
+  exports simple RSL-RL MLP actor checkpoints without launching Isaac Sim.
 - `docs/bahw_docs/eval_wrapper/README.md`
   is this usage and implementation guide.
 
@@ -172,7 +184,9 @@ controller_state
 The SFP adapter currently defines:
 
 - target one-hot from official `Task.port_name` / `target_module_name`
-- six UR arm joint relative positions and velocities from `joint_states`
+- 46D Isaac joint position and velocity observations, with the six official UR
+  arm joints filled from `joint_states` and unobserved cable joints held at
+  default-relative zero
 - a Gazebo-to-Isaac shoulder-pan sign conversion, matching the known home-joint
   convention difference
 - TCP pose from `controller_state.tcp_pose`
