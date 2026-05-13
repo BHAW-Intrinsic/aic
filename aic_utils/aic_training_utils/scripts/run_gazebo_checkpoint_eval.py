@@ -286,12 +286,13 @@ def main() -> int:
             "set -e",
             f"cd {_quote(repo)}",
             "sleep 20",
-            *_ros_env_exports(),
             f"mkdir -p {_quote(bag_dir.parent)}",
+            "export DBX_CONTAINER_MANAGER=docker",
         ]
         rosbag_command = (
-            "pixi run ros2 bag record "
+            "ros2 bag record "
             f"-o {_quote(bag_dir)} "
+            "--topics "
             + " ".join(_quote(topic) for topic in args.camera_topics)
         )
         if args.camera_bag_duration_sec > 0:
@@ -299,7 +300,16 @@ def main() -> int:
                 "timeout --signal=INT "
                 f"{_quote(str(args.camera_bag_duration_sec))} {rosbag_command}"
             )
-        record_cmd_parts.append(rosbag_command)
+        rosbag_inner = " && ".join(
+            [
+                "source /ws_aic/install/setup.bash",
+                *_ros_env_exports(),
+                rosbag_command,
+            ]
+        )
+        record_cmd_parts.append(
+            "distrobox enter -r aic_eval -- bash -lc " + _quote(rosbag_inner)
+        )
         _tmux_new(camera_session, " && ".join(record_cmd_parts), dry_run=args.dry_run)
 
     print()

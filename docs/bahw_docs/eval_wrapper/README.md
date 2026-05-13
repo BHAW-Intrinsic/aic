@@ -149,15 +149,20 @@ example:
 ```
 
 For visual inspection as an actual video, convert one image field from the
-observation bag:
+observation bag from the sourced eval container, which has `rosbag2_py` and
+OpenCV available:
 
 ```bash
-python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
-  logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
-  --topic /observations \
-  --image-field center_image \
-  --output logs/gazebo_eval/<timestamp>/videos/center_camera.mp4 \
-  --fps 20
+distrobox enter -r aic_eval -- bash -lc '
+  cd /var/home/bahw/ws_aic/src/aic &&
+  source /ws_aic/install/setup.bash &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field center_image \
+    --output logs/gazebo_eval/<timestamp>/videos/center_camera.mp4 \
+    --fps 20
+'
 ```
 
 Repeat with `--image-field left_image` and `--image-field right_image` if
@@ -166,6 +171,9 @@ needed. For a direct `sensor_msgs/msg/Image` topic, keep
 host-side review artifacts under `~/ws_aic/src/aic/logs/gazebo_eval/...`.
 
 The scoring rosbags are not camera videos; they are for official scoring topics.
+The host pixi environment has `ros2 topic`, but not the `ros2 bag` verb or
+`rosbag2_py`, so recording and conversion should use the sourced `aic_eval`
+container.
 
 ## Implementation Details
 

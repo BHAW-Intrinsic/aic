@@ -425,10 +425,12 @@ Interpretation:
   not a functional Gazebo deployment mapping yet.
 - The third official trial was SC. The current adapter rejects SC because only
   SFP is implemented.
-- The first camera recorder used direct camera topics and exited without
-  writing a bag. The wrapper was updated to record `/observations` by default,
-  because that is the official policy observation stream and includes all three
-  wrist images.
+- The first camera recorder used direct camera topics from the host pixi
+  environment and exited without writing a bag because that environment does
+  not include the `ros2 bag` verb. The wrapper was updated to record
+  `/observations` from the sourced `aic_eval` container by default, because
+  that is the official policy observation stream and includes all three wrist
+  images.
 
 Updated video-evidence path:
 
@@ -446,12 +448,16 @@ After the run, convert one camera field from the observation bag:
 
 ```bash
 cd ~/ws_aic/src/aic
-pixi run python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
-  logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
-  --topic /observations \
-  --image-field center_image \
-  --output logs/gazebo_eval/<timestamp>/videos/center_image.mp4 \
-  --fps 20
+distrobox enter -r aic_eval -- bash -lc '
+  cd /var/home/bahw/ws_aic/src/aic &&
+  source /ws_aic/install/setup.bash &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field center_image \
+    --output logs/gazebo_eval/<timestamp>/videos/center_image.mp4 \
+    --fps 20
+'
 ```
 
 Repeat with `--image-field left_image` or `--image-field right_image` for

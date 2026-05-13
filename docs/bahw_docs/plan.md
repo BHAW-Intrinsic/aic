@@ -1038,10 +1038,10 @@ High-level work later:
     Tier 1 passed for all three trials. Tier 2 and Tier 3 scored zero:
     SFP trials did not insert, and the third official trial was SC, which is
     not implemented in the adapter yet.
-  - Wrapper video evidence was revised to record `/observations` by default,
-    then extract `left_image`, `center_image`, or `right_image` to MP4. The
-    first direct-camera recorder produced no bag, so direct camera topics should
-    be treated as optional.
+  - Wrapper video evidence was revised to record `/observations` by default
+    from the sourced `aic_eval` container, then extract `left_image`,
+    `center_image`, or `right_image` to MP4. The host pixi environment lacks
+    `ros2 bag`, so direct host-side recording should not be used.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
   - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
   - [x] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
