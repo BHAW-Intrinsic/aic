@@ -18,6 +18,11 @@ TorchScript actor adapter:
   `aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py`
 - can export simple RSL-RL MLP actor checkpoints with
   `aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py`
+- can pass controlled policy environment overrides with repeatable
+  `--model-env KEY=VALUE`
+- includes a bag analyzer,
+  `aic_utils/aic_training_utils/scripts/analyze_gazebo_eval_bag.py`, for
+  post-run command/TCP/scoring-TF diagnostics
 
 Raw Isaac Lab RSL-RL `.pt` checkpoints are still not directly deployable in
 Gazebo. Export the actor first with Isaac Lab `play.py` and pass the exported
@@ -32,8 +37,9 @@ python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
 ```
 
 `aic_model.RslRlCheckpointPolicy` currently implements the SFP adapter only.
-The SC adapter and final SC/SFP routing still need to be completed before this
-is a full qualification policy.
+The best post-fix official run reaches partial tier-2/tier-3 SFP scores, but
+does not yet trigger insertion. The SC adapter and final SC/SFP routing still
+need to be completed before this is a full qualification policy.
 
 ## Files
 
@@ -215,17 +221,22 @@ The SFP adapter currently defines:
   preprocessing convention
 - last-action bookkeeping in the ROS policy loop
 - optional legal SFP warm-start joint preset selected only by official
-  `Task.port_name`
+  `Task.port_name`; this defaults off because the official Gazebo SFP task
+  start is already near the target and the Isaac prepose was harmful in eval
 - actor action conversion to small Cartesian `MotionUpdate` position targets
   in `base_link`
+- actor rotation conversion to small axis-angle orientation deltas composed
+  with the current Gazebo TCP orientation
+- ResNet18 loading before the SFP control timer starts
 
 Still required:
 
-- validate the Cartesian action-frame mapping in Gazebo
+- resolve the remaining final SFP approach miss in Gazebo
 - implement the SC adapter
 - decide whether the warm-start should remain in the final policy or be
   replaced by a learned approach stage
-- produce qualification-like `ground_truth:=false` scoring and MP4 evidence
+- produce a qualification-like `ground_truth:=false` run that completes both
+  SFP and SC tasks
 
 ## Remote Resource Note
 

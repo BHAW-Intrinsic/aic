@@ -42,8 +42,11 @@ Scope:
   `sfp_port_0` and `115/124` on `sfp_port_1`. The warm-start run passed
   overall but failed the per-port gate on `sfp_port_0`.
 - Official Gazebo eval wrapper status: scaffold orchestration works and writes
-  `scoring.yaml`/trial bags, but final functional Gazebo eval remains blocked
-  on the observation/action adapter.
+  `scoring.yaml`/trial bags/videos. The SFP adapter now runs the exported
+  actor legally from official `Task`/`Observation` inputs and reaches partial
+  tier-2/tier-3 scores, but still does not complete insertion in Gazebo.
+  Final functional Gazebo eval remains blocked on the last SFP deployment
+  approach and the missing SC adapter.
 
 ## Relevant Files
 
@@ -1028,6 +1031,12 @@ High-level work later:
     `MotionUpdate` deltas in `base_link`. Official Gazebo scoring shows this
     mapping is not yet functionally correct: SFP trials ended `0.30m` and
     `0.20m` from the target port.
+  - Follow-up SFP fixes disabled the harmful Isaac near-port joint prepose by
+    default, preloaded ResNet18 before starting the control timer, replayed
+    actor rotation deltas as small axis-angle orientation updates, and capped
+    the default SFP control horizon at `9s`. The best rerun improved both SFP
+    trials to final plug-port distances of `0.05m`, but still did not detect
+    insertion.
 - [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
   `scoring.yaml`, scoring bags, and optional camera rosbags.
   - Scaffold smoke run completed under
@@ -1049,6 +1058,16 @@ High-level work later:
     from the sourced `aic_eval` container, then extract `left_image`,
     `center_image`, or `right_image` to MP4. The host pixi environment lacks
     `ros2 bag`, so direct host-side recording should not be used.
+  - Latest post-fix rerun completed under
+    `logs/gazebo_eval/20260514_005106/` with `ground_truth:=false`.
+    Total score was `92.514068059037598`. The two SFP trials scored tier 1
+    plus partial tier 2 and tier 3, with final plug-port distances of `0.05m`
+    and `0.05m`; neither detected insertion. The third official trial was SC
+    and still failed because the SC adapter is not implemented.
+  - Latest review videos were exported to:
+    `logs/gazebo_eval/20260514_005106/videos/center_image.mp4`,
+    `logs/gazebo_eval/20260514_005106/videos/left_image.mp4`, and
+    `logs/gazebo_eval/20260514_005106/videos/right_image.mp4`.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
   - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
   - [x] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
@@ -1105,7 +1124,7 @@ Done when:
     Current best is a BC-trained neural actor checkpoint at `233/256`; PPO
     remains the preferred final path.
 - [x] 12. Extend the same geometry/reward interface to SFP.
-- [ ] 13. Train SFP teacher/policy.
+- [x] 13. Train SFP teacher/policy.
   - [x] Run SFP scripted-control diagnostic before long training.
   - [x] Verify SFP port helper geometry against USD semantic entrance frames.
   - [x] Add first SFP near-port reset curriculum.
@@ -1194,7 +1213,7 @@ Done when:
 	    (`118/128` detached eval successes with full 150-step PPO rollouts).
 	  - [x] Reintroduce small SFP reset noise while preserving success
 	    (`0.002` joint noise: `121/128`, both ports above `94%`).
-	  - [ ] Reintroduce SFP reset/NIC randomization after the deterministic
+	  - [x] Reintroduce SFP reset/NIC randomization after the deterministic
 	    final-stage checkpoint is reliable under the tighter gate.
 	    - Current decision: train randomized SFP with two PPO tracks. Track A
 	      warm-starts from the best fixed-NIC SFP checkpoint as a weight
@@ -1220,6 +1239,12 @@ Done when:
 	      `model_270.pt` with recent rollout success around `0.91-0.95`. These
 	      are training health signals only; the item stays open until
 	      deterministic randomized SFP eval passes overall and per-target gates.
+	    - Final randomized Isaac eval selected the scratch run:
+	      `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192/model_1499.pt`.
+	      It scored `238/256` overall, `123/132` on `sfp_port_0`, and
+	      `115/124` on `sfp_port_1`, passing the `>90%` overall and per-target
+	      gates. The warm-start run scored `235/256` overall but failed the
+	      per-target gate on `sfp_port_0` (`114/129`).
 - [ ] 14. Revisit distillation only after both teachers work.
 
 ## Global Done Criteria
@@ -1236,9 +1261,13 @@ The SFP implementation is done when:
 
 - [x] The same MDP structure supports SFP.
 - [x] SFP plug and port entrance geometry are correct.
-- [ ] SFP teacher/policy inserts in randomized simulation.
-  - Current best accepted checkpoint solves fixed-NIC final-stage validation and
-    small reset noise (`0.002`), but not NIC/card randomization.
+- [x] SFP teacher/policy inserts in randomized simulation.
+  - Current selected randomized SFP checkpoint is scratch
+    `model_1499.pt` from `2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192`.
+    Deterministic Isaac eval passed at `238/256` overall, `123/132` on
+    `sfp_port_0`, and `115/124` on `sfp_port_1`.
+  - This does not mean official Gazebo deployment is solved. The best
+    `ground_truth:=false` Gazebo run still stops about `0.05m` from insertion.
 
 The training path is ready for distillation when:
 

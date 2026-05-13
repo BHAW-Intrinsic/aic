@@ -570,3 +570,158 @@ Current blockers after this run:
 - The SC adapter is not implemented, so any official SC trial returns failure.
 - Next deployment work should focus on validating the action-frame/control
   mapping before more training.
+
+## SFP Gazebo Adapter Diagnostics And Rerun
+
+The failed `20260513_205601` run was analyzed with a new host-side rosbag
+diagnostic:
+
+```bash
+cd ~/ws_aic/src/aic
+distrobox enter -r aic_eval -- bash -lc '
+  cd /var/home/bahw/ws_aic/src/aic &&
+  source /ws_aic/install/setup.bash &&
+  python3 aic_utils/aic_training_utils/scripts/analyze_gazebo_eval_bag.py \
+    logs/gazebo_eval/20260513_205601/bag_1_20260513_205601 \
+    --include-scoring-tf
+'
+```
+
+Implemented diagnostic/fix commits:
+
+```text
+2aee2a6 Add Gazebo eval bag analyzer
+42be090 Summarize scoring TF in eval bag analyzer
+2d1b138 Compose scoring TF in eval bag analyzer
+e6ca495 Fix SFP Gazebo action replay horizon
+cbc4131 Disable harmful SFP Gazebo prepose
+49a88e8 Tune SFP Gazebo actor horizon
+```
+
+Findings:
+
+- The old legal SFP prepose command moved the plug away from the official
+  Gazebo task start. The official task already starts the SFP trial close to
+  the target port, so replaying the Isaac near-port joint preset was harmful.
+- Long SFP actor replay horizons moved the TCP past the useful approach region
+  and degraded the second SFP trial.
+- ResNet18 model loading was happening inside the first control loop and
+  consumed part of the time budget.
+- Replaying only translational deltas ignored the actor's rotational output.
+
+SFP adapter changes in `aic_model/aic_model/RslRlCheckpointPolicy.py`:
+
+- `AIC_RSLRL_ENABLE_SFP_PREPOSE` now defaults to `false`.
+- `AIC_RSLRL_SFP_MAX_CONTROL_SEC` now defaults to `9.0`.
+- ResNet18 is loaded before the SFP control timer starts.
+- Actor rotation output is replayed as a small axis-angle delta composed with
+  the current Gazebo TCP orientation.
+- The SFP near-port presets were updated from the final randomized SFP training
+  event values, but they remain disabled by default for official Gazebo eval.
+
+Wrapper change:
+
+- `run_gazebo_checkpoint_eval.py` accepts repeatable
+  `--model-env KEY=VALUE` overrides for controlled evaluation experiments.
+
+Best post-fix official Gazebo command:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-sfp-horizon9-49a88e8 \
+  --record-camera-bag \
+  --camera-bag-duration-sec 150 \
+  --replace
+```
+
+Run directory:
+
+```text
+/var/home/bahw/ws_aic/src/aic/logs/gazebo_eval/20260514_005106
+```
+
+Official scoring:
+
+```text
+total: 92.514068059037598
+trial_1:
+  tier_1: 1
+  tier_2: 21.910012164914278
+  tier_3: 21.970096731026825
+  message: No insertion detected. Final plug port distance: 0.05m.
+trial_2:
+  tier_1: 1
+  tier_2: 22.577460031209593
+  tier_3: 23.056499131886891
+  message: No insertion detected. Final plug port distance: 0.05m.
+trial_3:
+  tier_1: 1
+  tier_2: 0
+  tier_3: 0
+  message: Task not completed.
+```
+
+The `9s` horizon is the best committed default so far. A `15s` control-horizon
+experiment was run with:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-sfp-horizon15 \
+  --record-camera-bag \
+  --camera-bag-duration-sec 180 \
+  --model-env AIC_RSLRL_SFP_MAX_CONTROL_SEC=15 \
+  --replace
+```
+
+The `15s` run regressed to total `73.452717931903607`, so `9s` remains the
+checked-in default.
+
+Video export for the best post-fix run:
+
+```bash
+cd ~/ws_aic/src/aic
+mkdir -p logs/gazebo_eval/20260514_005106/videos
+distrobox enter -r aic_eval -- bash -lc '
+  source /ws_aic/install/setup.bash &&
+  cd /var/home/bahw/ws_aic/src/aic &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260514_005106/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field center_image \
+    --output logs/gazebo_eval/20260514_005106/videos/center_image.mp4 \
+    --fps 20 &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260514_005106/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field left_image \
+    --output logs/gazebo_eval/20260514_005106/videos/left_image.mp4 \
+    --fps 20 &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260514_005106/camera_bags/wrist_cameras \
+    --topic /observations \
+    --image-field right_image \
+    --output logs/gazebo_eval/20260514_005106/videos/right_image.mp4 \
+    --fps 20
+'
+```
+
+Video outputs on the host:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_005106/videos/center_image.mp4  7.6M
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_005106/videos/left_image.mp4    9.7M
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_005106/videos/right_image.mp4   11M
+```
+
+Current blockers after the rerun:
+
+- The SFP deployment path is much closer, but still does not trigger official
+  insertion. The next SFP work should inspect the final `5cm` approach and
+  decide whether the remaining issue is action-frame mismatch, controller
+  convergence, policy observation mismatch, or the need for a separate final
+  insertion approach stage.
+- SC routing still fails because the SC Gazebo adapter is not implemented.
