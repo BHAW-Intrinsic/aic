@@ -26,8 +26,7 @@ ENV AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH=false
 ENV AIC_RSLRL_ENABLE_SC_TERMINAL_TARGET=true
 ENV AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC=1.30
 
-RUN --mount=type=cache,target=/root/.cache/rattler/cache --mount=type=cache,target=/ws_aic/src/aic/.pixi/build \
-    cd /ws_aic/src/aic && pixi install --locked
+RUN cd /ws_aic/src/aic && pixi install --locked
 
 WORKDIR /ws_aic/src/aic
 COPY --chmod=755 <<"EOF" /entrypoint.sh
