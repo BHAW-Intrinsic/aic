@@ -48,14 +48,18 @@ Scope:
   reach partial insertion in some official trials, but full insertion remains
   unreliable.
 - Submission packaging status: the Docker candidate `my-solution:v1` was built
-  on the host from commit `f6621aa` and verified with
+  on the host from commit `ebb57a2` as image `406a86a04849` and verified with
   `docker/docker-compose.yaml --no-build`. The image includes branch-local
   SC/SFP policy artifacts and pre-cached ResNet18 weights. The final Compose
-  verification log is `/tmp/aic_docker_compose_eval_f6621aa.log`, total
-  `138.52215533700968`, with all trials passing tier 1 but no full insertion.
-- Best legal official eval artifacts: the best run with videos is
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/`, total
-  `154.67836105930783`; the best observed non-video score is
+  verification log is `/tmp/aic_docker_compose_eval_ebb57a2.log`, total
+  `137.19207522758077`, with all trials passing tier 1 but no full insertion.
+  Compose scoring artifacts are under
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260514_214210_ebb57a2/`.
+- Best legal official eval artifacts: the fresh verification-video run is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/`, total
+  `154.38066039880212`, with videos under its `videos/` directory. The previous
+  best video run was `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/`,
+  total `154.67836105930783`; the best observed non-video score is
   `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
   `155.11221437038648`.
 - Step 10 transfer-audit result: ResNet18 camera features are available, and

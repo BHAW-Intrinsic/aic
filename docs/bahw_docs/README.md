@@ -44,26 +44,39 @@ Completed work so far:
 - The SFP Gazebo adapter reconstructs the 3149D Isaac actor observation from
   official `Task`/`Observation` fields and reaches partial tier-2/tier-3 scores
   in official Gazebo, but it still misses insertion.
-- The current best legal official Gazebo run with videos is
+- The current best legal official Gazebo run with fresh verification videos is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/scoring.yaml`,
+  total `154.38066039880212`, with review videos under
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/videos/`.
+  Trials 1 and 2 were SFP near misses; trial 3 was an SC partial insertion.
+- The previous best legal official Gazebo run with videos was
   `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/scoring.yaml`, total
   `154.67836105930783`, with review videos under
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/videos/`. Trials 1 and 2
-  were SFP near misses; trial 3 was an SC partial insertion.
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/videos/`.
 - The current best legal official Gazebo score observed without video is
   `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
   `155.11221437038648`.
 - The current packaged Docker submission candidate is built on the host as
-  `my-solution:v1` from commit `f6621aa` (`d292dd1317bc`, 40.6 GB). The image
+  `my-solution:v1` from commit `ebb57a2` (`406a86a04849`, 40.6 GB). The image
   includes the SC/SFP exported policy artifacts and pre-cached ResNet18 weights,
-  so it does not need runtime network access for the vision encoder.
+  and the Docker runtime requires the cached ResNet18 weights so it does not
+  silently depend on network access for the vision encoder.
+- Docker image build log:
+  `/tmp/aic_model_build_ebb57a2_clean.log`.
+- Docker smoke-test log:
+  `/tmp/aic_model_smoke_ebb57a2.log`. This smoke test ran the image with
+  `--network none`, verified the cached ResNet18 checkpoint and both policy
+  artifacts, and imported `aic_model.RslRlCheckpointPolicy`.
 - Final Docker Compose verification completed from `docker/docker-compose.yaml`
   with `--no-build`; log:
-  `/tmp/aic_docker_compose_eval_f6621aa.log`. The package starts, loads the
+  `/tmp/aic_docker_compose_eval_ebb57a2.log`. The package starts, loads the
   model, and completes all three official trials legally. Compose score was
-  `138.52215533700968`: all trials passed tier 1, but none triggered full
+  `137.19207522758077`: all trials passed tier 1, but none triggered full
   insertion.
-- The Docker image build log is `/tmp/aic_model_build_f6621aa_addhost.log`; the
-  smoke-test log is `/tmp/aic_model_smoke_final_f6621aa.log`.
+- Compose scoring artifacts copied from the stopped eval container to:
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260514_214210_ebb57a2/`.
+  Those official scoring bags do not contain `/observations`, so the review
+  videos are from the separate legal wrapper run above.
 - Controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
   TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
   SFP `gripper/tcp` command-frame replay and zeroed joint observations were also

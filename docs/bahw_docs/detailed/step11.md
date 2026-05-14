@@ -415,3 +415,211 @@ Changed the Gazebo-transfer SFP curriculum so success dominates depth:
   `sfp_lateral_corridor=-160` with a `0.012-0.030 m` corridor.
 - Added Gazebo-transfer max-depth termination at `0.055 m` so overshooting while
   misaligned cannot remain a long high-reward timeout trajectory.
+
+## Final Packaging Pass
+
+The current Docker submission candidate was built on the host from commit
+`ebb57a2`:
+
+```bash
+cd ~/ws_aic/src/aic
+docker build --network=host \
+  --add-host pixi.sh:104.21.63.195 \
+  --add-host prefix.dev:34.90.252.205 \
+  --add-host github.com:20.205.243.166 \
+  --add-host release-assets.githubusercontent.com:185.199.109.133 \
+  --add-host raw.githubusercontent.com:185.199.108.133 \
+  --add-host download.pytorch.org:65.8.76.66 \
+  --add-host repo.ros2.org:54.176.191.34 \
+  -t my-solution:v1 \
+  -f docker/aic_model/Dockerfile .
+```
+
+Build log:
+
+```text
+/tmp/aic_model_build_ebb57a2_clean.log
+```
+
+Important build output:
+
+```text
+✔ The default environment has been installed.
+Downloading: "https://download.pytorch.org/models/resnet18-f37072fd.pth"
+#18 naming to docker.io/library/my-solution:v1
+#18 DONE 1943.3s
+```
+
+Final image:
+
+```text
+my-solution:v1 406a86a04849 40.6GB
+```
+
+Smoke test:
+
+```bash
+docker run --rm --network none --entrypoint bash my-solution:v1 -lc \
+  'set -e
+   ls -lh /root/.cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+   ls -lh /ws_aic/src/aic/aic_model/artifacts
+   cd /ws_aic/src/aic
+   pixi run --as-is python -c "from torchvision.models import ResNet18_Weights, resnet18; resnet18(weights=ResNet18_Weights.DEFAULT); from aic_model.RslRlCheckpointPolicy import RslRlCheckpointPolicy; print(\"IMPORT_OK\", RslRlCheckpointPolicy.__name__)"'
+```
+
+Smoke log:
+
+```text
+/tmp/aic_model_smoke_ebb57a2.log
+```
+
+Important smoke output:
+
+```text
+/root/.cache/torch/hub/checkpoints/resnet18-f37072fd.pth
+step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt
+step6_sc_policy.pt
+IMPORT_OK RslRlCheckpointPolicy
+```
+
+## Official Docker Compose Verification
+
+The package was verified with the official compose path and no rebuild:
+
+```bash
+cd ~/ws_aic/src/aic
+docker compose -f docker/docker-compose.yaml down
+docker compose -f docker/docker-compose.yaml up --no-build \
+  --abort-on-container-exit --exit-code-from eval
+```
+
+Compose log:
+
+```text
+/tmp/aic_docker_compose_eval_ebb57a2.log
+```
+
+Result:
+
+```text
+total: 137.19207522758077
+trial_1: tier_1=1, tier_2=20.139221787410996, tier_3=24.354275175905077
+trial_2: tier_1=1, tier_2=21.858664475509293, tier_3=25
+trial_3: tier_1=1, tier_2=17.839913788755418, tier_3=25
+```
+
+All three trials completed and passed model validation. No insertion was
+detected in the compose run; final plug-port distances were `0.05 m`, `0.03 m`,
+and `0.01 m`.
+
+Compose artifacts were copied from the stopped eval container:
+
+```bash
+docker cp aic-eval-1:/root/aic_results /tmp/aic_compose_results_ebb57a2
+mkdir -p ~/ws_aic/src/aic/logs/docker_compose_eval/20260514_214210_ebb57a2
+cp -a /tmp/aic_compose_results_ebb57a2/. \
+  ~/ws_aic/src/aic/logs/docker_compose_eval/20260514_214210_ebb57a2/
+```
+
+Artifact path:
+
+```text
+~/ws_aic/src/aic/logs/docker_compose_eval/20260514_214210_ebb57a2/
+```
+
+The compose scoring bags do not contain `/observations`; they contain scoring
+and controller topics only. Camera review videos therefore use the wrapper run
+below, which records the same legal observation stream consumed by the policy.
+
+## Fresh Legal Video Verification Run
+
+A separate qualification-like wrapper run was started with `ground_truth:=false`
+and `/observations` recording enabled. The wrapper used the same policy class,
+SC/SFP policy artifacts, and runtime options as the Docker image defaults:
+
+```bash
+cd ~/ws_aic/src/aic
+pixi run python aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --policy aic_model.RslRlCheckpointPolicy \
+  --sc-policy-artifact logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact logs/checkpoints/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt \
+  --task-kind auto \
+  --record-camera-bag \
+  --camera-bag-duration-sec 240 \
+  --results-dir logs/gazebo_eval/20260515_video_ebb57a2 \
+  --session-prefix gazebo-video-ebb57a2 \
+  --replace \
+  --model-env AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true \
+  --model-env AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET=true \
+  --model-env AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC=1.30 \
+  --model-env AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION=false \
+  --model-env AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH=false \
+  --model-env AIC_RSLRL_ENABLE_SC_TERMINAL_TARGET=true \
+  --model-env AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC=1.30
+```
+
+Wrapper score:
+
+```text
+total: 154.38066039880212
+trial_1: final plug-port distance 0.05 m, no insertion
+trial_2: final plug-port distance 0.03 m, no insertion
+trial_3: partial insertion detected with distance 0.01 m
+```
+
+Wrapper scoring and bag path:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/
+```
+
+The `/observations` camera bag was converted in the ROS-sourced `aic_eval`
+distrobox:
+
+```bash
+cd ~/ws_aic/src/aic
+source /opt/ros/kilted/setup.bash
+source .pixi/envs/default/setup.bash
+python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+  logs/gazebo_eval/20260515_video_ebb57a2/camera_bags/wrist_cameras \
+  --topic /observations --image-field center_image \
+  --output logs/gazebo_eval/20260515_video_ebb57a2/videos/center_image.mp4 \
+  --fps 10
+```
+
+Equivalent commands were run for `left_image` and `right_image`.
+
+Generated videos:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/videos/left_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/videos/center_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/videos/right_image.mp4
+```
+
+Conversion output:
+
+```text
+wrote 1152 frames to .../left_image.mp4
+wrote 1152 frames to .../center_image.mp4
+wrote 1152 frames to .../right_image.mp4
+```
+
+## Current Step 11 Conclusion
+
+The Docker image is legal and package-valid, but it is not a solved
+qualification submission:
+
+- it uses only official `Task` metadata, official `Observation` images/joints,
+  previous legal actions, and internal command state;
+- it does not subscribe to scoring internals, hidden Gazebo transforms, or
+  ground-truth topics;
+- compose verification completes all three trials with tier-1 validation;
+- full insertion remains unreliable, with SFP near misses and only partial SC
+  insertion in the fresh video run.
+
+The next useful technical work is not more packaging. It is improving the final
+Gazebo approach/control mapping or retraining a policy whose terminal behavior
+matches the official Gazebo mount distribution closely enough to trigger the
+contact/insertion detectors.
