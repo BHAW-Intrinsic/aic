@@ -387,6 +387,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_terminal_target_dwell_sec = _env_float(
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC", 1.20
         )
+        self._sfp_terminal_orientation_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION", False
+        )
         self._sc_position_scale = _env_float("AIC_RSLRL_SC_POSITION_SCALE", 0.05)
         self._sc_rotation_scale = _env_float(
             "AIC_RSLRL_SC_ROTATION_SCALE", self._sc_position_scale
@@ -465,6 +468,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_terminal_target_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC="
             f"{self._sfp_terminal_target_dwell_sec!r}, "
+            "AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION="
+            f"{self._sfp_terminal_orientation_enabled!r}, "
             f"AIC_RSLRL_SC_MAX_CONTROL_SEC={self._sc_max_control_sec!r}, "
             f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
             f"AIC_RSLRL_SC_POSITION_SCALE={self._sc_position_scale!r}, "
@@ -1337,7 +1342,10 @@ class RslRlCheckpointPolicy(Policy):
             ],
             dtype=np.float64,
         )
-        if mount_name in SFP_TERMINAL_QUATS_XYZW:
+        if (
+            self._sfp_terminal_orientation_enabled
+            and mount_name in SFP_TERMINAL_QUATS_XYZW
+        ):
             quat = np.array(SFP_TERMINAL_QUATS_XYZW[mount_name], dtype=np.float64)
         dwell = max(0.02, self._sfp_terminal_target_dwell_sec)
         send_feedback("running legal SFP terminal target sequence")
@@ -1674,8 +1682,8 @@ class RslRlCheckpointPolicy(Policy):
             observation = get_observation()
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
-            self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
         elif task_kind == "sc":
             self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
