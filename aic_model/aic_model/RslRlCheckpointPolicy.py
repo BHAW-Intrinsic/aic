@@ -269,6 +269,18 @@ def _quat_multiply_xyzw(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     )
 
 
+def _quat_apply_xyzw(q: np.ndarray, v: np.ndarray) -> np.ndarray:
+    q_xyz = q[:3]
+    q_w = q[3]
+    t = 2.0 * np.cross(q_xyz, v)
+    return v + q_w * t + np.cross(q_xyz, t)
+
+
+def _quat_inverse_apply_xyzw(q: np.ndarray, v: np.ndarray) -> np.ndarray:
+    q_inv = np.array([-q[0], -q[1], -q[2], q[3]], dtype=np.float64)
+    return _quat_apply_xyzw(q_inv, v)
+
+
 def _axis_angle_to_quat_xyzw(axis_angle: np.ndarray) -> np.ndarray:
     angle = float(np.linalg.norm(axis_angle))
     if angle < 1.0e-9:
@@ -396,6 +408,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_terminal_orientation_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION", False
         )
+        self._sfp_terminal_feedforward_base_z = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_FEEDFORWARD_BASE_Z", 0.0
+        )
         self._sc_position_scale = _env_float("AIC_RSLRL_SC_POSITION_SCALE", 0.05)
         self._sc_rotation_scale = _env_float(
             "AIC_RSLRL_SC_ROTATION_SCALE", self._sc_position_scale
@@ -497,6 +512,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_terminal_target_dwell_sec!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION="
             f"{self._sfp_terminal_orientation_enabled!r}, "
+            "AIC_RSLRL_SFP_TERMINAL_FEEDFORWARD_BASE_Z="
+            f"{self._sfp_terminal_feedforward_base_z!r}, "
             f"AIC_RSLRL_SC_MAX_CONTROL_SEC={self._sc_max_control_sec!r}, "
             f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
             f"AIC_RSLRL_SC_POSITION_SCALE={self._sc_position_scale!r}, "
@@ -1195,6 +1212,7 @@ class RslRlCheckpointPolicy(Policy):
         self,
         position: np.ndarray,
         quat_xyzw: np.ndarray,
+        feedforward_force_tip: np.ndarray | None = None,
     ) -> MotionUpdate:
         target = Pose()
         target.position.x = float(position[0])
@@ -1220,8 +1238,14 @@ class RslRlCheckpointPolicy(Policy):
         motion_update.target_damping = np.diag(
             [38.0, 38.0, 38.0, 14.0, 14.0, 14.0]
         ).flatten()
+        if feedforward_force_tip is None:
+            feedforward_force_tip = np.zeros(3, dtype=np.float64)
         motion_update.feedforward_wrench_at_tip = Wrench(
-            force=Vector3(x=0.0, y=0.0, z=0.0),
+            force=Vector3(
+                x=float(feedforward_force_tip[0]),
+                y=float(feedforward_force_tip[1]),
+                z=float(feedforward_force_tip[2]),
+            ),
             torque=Vector3(x=0.0, y=0.0, z=0.0),
         )
         motion_update.wrench_feedback_gains_at_tip = [0.5, 0.5, 0.5, 0.0, 0.0, 0.0]
@@ -1443,11 +1467,26 @@ class RslRlCheckpointPolicy(Policy):
         send_feedback("running legal SFP terminal target sequence")
         self.get_logger().info(
             "Running legal SFP terminal target sequence: "
-            f"target_count={len(targets)}, dwell={dwell:.2f}s"
+            f"target_count={len(targets)}, dwell={dwell:.2f}s, "
+            f"feedforward_base_z={self._sfp_terminal_feedforward_base_z:.2f}N"
         )
         for index, target in enumerate(targets, start=1):
             target_array = np.array(target, dtype=np.float64)
-            command = self._make_base_pose_update(target_array, quat)
+            feedforward_force_tip = None
+            if (
+                index == len(targets)
+                and abs(self._sfp_terminal_feedforward_base_z) > 1.0e-9
+            ):
+                base_force = np.array(
+                    [0.0, 0.0, self._sfp_terminal_feedforward_base_z],
+                    dtype=np.float64,
+                )
+                feedforward_force_tip = _quat_inverse_apply_xyzw(quat, base_force)
+            command = self._make_base_pose_update(
+                target_array,
+                quat,
+                feedforward_force_tip=feedforward_force_tip,
+            )
             move_robot(motion_update=command)
             self.get_logger().info(
                 "SFP terminal target "
