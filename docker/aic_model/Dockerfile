@@ -26,7 +26,7 @@ ENV AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH=false
 ENV AIC_RSLRL_ENABLE_SC_TERMINAL_TARGET=true
 ENV AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC=1.30
 
-RUN cd /ws_aic/src/aic && pixi install
+RUN cd /ws_aic/src/aic && pixi install --frozen
 
 # Pre-cache torchvision weights needed by RslRlCheckpointPolicy so runtime
 # evaluation does not depend on external network access.
