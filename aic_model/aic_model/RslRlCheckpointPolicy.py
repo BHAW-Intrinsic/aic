@@ -122,6 +122,19 @@ SFP_MOUNT_ONE_HOT = {
     "nic_card_mount_1": np.array([0.0, 1.0], dtype=np.float32),
 }
 
+SFP_LOCAL_SEARCH_PRIORITY_OFFSETS = {
+    "nic_card_mount_0": (
+        (0.035, 0.017, -0.013),
+        (0.030, 0.020, -0.010),
+        (0.040, 0.010, -0.013),
+    ),
+    "nic_card_mount_1": (
+        (0.008, -0.002, 0.013),
+        (0.000, 0.000, 0.012),
+        (0.015, 0.005, 0.010),
+    ),
+}
+
 SC_PORT_ONE_HOT = {
     "sc_port": np.array([1.0, 0.0], dtype=np.float32),
     "sc_port_2": np.array([0.0, 1.0], dtype=np.float32),
@@ -367,6 +380,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_local_search_dwell_sec = _env_float(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_DWELL_SEC", 0.10
         )
+        self._sfp_local_search_priority_dwell_sec = _env_float(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_DWELL_SEC", 1.20
+        )
         self._sfp_local_search_z_down = _env_float(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_Z_DOWN", 0.018
         )
@@ -421,6 +437,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_local_search_step!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_DWELL_SEC="
             f"{self._sfp_local_search_dwell_sec!r}, "
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_DWELL_SEC="
+            f"{self._sfp_local_search_priority_dwell_sec!r}, "
             f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
             f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
             f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
@@ -1261,6 +1279,7 @@ class RslRlCheckpointPolicy(Policy):
 
     def _run_sfp_local_search(
         self,
+        task: Task,
         get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
@@ -1291,6 +1310,11 @@ class RslRlCheckpointPolicy(Policy):
         z_offsets = -np.arange(0.0, z_down + 0.5 * z_step, z_step, dtype=np.float64)
         xy_offsets = self._sfp_local_search_offsets()
         dwell = max(0.02, self._sfp_local_search_dwell_sec)
+        priority_dwell = max(0.02, self._sfp_local_search_priority_dwell_sec)
+        priority_offsets = SFP_LOCAL_SEARCH_PRIORITY_OFFSETS.get(
+            self._sfp_mount_name(task) or "",
+            (),
+        )
 
         send_feedback("running legal SFP local search")
         self.get_logger().info(
@@ -1299,8 +1323,25 @@ class RslRlCheckpointPolicy(Policy):
             f"radius={self._sfp_local_search_radius}, "
             f"step={self._sfp_local_search_step}, "
             f"z_down={z_down}, xy_points={len(xy_offsets)}, "
-            f"z_levels={len(z_offsets)}"
+            f"z_levels={len(z_offsets)}, "
+            f"priority_points={len(priority_offsets)}"
         )
+        for index, offset in enumerate(priority_offsets, start=1):
+            offset_array = np.array(offset, dtype=np.float64)
+            command = self._make_base_pose_update(anchor + offset_array, quat)
+            move_robot(motion_update=command)
+            self.get_logger().info(
+                "SFP local search priority "
+                f"{index}/{len(priority_offsets)}: "
+                f"dx={offset[0]:.4f}, dy={offset[1]:.4f}, dz={offset[2]:.4f}, "
+                f"dwell={priority_dwell:.2f}s"
+            )
+            self.sleep_for(priority_dwell)
+
+        if self._sfp_local_search_radius <= 0.0:
+            self.sleep_for(1.0)
+            return
+
         command_count = 0
         for z_offset in z_offsets:
             for dx, dy in xy_offsets:
@@ -1496,7 +1537,7 @@ class RslRlCheckpointPolicy(Policy):
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
             self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
-            self._run_sfp_local_search(get_observation, move_robot, send_feedback)
+            self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
 
         self.get_logger().info(
             f"RslRlCheckpointPolicy {task_kind.upper()} control loop completed."
