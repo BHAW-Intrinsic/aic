@@ -65,6 +65,9 @@ Completed work so far:
   adds legal official `Task.target_module_name` metadata, expanding only the
   Gazebo-transfer SFP actor observation from 3149D to 3151D. Older 3149D
   artifacts remain the wrapper default.
+- The 3151D metadata PPO run is live in tmux
+  `isaac-step11-sfp-gazebo-meta-train-3bd2119`. Early success improved over the
+  first run but is not yet qualification-ready.
 
 Current blocker:
 

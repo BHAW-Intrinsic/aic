@@ -326,3 +326,51 @@ Actor Model: Linear(in_features=3151, out_features=512, ...)
 Critic Model: Linear(in_features=3171, out_features=512, ...)
 ISAAC_META_SMOKE_EXIT:0
 ```
+
+## Live Metadata Training Run
+
+Started in tmux:
+
+```text
+isaac-step11-sfp-gazebo-meta-train-3bd2119
+```
+
+Command:
+
+```bash
+cd ~/IsaacLab
+docker exec isaac-lab-base bash -lc \
+  "cd /workspace/isaaclab && ./isaaclab.sh -p \
+   aic/aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/train.py \
+   --task AIC-SFP-Gazebo-Transfer-Task-v0 \
+   --agent rsl_rl_sfp_cfg_entry_point \
+   --num_envs 64 \
+   --max_iterations 1500 \
+   --run_name step11_sfp_gazebo_meta_3bd2119 \
+   --headless \
+   --enable_cameras"
+```
+
+Log path:
+
+```text
+/workspace/isaaclab/logs/rsl_rl/aic_sfp_gazebo_transfer/2026-05-14_12-42-06_step11_sfp_gazebo_meta_3bd2119
+```
+
+Early metrics:
+
+```text
+iteration 0:  sfp_insertion_success=0.1584
+iteration 5:  sfp_insertion_success=0.4409
+iteration 8:  sfp_insertion_success=0.3876
+iteration 32: sfp_insertion_success=0.4208
+iteration 36: sfp_insertion_success=0.4110
+```
+
+Interpretation:
+
+- This is better than the first Gazebo-transfer scratch run, which stayed near
+  `0.14-0.26` through iteration 52.
+- It is not yet qualification-ready; let it continue to at least the
+  iteration-100 range before deciding whether to export/evaluate or change the
+  curriculum again.

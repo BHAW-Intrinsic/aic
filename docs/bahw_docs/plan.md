@@ -1414,6 +1414,10 @@ Work:
   - 3151D metadata smoke test passed in tmux
     `isaac-step11-meta-smoke-f00eb1e`; actor input is `3151` and critic input
     is `3171`.
+  - Started metadata PPO in tmux
+    `isaac-step11-sfp-gazebo-meta-train-3bd2119`. Early success improved over
+    the first run: iteration 5 reached `0.4409`, and iteration 36 was `0.4110`.
+    Continue to at least iteration 100 before changing the curriculum again.
 - [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
   shifts.
 - [ ] Export the actor artifact and run official Gazebo eval.
