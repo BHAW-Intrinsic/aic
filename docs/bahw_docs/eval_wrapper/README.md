@@ -254,6 +254,16 @@ As of the legal official run in
 final miss of `0.29m`. The tested SFP final-settle option worsened scoring, so
 keep it disabled unless a new controlled eval shows improvement.
 
+Controlled follow-ups:
+
+- `AIC_RSLRL_CONTROL_HZ=30` regressed to total `90.001609774891335`; do not use
+  it as the default.
+- `AIC_RSLRL_SFP_BASE_INSERT_SEC=2` with
+  `AIC_RSLRL_SFP_BASE_INSERT_STEP=-0.002` regressed to total
+  `91.55788002615509`; keep the base insert disabled by default.
+- The wrapper now avoids the wall-clock early-break in actor replay and runs the
+  planned fixed step count with sim-time sleeps.
+
 Still required:
 
 - resolve the remaining final SFP approach miss in Gazebo

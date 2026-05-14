@@ -1048,3 +1048,71 @@ Local adapter changes for the next controlled eval:
   push after the SFP actor loop, using only the official controller observation.
 - Added `AIC_RSLRL_SC_ACTOR_ENABLED=false` as a diagnostic toggle. This lets the
   official eval measure the legal SC prepose without actor handoff.
+
+## Controlled timing and base-insert evals
+
+30 Hz replay command:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-hz30 \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true \
+  --model-env AIC_RSLRL_CONTROL_HZ=30
+```
+
+Result:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_101451/scoring.yaml
+total: 90.001609774891335
+trial_1 SFP: no insertion, final distance 0.05m
+trial_2 SFP: no insertion, final distance 0.05m
+trial_3 SC:  no insertion, final distance 0.29m
+```
+
+Decision:
+
+- Reject `AIC_RSLRL_CONTROL_HZ=30` as a default. It reduced total score.
+- The logs still revealed a real replay issue: the actor loop planned 90 SFP
+  steps at 10 Hz or 270 steps at 30 Hz, but stopped early because it mixed
+  wall-clock elapsed checks with sim-time sleeps. Patch the wrapper to replay
+  the fixed planned step count and sleep in sim time each iteration.
+
+Base-frame SFP insert command:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-baseinsert \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true \
+  --model-env AIC_RSLRL_SFP_BASE_INSERT_SEC=2 \
+  --model-env AIC_RSLRL_SFP_BASE_INSERT_STEP=-0.002
+```
+
+Result:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_101713/scoring.yaml
+total: 91.55788002615509
+trial_1 SFP: no insertion, final distance 0.04m
+trial_2 SFP: no insertion, final distance 0.05m
+trial_3 SC:  no insertion, final distance 0.29m
+```
+
+Decision:
+
+- Reject the tested base-frame insert setting. It improved trial 1 distance
+  slightly but worsened total score and did not trigger insertion.
+- Keep `AIC_RSLRL_SFP_BASE_INSERT_SEC=0` by default.
+- Next eval should test the fixed-step replay patch without extra base insert.

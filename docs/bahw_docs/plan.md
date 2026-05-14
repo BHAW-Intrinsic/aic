@@ -1097,6 +1097,16 @@ High-level work later:
     to test a base-frame downward insert after actor replay. Also added
     `AIC_RSLRL_SC_ACTOR_ENABLED=false` as a diagnostic to evaluate the legal SC
     prepose without the actor handoff.
+  - Controlled `AIC_RSLRL_CONTROL_HZ=30` official run completed under
+    `logs/gazebo_eval/20260514_101451/`; total regressed to
+    `90.001609774891335`, so do not keep 30 Hz as a deployment default. The run
+    exposed a real replay bug: the actor loop planned 90/270 fixed steps but
+    stopped early because it mixed wall-clock elapsed checks with sim-time
+    sleeps. The wrapper now replays the planned fixed step count and relies on
+    sim-time sleeping.
+  - Controlled base-frame SFP insert run completed under
+    `logs/gazebo_eval/20260514_101713/`; total regressed to
+    `91.55788002615509`, so keep the base insert disabled by default.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.

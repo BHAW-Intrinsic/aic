@@ -9,7 +9,6 @@ state.
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 
 import numpy as np
@@ -791,6 +790,10 @@ class RslRlCheckpointPolicy(Policy):
             dtype=np.float32,
         )
         send_feedback("running optional SFP base-frame final insert")
+        self.get_logger().info(
+            "Running optional SFP base-frame final insert: "
+            f"steps={steps}, step={self._sfp_base_insert_step}"
+        )
         for _ in range(steps):
             observation = get_observation()
             if observation is None:
@@ -875,7 +878,6 @@ class RslRlCheckpointPolicy(Policy):
 
         actor_input_dim = None
         self._load_resnet18()
-        start_time = time.monotonic()
         task_limit_sec = (
             float(task.time_limit)
             if int(task.time_limit) > 0
@@ -923,6 +925,10 @@ class RslRlCheckpointPolicy(Policy):
                     self.get_logger().info(
                         f"{task_kind.upper()} actor input dimension: {actor_input_dim}"
                     )
+                    self.get_logger().info(
+                        f"{task_kind.upper()} actor fixed-step replay: "
+                        f"steps={steps}, dt={dt:.4f}s"
+                    )
                 with self._torch.inference_mode():
                     action_tensor = actor(obs_tensor)
                 if isinstance(action_tensor, (tuple, list)):
@@ -955,10 +961,7 @@ class RslRlCheckpointPolicy(Policy):
                 )
                 send_feedback(f"{task_kind.upper()} actor control failed: {exc}")
                 return False
-            elapsed = time.monotonic() - start_time
-            self.sleep_for(max(0.0, min(dt, control_sec - elapsed)))
-            if elapsed >= control_sec:
-                break
+            self.sleep_for(dt)
 
         if task_kind == "sfp":
             observation = get_observation()
