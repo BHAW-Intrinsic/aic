@@ -48,6 +48,9 @@ Completed work so far:
   `~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/scoring.yaml`, total
   `92.631565804455263`, with videos under
   `~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/videos/`.
+- Later controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
+  TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
+  None produced insertion or beat the `20260514_100007` total score.
 
 Current blocker:
 
@@ -65,9 +68,10 @@ Next recommended work:
 
 - For SFP, continue the controller/action-frame mapping work from the current
   `0.04-0.05m` miss. The tested TCP-frame final-settle hook worsened official
-  scoring and should stay disabled.
+  scoring, the tested base-frame insert worsened total score, and fixed-step
+  replay overshot the useful approach region; keep these disabled by default.
 - For SC, improve the official-start approach path before actor handoff. The
-  current legal prepose is not close enough for the accepted SC actor.
+  current legal prepose is not close enough even without actor handoff.
 - Compare one Isaac actor observation and one reconstructed Gazebo actor
   observation around a near-port pose to find semantic mismatches.
 

@@ -1112,6 +1112,15 @@ High-level work later:
     `79.399977111014948`, with SFP final distances worsening to `0.06m` and
     `0.06m`. Full fixed-step replay appears to overshoot the useful SFP region,
     so `AIC_RSLRL_FIXED_STEP_REPLAY` remains disabled by default.
+  - SC prepose-only diagnostic run completed under
+    `logs/gazebo_eval/20260514_102722/`; total was `78.759224629052937`, and SC
+    ended `0.28m` from the target. This confirms the legal SC prepose is itself
+    not close enough; the SC actor handoff is not the main blocker.
+  - Latest-code default confirmation run completed under
+    `logs/gazebo_eval/20260514_102952/`; total was `90.51278931029411`, with SFP
+    still at `0.05m` / `0.05m` and SC at `0.32m`. Keep
+    `logs/gazebo_eval/20260514_100007/` as the best saved official evidence so
+    far.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.

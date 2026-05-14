@@ -265,6 +265,8 @@ Controlled follow-ups:
   with sim-time sleeps instead of the wall-budgeted replay. That controlled run
   regressed to total `79.399977111014948`, so fixed-step replay is disabled by
   default.
+- `AIC_RSLRL_SC_ACTOR_ENABLED=false` confirmed the legal SC prepose alone still
+  ends about `0.28m` from target, so SC needs a better official-start approach.
 
 Still required:
 
