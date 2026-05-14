@@ -33,13 +33,16 @@ with the lightweight MLP exporter:
 ```bash
 python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
   --checkpoint logs/checkpoints/step9_sfp_randy002_scratch_model_1499.pt \
-  --output logs/checkpoints/step9_sfp_randy002_scratch_policy.pt
+  --output logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --obs-dim 3149 \
+  --action-dim 6
 ```
 
-`aic_model.RslRlCheckpointPolicy` currently implements the SFP adapter only.
-The best post-fix official run reaches partial tier-2/tier-3 SFP scores, but
-does not yet trigger insertion. The SC adapter and final SC/SFP routing still
-need to be completed before this is a full qualification policy.
+`aic_model.RslRlCheckpointPolicy` implements the SFP adapter and a first SC
+route/observation adapter. The best post-fix official run reaches partial
+tier-2/tier-3 SFP scores, but does not yet trigger insertion. The SC path still
+needs an exported SC actor artifact and official Gazebo validation before this
+is a full qualification policy.
 
 ## Files
 
@@ -104,8 +107,8 @@ python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
   --camera-bag-duration-sec 900
 ```
 
-The policy will later route with official `Task` metadata such as `plug_type`,
-`port_type`, `port_name`, and `target_module_name`. It must not use hidden
+The policy routes with official `Task` metadata such as `plug_type`,
+`port_type`, `port_name`, and `target_module_name`. It does not use hidden
 Gazebo state or ground-truth transforms.
 
 ## Qualification-Like Settings
@@ -164,7 +167,6 @@ distrobox enter -r aic_eval -- bash -lc '
   source /ws_aic/install/setup.bash &&
   python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
     logs/gazebo_eval/<timestamp>/camera_bags/wrist_cameras \
-    --topic /observations \
     --image-field center_image \
     --output logs/gazebo_eval/<timestamp>/videos/center_camera.mp4 \
     --fps 20
@@ -207,7 +209,7 @@ joint_states
 controller_state
 ```
 
-The SFP adapter currently defines:
+The actor adapter currently defines:
 
 - target one-hot from official `Task.port_name` / `target_module_name`
 - 46D Isaac joint position and velocity observations, with the six official UR
@@ -220,6 +222,8 @@ The SFP adapter currently defines:
 - three torchvision ResNet18 ImageNet-V1 1000D camera logits using Isaac Lab's
   preprocessing convention
 - last-action bookkeeping in the ROS policy loop
+- SC routing from official `sc_port_0` / `sc_port_1`-style module names to the
+  Isaac SC target one-hot `[sc_port, sc_port_2]`
 - optional legal SFP warm-start joint preset selected only by official
   `Task.port_name`; this defaults off because the official Gazebo SFP task
   start is already near the target and the Isaac prepose was harmful in eval
@@ -228,11 +232,15 @@ The SFP adapter currently defines:
 - actor rotation conversion to small axis-angle orientation deltas composed
   with the current Gazebo TCP orientation
 - ResNet18 loading before the SFP control timer starts
+- optional `AIC_RSLRL_REQUIRE_RESNET18=true` to fail instead of silently using
+  zero image features if the encoder cannot be loaded
+- optional `AIC_RSLRL_SFP_FINAL_SETTLE_SEC` / `AIC_RSLRL_SFP_FINAL_SETTLE_STEP`
+  to test a legal TCP-frame final insertion settle after the SFP actor loop
 
 Still required:
 
 - resolve the remaining final SFP approach miss in Gazebo
-- implement the SC adapter
+- export and validate the SC actor in Gazebo
 - decide whether the warm-start should remain in the final policy or be
   replaced by a learned approach stage
 - produce a qualification-like `ground_truth:=false` run that completes both

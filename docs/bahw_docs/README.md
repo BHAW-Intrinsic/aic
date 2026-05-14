@@ -41,25 +41,33 @@ Completed work so far:
 - The official Gazebo eval wrapper scaffold now launches `aic_eval`, loads the
   branch-local `RslRlCheckpointPolicy`, receives official task/camera
   observations, and writes `scoring.yaml` plus trial bags.
+- The SFP Gazebo adapter reconstructs the 3149D Isaac actor observation from
+  official `Task`/`Observation` fields and reaches partial tier-2/tier-3 scores
+  in official Gazebo, but it still misses insertion.
 
 Current blocker:
 
-- The raw Isaac RSL-RL checkpoint is not yet a functional Gazebo policy. The
-  missing piece is the adapter from official Gazebo `Observation` + `Task`
-  messages into the Isaac actor observation vector, plus conversion from actor
-  actions into safe Gazebo robot commands.
-- The wrapper scaffold run passed tier-1 model validation for all three official
-  trials, but tier-2/tier-3 scores remain zero because the scaffold policy
-  intentionally returns failure until the adapter exists.
+- The SFP deployment mapping is close but not complete. The best official run so
+  far ended the two SFP trials at about `0.05m` plug-port distance without
+  triggering insertion.
+- SC routing and observation reconstruction exist locally in
+  `aic_model.RslRlCheckpointPolicy`, but the accepted SC checkpoint still needs
+  to be exported to TorchScript and validated in official Gazebo.
+- The highest-risk deployment assumptions are observation equivalence
+  (ResNet18 image features, TCP pose frame, wrench/body-force padding) and the
+  relative-IK action replay frame.
 
 Next recommended work:
 
-- Export or load the selected Isaac actor in a format the ROS policy can execute.
-- Implement and validate the Gazebo observation adapter, including image
-  preprocessing, joint normalization, TCP pose convention, wrist/body force
-  mapping, task metadata routing, and last-action bookkeeping.
-- Convert the six-dimensional actor action into safe `MotionUpdate` or
-  `JointMotionUpdate` commands, then rerun the official Gazebo wrapper.
+- Export the accepted SC actor with `export_rslrl_mlp_actor.py --obs-dim 3149
+  --action-dim 6`.
+- Rerun official Gazebo with both `--sc-policy-artifact` and
+  `--sfp-policy-artifact`.
+- For SFP, test the optional TCP-frame final-settle hook and command-frame/scale
+  environment overrides, then keep only changes that improve official
+  `ground_truth:=false` scoring.
+- Compare one Isaac actor observation and one reconstructed Gazebo actor
+  observation around a near-port pose to find semantic mismatches.
 
 ## Key Code References
 

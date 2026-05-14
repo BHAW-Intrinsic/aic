@@ -90,9 +90,21 @@ SFP_PORT_ONE_HOT = {
     "sfp_port_1": np.array([0.0, 1.0], dtype=np.float32),
 }
 
+SC_PORT_ONE_HOT = {
+    "sc_port": np.array([1.0, 0.0], dtype=np.float32),
+    "sc_port_2": np.array([0.0, 1.0], dtype=np.float32),
+}
+
+SC_PORT_ALIASES = {
+    # Isaac uses sc_port/sc_port_2 for the two available SC targets. The official
+    # Gazebo task metadata names the mounted modules as sc_port_0/sc_port_1.
+    "sc_port_0": "sc_port",
+    "sc_port_1": "sc_port_2",
+}
+
 IMAGE_FEATURE_DIM = 1000
-SFP_JOINT_OBSERVATION_DIM = 46
-SFP_ACTOR_OBSERVATION_DIM = 3149
+JOINT_OBSERVATION_DIM = 46
+ACTOR_OBSERVATION_DIM = 3149
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -174,6 +186,12 @@ class RslRlCheckpointPolicy(Policy):
     - ``AIC_RSLRL_ENABLE_SFP_PREPOSE``: optional legal joint-space warm start
       to the SFP curriculum pose selected by ``Task.port_name``. Defaults false
       because the official Gazebo task spawn already starts SFP close to target.
+    - ``AIC_RSLRL_SC_POSITION_SCALE`` / ``AIC_RSLRL_SFP_POSITION_SCALE``:
+      per-task scale for replaying actor translation actions as Cartesian targets.
+    - ``AIC_RSLRL_SC_COMMAND_FRAME`` / ``AIC_RSLRL_SFP_COMMAND_FRAME``:
+      either ``base_link`` absolute targets or ``gripper/tcp`` relative targets.
+    - ``AIC_RSLRL_SFP_FINAL_SETTLE_SEC``: optional SFP TCP-frame final settle
+      experiment duration. Defaults disabled.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -196,14 +214,28 @@ class RslRlCheckpointPolicy(Policy):
         self._resnet18 = None
         self._resnet18_failed = False
         self._last_action = np.zeros(6, dtype=np.float32)
-        self._sfp_control_hz = _env_float("AIC_RSLRL_CONTROL_HZ", 10.0)
+        self._control_hz = _env_float("AIC_RSLRL_CONTROL_HZ", 10.0)
+        self._sc_max_control_sec = _env_float("AIC_RSLRL_SC_MAX_CONTROL_SEC", 9.0)
         self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 9.0)
         self._sfp_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SFP_PREPOSE", False)
         self._sfp_prepose_sec = _env_float("AIC_RSLRL_SFP_PREPOSE_SEC", 6.0)
+        self._sc_position_scale = _env_float("AIC_RSLRL_SC_POSITION_SCALE", 0.05)
+        self._sc_rotation_scale = _env_float(
+            "AIC_RSLRL_SC_ROTATION_SCALE", self._sc_position_scale
+        )
         self._sfp_position_scale = _env_float("AIC_RSLRL_SFP_POSITION_SCALE", 0.003)
         self._sfp_rotation_scale = _env_float(
             "AIC_RSLRL_SFP_ROTATION_SCALE", self._sfp_position_scale
         )
+        self._sc_command_frame = os.environ.get("AIC_RSLRL_SC_COMMAND_FRAME", "base_link")
+        self._sfp_command_frame = os.environ.get(
+            "AIC_RSLRL_SFP_COMMAND_FRAME", "base_link"
+        )
+        self._sfp_final_settle_sec = _env_float("AIC_RSLRL_SFP_FINAL_SETTLE_SEC", 0.0)
+        self._sfp_final_settle_step = _env_float(
+            "AIC_RSLRL_SFP_FINAL_SETTLE_STEP", -0.002
+        )
+        self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
 
         self.get_logger().info(
@@ -216,9 +248,16 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SFP_POLICY_ARTIFACT={self.sfp_policy_artifact_path!r}, "
             f"AIC_RSLRL_TASK_KIND={self.task_kind!r}, "
             f"AIC_RSLRL_ENABLE_SFP_PREPOSE={self._sfp_prepose_enabled!r}, "
+            f"AIC_RSLRL_SC_MAX_CONTROL_SEC={self._sc_max_control_sec!r}, "
             f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
+            f"AIC_RSLRL_SC_POSITION_SCALE={self._sc_position_scale!r}, "
+            f"AIC_RSLRL_SC_ROTATION_SCALE={self._sc_rotation_scale!r}, "
             f"AIC_RSLRL_SFP_POSITION_SCALE={self._sfp_position_scale!r}, "
-            f"AIC_RSLRL_SFP_ROTATION_SCALE={self._sfp_rotation_scale!r}"
+            f"AIC_RSLRL_SFP_ROTATION_SCALE={self._sfp_rotation_scale!r}, "
+            f"AIC_RSLRL_SC_COMMAND_FRAME={self._sc_command_frame!r}, "
+            f"AIC_RSLRL_SFP_COMMAND_FRAME={self._sfp_command_frame!r}, "
+            f"AIC_RSLRL_SFP_FINAL_SETTLE_SEC={self._sfp_final_settle_sec!r}, "
+            f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}"
         )
 
         artifact_paths = {
@@ -291,6 +330,22 @@ class RslRlCheckpointPolicy(Policy):
                     return name
         return None
 
+    def _sc_port_name(self, task: Task) -> str | None:
+        for candidate in (task.target_module_name, task.port_name):
+            candidate = candidate.lower()
+            for alias, name in SC_PORT_ALIASES.items():
+                if alias in candidate:
+                    return name
+            for name in SC_PORT_ONE_HOT:
+                if name in candidate:
+                    return name
+        if task.port_type.lower() == "sc" or task.plug_type.lower() == "sc":
+            # Official sample metadata uses port_name=sc_port_base and
+            # target_module_name=sc_port_1. If future metadata omits the module
+            # suffix, keep the policy running with the first Isaac SC target.
+            return "sc_port"
+        return None
+
     def _joint_vectors(self, observation) -> tuple[np.ndarray, np.ndarray]:
         pos_by_name = dict(
             zip(observation.joint_states.name, observation.joint_states.position)
@@ -316,8 +371,8 @@ class RslRlCheckpointPolicy(Policy):
         isaac_joint_vel = gazebo_joint_vel.copy()
         isaac_joint_pos[0] *= -1.0
         isaac_joint_vel[0] *= -1.0
-        joint_pos_rel = np.zeros(SFP_JOINT_OBSERVATION_DIM, dtype=np.float32)
-        joint_vel_rel = np.zeros(SFP_JOINT_OBSERVATION_DIM, dtype=np.float32)
+        joint_pos_rel = np.zeros(JOINT_OBSERVATION_DIM, dtype=np.float32)
+        joint_vel_rel = np.zeros(JOINT_OBSERVATION_DIM, dtype=np.float32)
         joint_pos_rel[: len(ARM_JOINT_NAMES)] = (
             isaac_joint_pos - ISAAC_DEFAULT_ARM_JOINT_POS
         )
@@ -425,6 +480,8 @@ class RslRlCheckpointPolicy(Policy):
         model = self._load_resnet18()
         torch = self._torch
         if model is None or torch is None:
+            if self._require_resnet18:
+                raise RuntimeError("ResNet18 image encoder is unavailable")
             return np.zeros(IMAGE_FEATURE_DIM, dtype=np.float32)
         try:
             image = self._image_array(image_msg)
@@ -448,18 +505,27 @@ class RslRlCheckpointPolicy(Policy):
             return features.astype(np.float32, copy=False)
         except Exception as exc:  # pragma: no cover - depends on live ROS images
             self.get_logger().error(f"Unable to extract image features: {exc}")
+            if self._require_resnet18:
+                raise
             return np.zeros(IMAGE_FEATURE_DIM, dtype=np.float32)
 
-    def _sfp_actor_observation(self, task: Task, observation) -> np.ndarray:
-        port_name = self._sfp_port_name(task)
+    def _actor_observation(self, task: Task, observation, task_kind: str) -> np.ndarray:
+        if task_kind == "sfp":
+            port_name = self._sfp_port_name(task)
+            one_hot_by_port = SFP_PORT_ONE_HOT
+        elif task_kind == "sc":
+            port_name = self._sc_port_name(task)
+            one_hot_by_port = SC_PORT_ONE_HOT
+        else:
+            raise ValueError(f"Unsupported task kind for actor observation: {task_kind!r}")
         if port_name is None:
             raise ValueError(
-                "Unable to infer SFP target port from official task metadata: "
+                f"Unable to infer {task_kind.upper()} target port from official task metadata: "
                 f"port_name={task.port_name!r}, target_module_name={task.target_module_name!r}"
             )
         joint_pos_rel, joint_vel_rel = self._joint_vectors(observation)
         pieces = [
-            SFP_PORT_ONE_HOT[port_name],
+            one_hot_by_port[port_name],
             joint_pos_rel,
             joint_vel_rel,
             self._eef_pose(observation),
@@ -470,12 +536,18 @@ class RslRlCheckpointPolicy(Policy):
             self._last_action,
         ]
         actor_obs = np.concatenate(pieces).astype(np.float32, copy=False)
-        if actor_obs.shape != (SFP_ACTOR_OBSERVATION_DIM,):
+        if actor_obs.shape != (ACTOR_OBSERVATION_DIM,):
             raise ValueError(
-                f"Unexpected SFP actor observation shape {actor_obs.shape}; "
-                f"expected {(SFP_ACTOR_OBSERVATION_DIM,)}"
+                f"Unexpected {task_kind.upper()} actor observation shape {actor_obs.shape}; "
+                f"expected {(ACTOR_OBSERVATION_DIM,)}"
             )
         return actor_obs
+
+    def _sfp_actor_observation(self, task: Task, observation) -> np.ndarray:
+        return self._actor_observation(task, observation, "sfp")
+
+    def _sc_actor_observation(self, task: Task, observation) -> np.ndarray:
+        return self._actor_observation(task, observation, "sc")
 
     def _make_joint_position_update(self, target: np.ndarray) -> JointMotionUpdate:
         gazebo_target = target.astype(np.float64, copy=True)
@@ -492,10 +564,17 @@ class RslRlCheckpointPolicy(Policy):
             ),
         )
 
-    def _make_position_update(self, observation, action: np.ndarray) -> MotionUpdate:
+    def _make_position_update(
+        self,
+        observation,
+        action: np.ndarray,
+        position_scale: float,
+        rotation_scale: float,
+        frame_id: str,
+    ) -> MotionUpdate:
         current = observation.controller_state.tcp_pose
-        delta_position = np.clip(action[:3], -1.0, 1.0) * self._sfp_position_scale
-        delta_axis_angle = np.clip(action[3:6], -1.0, 1.0) * self._sfp_rotation_scale
+        delta_position = np.clip(action[:3], -1.0, 1.0) * position_scale
+        delta_axis_angle = np.clip(action[3:6], -1.0, 1.0) * rotation_scale
         current_quat = np.array(
             [
                 current.orientation.x,
@@ -505,21 +584,39 @@ class RslRlCheckpointPolicy(Policy):
             ],
             dtype=np.float64,
         )
-        target_quat = _normalize_quat_xyzw(
-            _quat_multiply_xyzw(_axis_angle_to_quat_xyzw(delta_axis_angle), current_quat)
-        )
+        delta_quat = _axis_angle_to_quat_xyzw(delta_axis_angle)
+        if frame_id == "gripper/tcp":
+            target_position = delta_position
+            target_quat = delta_quat
+        elif frame_id == "base_link":
+            target_position = np.array(
+                [
+                    current.position.x + delta_position[0],
+                    current.position.y + delta_position[1],
+                    current.position.z + delta_position[2],
+                ],
+                dtype=np.float64,
+            )
+            target_quat = _normalize_quat_xyzw(
+                _quat_multiply_xyzw(delta_quat, current_quat)
+            )
+        else:
+            raise ValueError(
+                f"Unsupported MotionUpdate frame {frame_id!r}; expected 'base_link' "
+                "or 'gripper/tcp'."
+            )
 
         target = Pose()
-        target.position.x = float(current.position.x + delta_position[0])
-        target.position.y = float(current.position.y + delta_position[1])
-        target.position.z = float(current.position.z + delta_position[2])
+        target.position.x = float(target_position[0])
+        target.position.y = float(target_position[1])
+        target.position.z = float(target_position[2])
         target.orientation.x = float(target_quat[0])
         target.orientation.y = float(target_quat[1])
         target.orientation.z = float(target_quat[2])
         target.orientation.w = float(target_quat[3])
 
         motion_update = MotionUpdate()
-        motion_update.header.frame_id = "base_link"
+        motion_update.header.frame_id = frame_id
         motion_update.header.stamp = self.get_clock().now().to_msg()
         motion_update.pose = target
         motion_update.velocity = Twist(
@@ -556,10 +653,33 @@ class RslRlCheckpointPolicy(Policy):
         target = SFP_NEAR_PORT_JOINT_PRESETS[port_name]
         send_feedback(f"moving to legal SFP warm-start preset for {port_name}")
         command = self._make_joint_position_update(target)
-        steps = max(1, int(self._sfp_prepose_sec * self._sfp_control_hz))
-        dt = 1.0 / max(self._sfp_control_hz, 1e-6)
+        steps = max(1, int(self._sfp_prepose_sec * self._control_hz))
+        dt = 1.0 / max(self._control_hz, 1e-6)
         for _ in range(steps):
             move_robot(joint_motion_update=command)
+            self.sleep_for(dt)
+
+    def _run_sfp_final_settle(
+        self,
+        observation,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if self._sfp_final_settle_sec <= 0.0:
+            return
+        steps = max(1, int(self._sfp_final_settle_sec * self._control_hz))
+        dt = 1.0 / max(self._control_hz, 1e-6)
+        action = np.array([0.0, 0.0, self._sfp_final_settle_step, 0.0, 0.0, 0.0])
+        send_feedback("running optional SFP TCP-frame final settle")
+        for _ in range(steps):
+            command = self._make_position_update(
+                observation=observation,
+                action=action,
+                position_scale=1.0,
+                rotation_scale=1.0,
+                frame_id="gripper/tcp",
+            )
+            move_robot(motion_update=command)
             self.sleep_for(dt)
 
     def insert_cable(
@@ -595,7 +715,7 @@ class RslRlCheckpointPolicy(Policy):
             f"right_image={observation.right_image.width}x{observation.right_image.height}"
         )
 
-        if task_kind != "sfp":
+        if task_kind not in {"sc", "sfp"}:
             reason = (
                 "No functional exported actor adapter is implemented for task kind "
                 f"{task_kind!r}."
@@ -605,8 +725,8 @@ class RslRlCheckpointPolicy(Policy):
             return False
         if actor is None:
             reason = (
-                "No SFP/default TorchScript actor loaded. Export the Isaac actor "
-                "with play.py and pass --sfp-policy-artifact or --policy-artifact."
+                f"No {task_kind.upper()}/default TorchScript actor loaded. Export the "
+                "Isaac actor with play.py and pass the matching policy artifact."
             )
             self.get_logger().error(reason)
             send_feedback(reason)
@@ -618,7 +738,8 @@ class RslRlCheckpointPolicy(Policy):
             return False
 
         self._last_action[:] = 0.0
-        self._run_sfp_prepose(task, move_robot, send_feedback)
+        if task_kind == "sfp":
+            self._run_sfp_prepose(task, move_robot, send_feedback)
 
         actor_input_dim = None
         self._load_resnet18()
@@ -626,31 +747,49 @@ class RslRlCheckpointPolicy(Policy):
         task_limit_sec = (
             float(task.time_limit)
             if int(task.time_limit) > 0
-            else self._sfp_max_control_sec
+            else (
+                self._sfp_max_control_sec if task_kind == "sfp" else self._sc_max_control_sec
+            )
         )
-        prepose_budget = self._sfp_prepose_sec if self._sfp_prepose_enabled else 0.0
+        prepose_budget = (
+            self._sfp_prepose_sec
+            if task_kind == "sfp" and self._sfp_prepose_enabled
+            else 0.0
+        )
+        max_control_sec = (
+            self._sfp_max_control_sec if task_kind == "sfp" else self._sc_max_control_sec
+        )
+        position_scale = (
+            self._sfp_position_scale if task_kind == "sfp" else self._sc_position_scale
+        )
+        rotation_scale = (
+            self._sfp_rotation_scale if task_kind == "sfp" else self._sc_rotation_scale
+        )
+        command_frame = (
+            self._sfp_command_frame if task_kind == "sfp" else self._sc_command_frame
+        )
         control_sec = min(
-            self._sfp_max_control_sec,
+            max_control_sec,
             max(1.0, task_limit_sec - prepose_budget - 1.0),
         )
-        steps = max(1, int(control_sec * self._sfp_control_hz))
-        dt = 1.0 / max(self._sfp_control_hz, 1e-6)
-        send_feedback("running SFP exported actor")
+        steps = max(1, int(control_sec * self._control_hz))
+        dt = 1.0 / max(self._control_hz, 1e-6)
+        send_feedback(f"running {task_kind.upper()} exported actor")
 
         for step in range(steps):
             observation = get_observation()
             if observation is None:
                 self.get_logger().error(
-                    "Observation became unavailable during SFP control loop."
+                    f"Observation became unavailable during {task_kind.upper()} control loop."
                 )
                 return False
             try:
-                actor_obs = self._sfp_actor_observation(task, observation)
+                actor_obs = self._actor_observation(task, observation, task_kind)
                 obs_tensor = self._torch.from_numpy(actor_obs).unsqueeze(0)
                 if actor_input_dim is None:
                     actor_input_dim = int(obs_tensor.shape[-1])
                     self.get_logger().info(
-                        f"SFP actor input dimension: {actor_input_dim}"
+                        f"{task_kind.upper()} actor input dimension: {actor_input_dim}"
                     )
                 with self._torch.inference_mode():
                     action_tensor = actor(obs_tensor)
@@ -663,25 +802,38 @@ class RslRlCheckpointPolicy(Policy):
                     raise ValueError(f"unexpected actor action shape {action.shape}")
                 action = np.nan_to_num(action, nan=0.0, posinf=1.0, neginf=-1.0)
                 action = np.clip(action, -1.0, 1.0)
-                motion_update = self._make_position_update(observation, action)
+                motion_update = self._make_position_update(
+                    observation=observation,
+                    action=action,
+                    position_scale=position_scale,
+                    rotation_scale=rotation_scale,
+                    frame_id=command_frame,
+                )
                 move_robot(motion_update=motion_update)
                 self._last_action = action.astype(np.float32, copy=True)
                 if step % self._log_every_n == 0:
                     self.get_logger().info(
-                        "SFP actor step "
-                        f"{step}/{steps}: action={np.array2string(action, precision=4)}"
+                        f"{task_kind.upper()} actor step {step}/{steps}: "
+                        f"action={np.array2string(action, precision=4)}"
                     )
-                    send_feedback(f"SFP actor step {step}/{steps}")
+                    send_feedback(f"{task_kind.upper()} actor step {step}/{steps}")
             except Exception as exc:
                 self.get_logger().error(
-                    f"SFP actor control failed at step {step}: {exc}"
+                    f"{task_kind.upper()} actor control failed at step {step}: {exc}"
                 )
-                send_feedback(f"SFP actor control failed: {exc}")
+                send_feedback(f"{task_kind.upper()} actor control failed: {exc}")
                 return False
             elapsed = time.monotonic() - start_time
             self.sleep_for(max(0.0, min(dt, control_sec - elapsed)))
             if elapsed >= control_sec:
                 break
 
-        self.get_logger().info("RslRlCheckpointPolicy SFP control loop completed.")
+        if task_kind == "sfp":
+            observation = get_observation()
+            if observation is not None:
+                self._run_sfp_final_settle(observation, move_robot, send_feedback)
+
+        self.get_logger().info(
+            f"RslRlCheckpointPolicy {task_kind.upper()} control loop completed."
+        )
         return True

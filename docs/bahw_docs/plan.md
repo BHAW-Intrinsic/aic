@@ -1024,7 +1024,10 @@ High-level work later:
     uses only official `Task` and `Observation` fields, reconstructs the
     3149D Isaac actor input, and runs the TorchScript actor in
     `aic_model.RslRlCheckpointPolicy`.
-  - SC adapter is still missing, so this remains unchecked for final routing.
+  - First SC routing/observation adapter support is now implemented locally.
+    It maps official `sc_port_0` / `sc_port_1`-style target module names to
+    Isaac `[sc_port, sc_port_2]` one-hot metadata. It remains unchecked until
+    the accepted SC checkpoint is exported and validated in official Gazebo.
 - [ ] Convert actor actions into safe Gazebo `MotionUpdate` or
   `JointMotionUpdate` commands.
   - First SFP pass converts the 6D actor output to small Cartesian
@@ -1037,6 +1040,10 @@ High-level work later:
     the default SFP control horizon at `9s`. The best rerun improved both SFP
     trials to final plug-port distances of `0.05m`, but still did not detect
     insertion.
+  - Local follow-up generalized command replay for SC/SFP task-specific
+    scales, allows `base_link` or `gripper/tcp` command frames, and added an
+    optional legal SFP TCP-frame final-settle experiment. This is not marked
+    complete until official Gazebo scoring improves.
 - [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
   `scoring.yaml`, scoring bags, and optional camera rosbags.
   - Scaffold smoke run completed under
@@ -1063,14 +1070,16 @@ High-level work later:
     Total score was `92.514068059037598`. The two SFP trials scored tier 1
     plus partial tier 2 and tier 3, with final plug-port distances of `0.05m`
     and `0.05m`; neither detected insertion. The third official trial was SC
-    and still failed because the SC adapter is not implemented.
+    and still failed because the SC adapter had not been implemented in that run.
   - Latest review videos were exported to:
     `logs/gazebo_eval/20260514_005106/videos/center_image.mp4`,
     `logs/gazebo_eval/20260514_005106/videos/left_image.mp4`, and
     `logs/gazebo_eval/20260514_005106/videos/right_image.mp4`.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
-  - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
+  - [x] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
   - [x] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
+  - SC routing is implemented in code, but still needs a valid
+    `--sc-policy-artifact` and official Gazebo validation.
 
 Done when:
 

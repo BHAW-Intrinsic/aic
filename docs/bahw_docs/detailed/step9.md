@@ -724,4 +724,89 @@ Current blockers after the rerun:
   decide whether the remaining issue is action-frame mismatch, controller
   convergence, policy observation mismatch, or the need for a separate final
   insertion approach stage.
-- SC routing still fails because the SC Gazebo adapter is not implemented.
+- In that rerun, SC routing still failed because the SC Gazebo adapter was not
+  implemented yet.
+
+## Adapter Review And Local Fixes
+
+Recent-commit review identified these concrete risks:
+
+- `RslRlCheckpointPolicy` still rejected all non-SFP tasks, so official SC trial
+  3 could never run a learned actor.
+- The hand-built Gazebo actor observation may have the correct shape but still
+  needs semantic validation against Isaac observations, especially image
+  features, TCP pose frame, and wrench/body-force padding.
+- The SFP action replay is only an approximation of Isaac relative IK. It sends
+  small Cartesian targets through the official controller, but official Gazebo
+  still stops about `5cm` from insertion.
+- The lightweight exporter did not accept the documented `--obs-dim` /
+  `--action-dim` flags and only handled unprefixed `mlp.*` state-dict keys.
+- The wrapper records `/observations` by default, while the video converter
+  defaulted to `/center_camera/image`.
+
+Local fixes:
+
+- Added first SC route/observation support in
+  `aic_model/aic_model/RslRlCheckpointPolicy.py`.
+  - SC now maps official `sc_port_0` / `sc_port_1`-style module names to the
+    Isaac one-hot targets `[sc_port, sc_port_2]`.
+  - SC and SFP share the same 3149D actor observation builder.
+  - SC action scale defaults to the Isaac SC relative-IK scale `0.05` and can be
+    overridden with `AIC_RSLRL_SC_POSITION_SCALE` /
+    `AIC_RSLRL_SC_ROTATION_SCALE`.
+- Generalized `MotionUpdate` generation so actor replay can use either
+  `base_link` absolute targets or `gripper/tcp` relative targets via
+  `AIC_RSLRL_SC_COMMAND_FRAME` / `AIC_RSLRL_SFP_COMMAND_FRAME`.
+- Added optional SFP final-settle experiment controls:
+  `AIC_RSLRL_SFP_FINAL_SETTLE_SEC` and `AIC_RSLRL_SFP_FINAL_SETTLE_STEP`. This is
+  legal because it uses only the current official controller observation and a
+  TCP-frame relative command; it does not use scoring TF or hidden Gazebo state.
+- Added optional `AIC_RSLRL_REQUIRE_RESNET18=true` so future validation can fail
+  fast if the image encoder is unavailable instead of silently zeroing 3000
+  observation dimensions.
+- Updated `export_rslrl_mlp_actor.py` to accept `--obs-dim` / `--action-dim` and
+  strip common actor prefixes such as `actor.mlp.*`.
+- Changed `rosbag_images_to_video.py` to default to `/observations`.
+
+Local checks:
+
+```bash
+python3 -m py_compile \
+  aic_model/aic_model/RslRlCheckpointPolicy.py \
+  aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
+  aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py
+```
+
+Next host validation:
+
+1. Export the accepted SC actor to TorchScript:
+
+   ```bash
+   cd ~/ws_aic/src/aic
+   pixi run python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
+     --checkpoint <accepted-sc-checkpoint.pt> \
+     --output logs/checkpoints/step6_sc_policy.pt \
+     --obs-dim 3149 \
+     --action-dim 6
+   ```
+
+2. Run official Gazebo with both actor artifacts:
+
+   ```bash
+   cd ~/ws_aic/src/aic
+   python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+     --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+     --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+     --session-prefix gazebo-final-adapter \
+     --record-camera-bag \
+     --camera-bag-duration-sec 180 \
+     --replace
+   ```
+
+3. If SFP remains at the `5cm` miss, test only one controlled variable per run,
+   starting with:
+
+   ```bash
+   --model-env AIC_RSLRL_SFP_FINAL_SETTLE_SEC=2 \
+   --model-env AIC_RSLRL_SFP_FINAL_SETTLE_STEP=-0.002
+   ```

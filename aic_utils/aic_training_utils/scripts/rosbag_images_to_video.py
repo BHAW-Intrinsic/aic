@@ -128,7 +128,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("bag_dir", type=Path, help="ROS 2 bag directory")
     parser.add_argument(
         "--topic",
-        default="/center_camera/image",
+        default="/observations",
         help=(
             "Topic to convert. Supports sensor_msgs/msg/Image directly and "
             "aic_model_interfaces/msg/Observation when --image-field is set."
