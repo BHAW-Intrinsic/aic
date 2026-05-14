@@ -1090,6 +1090,13 @@ High-level work later:
     plug-port distances were `0.05m` and `0.04m`; SC ended `0.29m` away.
     Continue with controller/approach mapping work rather than treating this as
     solved by more checkpoint training alone.
+  - Offline diagnostics of the best-run scoring bags show SFP stops at the port
+    mouth: the SFP tip was about `0.011m` from the entrance in trial 1 but still
+    about `0.049m` from the deeper port link. Added a disabled-by-default legal
+    `AIC_RSLRL_SFP_BASE_INSERT_SEC` / `AIC_RSLRL_SFP_BASE_INSERT_STEP` experiment
+    to test a base-frame downward insert after actor replay. Also added
+    `AIC_RSLRL_SC_ACTOR_ENABLED=false` as a diagnostic to evaluate the legal SC
+    prepose without the actor handoff.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.

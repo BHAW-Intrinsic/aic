@@ -242,6 +242,11 @@ The actor adapter currently defines:
   zero image features if the encoder cannot be loaded
 - optional `AIC_RSLRL_SFP_FINAL_SETTLE_SEC` / `AIC_RSLRL_SFP_FINAL_SETTLE_STEP`
   to test a legal TCP-frame final insertion settle after the SFP actor loop
+- optional `AIC_RSLRL_SFP_BASE_INSERT_SEC` / `AIC_RSLRL_SFP_BASE_INSERT_STEP` to
+  test a legal base-frame downward insert after the SFP actor loop; this is
+  disabled by default pending official scoring
+- optional `AIC_RSLRL_SC_ACTOR_ENABLED=false` to diagnose the legal SC prepose
+  without handing off to the exported SC actor
 
 As of the legal official run in
 `logs/gazebo_eval/20260514_100007/`, the best wrapper result is total

@@ -1003,3 +1003,48 @@ Decision:
 - Keep SFP final-settle disabled; the controlled final-settle run worsened SFP.
 - The run still does not solve insertion. SFP remains a close controller/action
   mapping miss, and SC remains out of distribution even with the legal prepose.
+
+## Best-run scoring bag diagnostics
+
+Offline-only diagnostic command:
+
+```bash
+cd ~/ws_aic/src/aic
+distrobox enter -r aic_eval -- bash -lc '
+  cd /var/home/bahw/ws_aic/src/aic &&
+  source /ws_aic/install/setup.bash &&
+  python3 aic_utils/aic_training_utils/scripts/analyze_gazebo_eval_bag.py \
+    logs/gazebo_eval/20260514_100007/bag_trial_1_20260514_100050_977 \
+    --sample-limit 8 --include-scoring-tf &&
+  python3 aic_utils/aic_training_utils/scripts/analyze_gazebo_eval_bag.py \
+    logs/gazebo_eval/20260514_100007/bag_trial_2_20260514_100125_194 \
+    --sample-limit 8 --include-scoring-tf &&
+  python3 aic_utils/aic_training_utils/scripts/analyze_gazebo_eval_bag.py \
+    logs/gazebo_eval/20260514_100007/bag_trial_3_20260514_100137_430 \
+    --sample-limit 8 --include-scoring-tf
+'
+```
+
+Key observations:
+
+- SFP trial 1 moved the TCP by `[-0.0255, 0.0027, -0.0846]` and the SFP tip by
+  `[0.0254, -0.0026, -0.0846]`. The final SFP tip was `0.01120m` from one
+  entrance frame but `0.04921m` from the corresponding deeper SFP port link.
+- SFP trial 2 moved the TCP by `[-0.0038, 0.0142, -0.1026]` and the SFP tip by
+  `[0.0037, -0.0141, -0.1026]`. The final SFP tip was `0.02820m` from one
+  entrance frame and `0.04308m` from the corresponding deeper SFP port link.
+- The actor replay mostly commands small base-frame negative-z targets, with
+  mean pose-command delta from latest TCP around `[0.00029, -0.00005, -0.00184]`
+  in trial 1 and `[0.00001, -0.00019, -0.00170]` in trial 2.
+- SC trial 3 used the mirrored legal joint prepose command for `sc_port_1`, then
+  the SC actor moved the SC tip to about `0.29065m` from the target port. This
+  motivates an actor-disabled diagnostic to measure whether the actor handoff is
+  worse than the legal prepose alone.
+
+Local adapter changes for the next controlled eval:
+
+- Added disabled-by-default `AIC_RSLRL_SFP_BASE_INSERT_SEC` and
+  `AIC_RSLRL_SFP_BASE_INSERT_STEP`. This runs a base-frame negative-z insertion
+  push after the SFP actor loop, using only the official controller observation.
+- Added `AIC_RSLRL_SC_ACTOR_ENABLED=false` as a diagnostic toggle. This lets the
+  official eval measure the legal SC prepose without actor handoff.

@@ -221,6 +221,10 @@ class RslRlCheckpointPolicy(Policy):
       either ``base_link`` absolute targets or ``gripper/tcp`` relative targets.
     - ``AIC_RSLRL_SFP_FINAL_SETTLE_SEC``: optional SFP TCP-frame final settle
       experiment duration. Defaults disabled.
+    - ``AIC_RSLRL_SFP_BASE_INSERT_SEC``: optional SFP base-frame downward
+      insertion push after actor replay. Defaults disabled.
+    - ``AIC_RSLRL_SC_ACTOR_ENABLED``: optional diagnostic toggle. Defaults true;
+      set false to evaluate legal SC prepose without actor handoff.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -269,6 +273,11 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_final_settle_step = _env_float(
             "AIC_RSLRL_SFP_FINAL_SETTLE_STEP", -0.002
         )
+        self._sfp_base_insert_sec = _env_float("AIC_RSLRL_SFP_BASE_INSERT_SEC", 0.0)
+        self._sfp_base_insert_step = _env_float(
+            "AIC_RSLRL_SFP_BASE_INSERT_STEP", -0.003
+        )
+        self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
 
@@ -294,6 +303,9 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SC_COMMAND_FRAME={self._sc_command_frame!r}, "
             f"AIC_RSLRL_SFP_COMMAND_FRAME={self._sfp_command_frame!r}, "
             f"AIC_RSLRL_SFP_FINAL_SETTLE_SEC={self._sfp_final_settle_sec!r}, "
+            f"AIC_RSLRL_SFP_BASE_INSERT_SEC={self._sfp_base_insert_sec!r}, "
+            f"AIC_RSLRL_SFP_BASE_INSERT_STEP={self._sfp_base_insert_step!r}, "
+            f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}"
         )
 
@@ -764,6 +776,38 @@ class RslRlCheckpointPolicy(Policy):
             move_robot(motion_update=command)
             self.sleep_for(dt)
 
+    def _run_sfp_base_insert(
+        self,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if self._sfp_base_insert_sec <= 0.0:
+            return
+        steps = max(1, int(self._sfp_base_insert_sec * self._control_hz))
+        dt = 1.0 / max(self._control_hz, 1e-6)
+        action = np.array(
+            [0.0, 0.0, self._sfp_base_insert_step, 0.0, 0.0, 0.0],
+            dtype=np.float32,
+        )
+        send_feedback("running optional SFP base-frame final insert")
+        for _ in range(steps):
+            observation = get_observation()
+            if observation is None:
+                self.get_logger().error(
+                    "Observation became unavailable during SFP base insert."
+                )
+                return
+            command = self._make_position_update(
+                observation=observation,
+                action=action,
+                position_scale=1.0,
+                rotation_scale=0.0,
+                frame_id="base_link",
+            )
+            move_robot(motion_update=command)
+            self.sleep_for(dt)
+
     def insert_cable(
         self,
         task: Task,
@@ -824,6 +868,10 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sc_prepose(task, move_robot, send_feedback)
         elif task_kind == "sfp":
             self._run_sfp_prepose(task, move_robot, send_feedback)
+        if task_kind == "sc" and not self._sc_actor_enabled:
+            send_feedback("SC actor disabled after legal prepose")
+            self.get_logger().info("SC actor disabled after legal prepose.")
+            return True
 
         actor_input_dim = None
         self._load_resnet18()
@@ -916,6 +964,7 @@ class RslRlCheckpointPolicy(Policy):
             observation = get_observation()
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
+            self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
 
         self.get_logger().info(
             f"RslRlCheckpointPolicy {task_kind.upper()} control loop completed."
