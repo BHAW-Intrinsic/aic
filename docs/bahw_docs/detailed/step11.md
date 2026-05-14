@@ -374,3 +374,44 @@ Interpretation:
 - It is not yet qualification-ready; let it continue to at least the
   iteration-100 range before deciding whether to export/evaluate or change the
   curriculum again.
+
+## Metadata Run Failure Mode
+
+The metadata run regressed by the iteration-100 range:
+
+```text
+iteration 87:  sfp_insertion_success=0.1236
+iteration 90:  sfp_insertion_success=0.0712
+iteration 101: sfp_insertion_success=0.0684
+iteration 104: sfp_insertion_success=0.0757
+```
+
+At the same time, mean reward kept increasing to about `700+`, and
+`sfp_insertion_depth` reward stayed high. This means PPO found a reward shortcut:
+push deep and collect depth/action/alignment shaping while missing the final
+strict lateral success threshold.
+
+The run was stopped after `model_100.pt` was saved:
+
+```text
+/workspace/isaaclab/logs/rsl_rl/aic_sfp_gazebo_transfer/2026-05-14_12-42-06_step11_sfp_gazebo_meta_3bd2119/model_100.pt
+```
+
+## Reward Tightening Revision
+
+Changed the Gazebo-transfer SFP curriculum so success dominates depth:
+
+- `sfp_depth_progress_reward` now optionally gates depth progress by lateral and
+  orientation thresholds.
+- Gazebo-transfer config gates depth progress at lateral `<0.018 m` and
+  orientation `<0.25 rad`.
+- `sfp_port_frame_depth_action` weight reduced from `80` to `30` and gated at
+  lateral `<0.018 m`.
+- `sfp_insertion_depth` gate tightened from lateral `<0.030 m` to
+  `<0.015 m`.
+- sparse `sfp_insertion_success` bonus increased from `100` to `1000`.
+- lateral pressure increased:
+  `sfp_lateral_progress=60`, `sfp_lateral_error=-120`, and
+  `sfp_lateral_corridor=-160` with a `0.012-0.030 m` corridor.
+- Added Gazebo-transfer max-depth termination at `0.055 m` so overshooting while
+  misaligned cannot remain a long high-reward timeout trajectory.

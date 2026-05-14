@@ -439,9 +439,11 @@ def sfp_depth_progress_reward(
     env: ManagerBasedRLEnv,
     scale: float = 0.01,
     clip: float = 1.0,
+    lateral_threshold: float | None = None,
+    orientation_threshold: float | None = None,
 ) -> torch.Tensor:
     """Reward increasing signed SFP insertion depth."""
-    return _metric_progress_reward(
+    reward = _metric_progress_reward(
         env,
         geometry.SFP_PREV_DEPTH_ATTR,
         geometry.sfp_insertion_depth(env),
@@ -449,6 +451,13 @@ def sfp_depth_progress_reward(
         scale=scale,
         clip=clip,
     )
+    if lateral_threshold is not None:
+        reward = reward * (geometry.sfp_lateral_error(env) < lateral_threshold).float()
+    if orientation_threshold is not None:
+        reward = reward * (
+            geometry.sfp_orientation_error(env) < orientation_threshold
+        ).float()
+    return reward
 
 
 def sfp_insertion_depth_reward(

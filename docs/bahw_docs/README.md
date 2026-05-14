@@ -67,7 +67,12 @@ Completed work so far:
   artifacts remain the wrapper default.
 - The 3151D metadata PPO run is live in tmux
   `isaac-step11-sfp-gazebo-meta-train-3bd2119`. Early success improved over the
-  first run but is not yet qualification-ready.
+  first run, but by iteration 104 it regressed to low true success while mean
+  reward kept rising. Treat this as reward hacking: depth was over-rewarded
+  without strict final alignment.
+- The current local revision tightens Gazebo-transfer rewards so depth progress
+  is gated by near-success alignment, sparse success is much larger, and deep
+  overshoot terminates.
 
 Current blocker:
 
@@ -84,9 +89,8 @@ Current blocker:
 
 Next recommended work:
 
-- For SFP, retrain the smoke-tested 3151D
-  `AIC-SFP-Gazebo-Transfer-Task-v0`, export with `--obs-dim 3151`, and run the
-  official Gazebo eval with
+- For SFP, retrain the tightened 3151D `AIC-SFP-Gazebo-Transfer-Task-v0`,
+  export with `--obs-dim 3151`, and run the official Gazebo eval with
   `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
 - For SC, improve the official-start approach path before actor handoff. The
   current legal prepose is not close enough even without actor handoff.

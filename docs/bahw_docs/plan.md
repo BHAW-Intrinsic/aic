@@ -1418,6 +1418,12 @@ Work:
     `isaac-step11-sfp-gazebo-meta-train-3bd2119`. Early success improved over
     the first run: iteration 5 reached `0.4409`, and iteration 36 was `0.4110`.
     Continue to at least iteration 100 before changing the curriculum again.
+  - Stopped the metadata run after iteration 104 because success regressed to
+    `0.04-0.08` while mean reward kept rising. This exposed a reward shortcut:
+    deep misaligned pushes were over-rewarded.
+  - Tightened the Gazebo-transfer reward/curriculum so depth progress only pays
+    near alignment, sparse success is much larger, lateral penalties are
+    stronger, and deep overshoot terminates.
 - [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
   shifts.
 - [ ] Export the actor artifact and run official Gazebo eval.

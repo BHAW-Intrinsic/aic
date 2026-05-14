@@ -766,6 +766,16 @@ class SfpTerminationsCfg:
 
 
 @configclass
+class SfpGazeboTransferTerminationsCfg(SfpTerminationsCfg):
+    """SFP Gazebo-transfer terminations that reject deep misaligned pushes."""
+
+    sfp_corridor_max_depth_violation = DoneTerm(
+        func=mdp.sfp_corridor_max_depth_violation,
+        params={"max_depth": 0.055},
+    )
+
+
+@configclass
 class SfpObservationsCfg:
     """Observation groups for the SFP insertion task variant."""
 
@@ -881,20 +891,20 @@ class SfpRewardsCfg:
     )
     sfp_lateral_progress = RewTerm(
         func=mdp.sfp_lateral_progress_reward,
-        weight=30.0,
+        weight=60.0,
         params={"scale": 0.005, "clip": 1.0},
     )
     sfp_lateral_error = RewTerm(
         func=mdp.sfp_lateral_error_penalty,
-        weight=-60.0,
-        params={"scale": 0.060, "clip": 1.0},
+        weight=-120.0,
+        params={"scale": 0.030, "clip": 1.0},
     )
     sfp_lateral_corridor = RewTerm(
         func=mdp.sfp_lateral_corridor_penalty,
-        weight=-80.0,
+        weight=-160.0,
         params={
-            "soft_limit": 0.020,
-            "hard_limit": 0.060,
+            "soft_limit": 0.012,
+            "hard_limit": 0.030,
             "clip": 1.0,
             "violation_cost": 1.0,
         },
@@ -926,14 +936,14 @@ class SfpRewardsCfg:
     )
     sfp_port_frame_depth_action = RewTerm(
         func=mdp.sfp_port_frame_depth_action_reward,
-        weight=80.0,
+        weight=30.0,
         params={
             "action_name": "arm_action",
             "command_scale": 0.25,
             "realized_depth_scale": 3.0e-5,
             "min_depth": -0.080,
             "target_depth": 0.018,
-            "lateral_threshold": 0.030,
+            "lateral_threshold": 0.018,
             "orientation_threshold": 0.25,
         },
     )
@@ -960,8 +970,13 @@ class SfpRewardsCfg:
     )
     sfp_depth_progress = RewTerm(
         func=mdp.sfp_depth_progress_reward,
-        weight=40.0,
-        params={"scale": 0.01, "clip": 1.0},
+        weight=10.0,
+        params={
+            "scale": 0.01,
+            "clip": 1.0,
+            "lateral_threshold": 0.018,
+            "orientation_threshold": 0.25,
+        },
     )
     sfp_coarse_lateral_alignment = RewTerm(
         func=mdp.sfp_lateral_alignment_reward,
@@ -985,12 +1000,12 @@ class SfpRewardsCfg:
     )
     sfp_insertion_depth = RewTerm(
         func=mdp.sfp_insertion_depth_reward,
-        weight=160.0,
+        weight=200.0,
         params={
             "depth_scale": 0.006,
             "max_depth": 0.045,
             "min_depth": 0.0,
-            "lateral_threshold": 0.030,
+            "lateral_threshold": 0.015,
             "orientation_threshold": 0.25,
         },
     )
@@ -1010,7 +1025,7 @@ class SfpRewardsCfg:
     )
     sfp_insertion_success = RewTerm(
         func=mdp.sfp_insertion_success_bonus,
-        weight=100.0,
+        weight=1000.0,
         params={
             "lateral_threshold": 0.015,
             "orientation_threshold": 0.25,
@@ -1147,4 +1162,5 @@ class AICTaskSfpGazeboTransferEnvCfg(AICTaskSfpEnvCfg):
     """SFP variant for official Gazebo transfer training."""
 
     observations: SfpGazeboTransferObservationsCfg = SfpGazeboTransferObservationsCfg()
+    terminations: SfpGazeboTransferTerminationsCfg = SfpGazeboTransferTerminationsCfg()
     events: SfpGazeboTransferEventCfg = SfpGazeboTransferEventCfg()
