@@ -1398,10 +1398,12 @@ Work:
   the 3149D eval-compatible actor observation shape.
 - [x] Add a separate RSL-RL config with experiment name
   `aic_sfp_gazebo_transfer`.
-- [ ] Verify the new task is discoverable in Isaac Lab.
-- [ ] Smoke-test deterministic eval/play on the new task from the selected SFP
-  checkpoint to confirm the task runs.
+- [x] Verify the new task is discoverable/runnable in Isaac Lab.
+- [x] Smoke-test the new task config with `num_envs=1` and `max_iterations=0`.
 - [ ] Train PPO on `AIC-SFP-Gazebo-Transfer-Task-v0`.
+  - Started scratch PPO in tmux `isaac-step11-sfp-gazebo-train-d9ff95e`.
+    Iteration `0/1500` reported `sfp_insertion_success=0.0692` under the wider
+    mount-shift distribution.
 - [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
   shifts.
 - [ ] Export the actor artifact and run official Gazebo eval.

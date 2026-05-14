@@ -61,6 +61,8 @@ Completed work so far:
 - A new sibling task, `AIC-SFP-Gazebo-Transfer-Task-v0`, keeps
   `sfp_port_0` fixed and randomizes NIC y over a mount-scale range while
   preserving the same eval-compatible actor observation shape.
+- A scratch PPO run for that task is live in remote tmux
+  `isaac-step11-sfp-gazebo-train-d9ff95e`.
 
 Current blocker:
 
