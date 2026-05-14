@@ -28,6 +28,10 @@ ENV AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC=1.30
 
 RUN cd /ws_aic/src/aic && pixi install --locked
 
+# Pre-cache torchvision weights needed by RslRlCheckpointPolicy so runtime
+# evaluation does not depend on external network access.
+RUN cd /ws_aic/src/aic && pixi run --as-is python -c "from torchvision.models import ResNet18_Weights, resnet18; resnet18(weights=ResNet18_Weights.DEFAULT)"
+
 WORKDIR /ws_aic/src/aic
 COPY --chmod=755 <<"EOF" /entrypoint.sh
 #!/bin/bash
