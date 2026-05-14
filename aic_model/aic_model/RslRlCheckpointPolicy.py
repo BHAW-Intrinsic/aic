@@ -328,6 +328,9 @@ class RslRlCheckpointPolicy(Policy):
     - ``AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH``: optional legal SFP terminal search
       after actor replay. It uses only the official TCP observation and emitted
       Cartesian commands, not TF/scoring internals.
+    - ``AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_ENABLED``: optional use of
+      mount-specific first search offsets. Defaults false; generic local search
+      remains symmetric around the observed final TCP pose.
     - ``AIC_RSLRL_SC_ACTOR_ENABLED``: optional diagnostic toggle. Defaults true;
       set false to evaluate legal SC prepose without actor handoff.
     - ``AIC_RSLRL_FIXED_STEP_REPLAY``: optional replay of the full planned actor
@@ -425,6 +428,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_local_search_priority_dwell_sec = _env_float(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_DWELL_SEC", 1.20
         )
+        self._sfp_local_search_priority_enabled = _env_bool(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_ENABLED", False
+        )
         self._sfp_local_search_z_down = _env_float(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_Z_DOWN", 0.018
         )
@@ -491,6 +497,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_local_search_dwell_sec!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_DWELL_SEC="
             f"{self._sfp_local_search_priority_dwell_sec!r}, "
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_ENABLED="
+            f"{self._sfp_local_search_priority_enabled!r}, "
             f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
             f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
             f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
@@ -1457,10 +1465,12 @@ class RslRlCheckpointPolicy(Policy):
         xy_offsets = self._sfp_local_search_offsets()
         dwell = max(0.02, self._sfp_local_search_dwell_sec)
         priority_dwell = max(0.02, self._sfp_local_search_priority_dwell_sec)
-        priority_offsets = SFP_LOCAL_SEARCH_PRIORITY_OFFSETS.get(
-            self._sfp_mount_name(task) or "",
-            (),
-        )
+        priority_offsets = ()
+        if self._sfp_local_search_priority_enabled:
+            priority_offsets = SFP_LOCAL_SEARCH_PRIORITY_OFFSETS.get(
+                self._sfp_mount_name(task) or "",
+                (),
+            )
 
         send_feedback("running legal SFP local search")
         self.get_logger().info(
