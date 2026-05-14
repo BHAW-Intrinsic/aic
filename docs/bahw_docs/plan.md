@@ -1394,8 +1394,12 @@ Work:
 - [x] Add a sibling Isaac task instead of mutating `AIC-SFP-Task-v0`.
 - [x] Register `AIC-SFP-Gazebo-Transfer-Task-v0`.
 - [x] Keep active SFP target fixed to `sfp_port_0`.
-- [x] Randomize the NIC/card y pose over a mount-scale range while preserving
-  the 3149D eval-compatible actor observation shape.
+- [x] Randomize the NIC/card y pose over Gazebo-style mount choices.
+- [x] Add optional official SFP target-module metadata, expanding only the
+  Gazebo-transfer SFP actor observation from 3149D to 3151D.
+  - The wrapper keeps the old 3149D path by default.
+  - New 3151D SFP artifacts must run with
+    `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
 - [x] Add a separate RSL-RL config with experiment name
   `aic_sfp_gazebo_transfer`.
 - [x] Verify the new task is discoverable/runnable in Isaac Lab.
@@ -1404,6 +1408,9 @@ Work:
   - Started scratch PPO in tmux `isaac-step11-sfp-gazebo-train-d9ff95e`.
     Iteration `0/1500` reported `sfp_insertion_success=0.0692` under the wider
     mount-shift distribution.
+  - Stopped the first scratch run at iteration 52 after success stayed roughly
+    `0.14-0.26`. Next run uses legal target-module metadata and higher PPO
+    action exploration.
 - [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
   shifts.
 - [ ] Export the actor artifact and run official Gazebo eval.

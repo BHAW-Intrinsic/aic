@@ -59,10 +59,12 @@ Completed work so far:
   modules, while the selected Isaac checkpoint was trained on
   `sfp_port_0`/`sfp_port_1` within one NIC.
 - A new sibling task, `AIC-SFP-Gazebo-Transfer-Task-v0`, keeps
-  `sfp_port_0` fixed and randomizes NIC y over a mount-scale range while
-  preserving the same eval-compatible actor observation shape.
-- A scratch PPO run for that task is live in remote tmux
-  `isaac-step11-sfp-gazebo-train-d9ff95e`.
+  `sfp_port_0` fixed and randomizes NIC y over Gazebo-style
+  `nic_card_mount_*` choices.
+- The first scratch PPO run for that task plateaued early. The current revision
+  adds legal official `Task.target_module_name` metadata, expanding only the
+  Gazebo-transfer SFP actor observation from 3149D to 3151D. Older 3149D
+  artifacts remain the wrapper default.
 
 Current blocker:
 
@@ -79,8 +81,9 @@ Current blocker:
 
 Next recommended work:
 
-- For SFP, train and evaluate `AIC-SFP-Gazebo-Transfer-Task-v0`, then export
-  the resulting actor and run the official Gazebo eval.
+- For SFP, smoke-test the 3151D `AIC-SFP-Gazebo-Transfer-Task-v0`, retrain,
+  export with `--obs-dim 3151`, and run the official Gazebo eval with
+  `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
 - For SC, improve the official-start approach path before actor handoff. The
   current legal prepose is not close enough even without actor handoff.
 - Compare one Isaac actor observation and one reconstructed Gazebo actor

@@ -248,6 +248,12 @@ The actor observation shape is intentionally unchanged at `3149`:
 - the actor must infer the mount-scale NIC shift from camera/proprioception,
   matching what the official runtime policy can legally observe
 
+Step 11 later revised this after the first scratch run plateaued: the
+Gazebo-transfer SFP task can now opt into 4D official task metadata
+`[sfp_port_0, sfp_port_1, nic_card_mount_0, nic_card_mount_1]`. This makes the
+new SFP actor observation shape `3151` while preserving the old `3149` path for
+existing artifacts.
+
 Local verification:
 
 ```bash

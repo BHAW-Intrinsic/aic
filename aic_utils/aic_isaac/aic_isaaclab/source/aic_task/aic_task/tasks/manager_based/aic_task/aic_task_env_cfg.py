@@ -708,6 +708,7 @@ class SfpGazeboTransferEventCfg(SfpEventCfg):
             "board_scene_name": "task_board",
             "board_default_pos": (0.2837, 0.229, 0.0),
             "board_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)},
+            "sample_sfp_mount": True,
             "parts": [
                 {
                     "scene_name": "sc_port",
@@ -726,8 +727,8 @@ class SfpGazeboTransferEventCfg(SfpEventCfg):
                     # NIC mounts separated by roughly 0.04 m in y. Train over
                     # that mount-scale shift instead of only the previous
                     # +/-0.002 m perturbation.
-                    "pose_range": {"y": (-0.045, 0.005)},
-                    "snap_step": {"y": 0.0},
+                    "sfp_mount_y_offsets": (0.0, -0.04),
+                    "sfp_mount_y_jitter": (-0.005, 0.005),
                 },
             ],
         },
@@ -849,6 +850,19 @@ class SfpObservationsCfg:
 
     policy: PolicyCfg = PolicyCfg()
     privileged: PrivilegedCfg = PrivilegedCfg()
+
+
+@configclass
+class SfpGazeboTransferObservationsCfg(SfpObservationsCfg):
+    """SFP observations with official Gazebo port and module metadata."""
+
+    @configclass
+    class PolicyCfg(SfpObservationsCfg.PolicyCfg):
+        """Eval-compatible SFP actor obs with target module one-hot."""
+
+        task_metadata = ObsTerm(func=mdp.active_sfp_gazebo_task_one_hot)
+
+    policy: PolicyCfg = PolicyCfg()
 
 
 @configclass
@@ -1132,4 +1146,5 @@ class AICTaskSfpEnvCfg(AICTaskEnvCfg):
 class AICTaskSfpGazeboTransferEnvCfg(AICTaskSfpEnvCfg):
     """SFP variant for official Gazebo transfer training."""
 
+    observations: SfpGazeboTransferObservationsCfg = SfpGazeboTransferObservationsCfg()
     events: SfpGazeboTransferEventCfg = SfpGazeboTransferEventCfg()

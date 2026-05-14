@@ -43,6 +43,24 @@ def active_sfp_target_one_hot(env: ManagerBasedRLEnv) -> torch.Tensor:
     ).to(dtype=torch.float32)
 
 
+def active_sfp_gazebo_task_one_hot(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Eval-compatible SFP port and module metadata for Gazebo transfer.
+
+    The official Gazebo task names both the requested SFP port and target module.
+    The Gazebo-transfer Isaac task mirrors that as
+    ``[sfp_port_0, sfp_port_1, nic_card_mount_0, nic_card_mount_1]``.
+    """
+    target_ids = geometry.active_sfp_target_ids(env)
+    mount_ids = geometry.active_sfp_mount_ids(env)
+    target_one_hot = torch.nn.functional.one_hot(
+        target_ids, num_classes=len(geometry.SFP_TARGET_NAMES)
+    )
+    mount_one_hot = torch.nn.functional.one_hot(
+        mount_ids, num_classes=len(geometry.SFP_MOUNT_NAMES)
+    )
+    return torch.cat((target_one_hot, mount_one_hot), dim=-1).to(dtype=torch.float32)
+
+
 def sc_plug_to_port_vec(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Privileged vector from SC plug tip to active SC port entrance."""
     return geometry.sc_plug_to_port_vector(env)

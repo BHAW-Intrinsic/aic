@@ -42,6 +42,13 @@ python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
   --action-dim 6
 ```
 
+For a Gazebo-transfer SFP actor trained with official target-module metadata,
+export with `--obs-dim 3151` and run the wrapper with:
+
+```bash
+--model-env AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true
+```
+
 `aic_model.RslRlCheckpointPolicy` implements the SFP adapter and a first SC
 route/observation adapter. The best post-fix official run reaches partial
 tier-2/tier-3 SFP scores, but does not yet trigger insertion. The SC path now
@@ -108,6 +115,7 @@ For final submission-style routing, pass separate exported actor artifacts:
 python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
   --sc-policy-artifact /path/to/sc_exported/policy.pt \
   --sfp-policy-artifact /path/to/sfp_exported/policy.pt \
+  --model-env AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true \
   --session-prefix gazebo-rslrl-final \
   --record-camera-bag \
   --record-policy-trace \
@@ -117,6 +125,9 @@ python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
 The policy routes with official `Task` metadata such as `plug_type`,
 `port_type`, `port_name`, and `target_module_name`. It does not use hidden
 Gazebo state or ground-truth transforms.
+Use `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true` only with SFP actors exported
+for the 3151D Gazebo-transfer observation shape; leave it unset for older 3149D
+actors.
 
 ## Policy Trace Diagnostics
 
@@ -250,6 +261,8 @@ controller_state
 The actor adapter currently defines:
 
 - target one-hot from official `Task.port_name` / `target_module_name`
+- optional SFP target-module one-hot from official `Task.target_module_name`;
+  this is default-off and expands SFP actor observations from 3149D to 3151D
 - 46D Isaac joint position and velocity observations, with the six official UR
   arm joints filled from `joint_states` and unobserved cable joints held at
   default-relative zero

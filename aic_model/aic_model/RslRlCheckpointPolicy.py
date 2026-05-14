@@ -117,6 +117,11 @@ SFP_PORT_ONE_HOT = {
     "sfp_port_1": np.array([0.0, 1.0], dtype=np.float32),
 }
 
+SFP_MOUNT_ONE_HOT = {
+    "nic_card_mount_0": np.array([1.0, 0.0], dtype=np.float32),
+    "nic_card_mount_1": np.array([0.0, 1.0], dtype=np.float32),
+}
+
 SC_PORT_ONE_HOT = {
     "sc_port": np.array([1.0, 0.0], dtype=np.float32),
     "sc_port_2": np.array([0.0, 1.0], dtype=np.float32),
@@ -131,17 +136,19 @@ SC_PORT_ALIASES = {
 
 IMAGE_FEATURE_DIM = 1000
 JOINT_OBSERVATION_DIM = 46
-ACTOR_OBSERVATION_DIM = 3149
-
-OBS_SLICE_TASK = slice(0, 2)
-OBS_SLICE_JOINT_POS = slice(2, 48)
-OBS_SLICE_JOINT_VEL = slice(48, 94)
-OBS_SLICE_EEF = slice(94, 101)
-OBS_SLICE_BODY_FORCES = slice(101, 143)
-OBS_SLICE_CENTER_RGB = slice(143, 1143)
-OBS_SLICE_LEFT_RGB = slice(1143, 2143)
-OBS_SLICE_RIGHT_RGB = slice(2143, 3143)
-OBS_SLICE_LAST_ACTION = slice(3143, 3149)
+DEFAULT_TASK_METADATA_DIM = 2
+ACTOR_OBSERVATION_FIXED_DIM = (
+    JOINT_OBSERVATION_DIM
+    + JOINT_OBSERVATION_DIM
+    + 7
+    + 42
+    + 3 * IMAGE_FEATURE_DIM
+    + 6
+)
+ACTOR_OBSERVATION_DIM = DEFAULT_TASK_METADATA_DIM + ACTOR_OBSERVATION_FIXED_DIM
+SFP_GAZEBO_ACTOR_OBSERVATION_DIM = (
+    DEFAULT_TASK_METADATA_DIM + len(SFP_MOUNT_ONE_HOT) + ACTOR_OBSERVATION_FIXED_DIM
+)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -184,6 +191,28 @@ def _feature_summary(values: np.ndarray) -> dict[str, float]:
         "min": float(np.min(values)),
         "max": float(np.max(values)),
     }
+
+
+def _actor_observation_slices(task_metadata_dim: int) -> dict[str, slice]:
+    cursor = 0
+    slices = {"task": slice(cursor, cursor + task_metadata_dim)}
+    cursor += task_metadata_dim
+    slices["joint_pos"] = slice(cursor, cursor + JOINT_OBSERVATION_DIM)
+    cursor += JOINT_OBSERVATION_DIM
+    slices["joint_vel"] = slice(cursor, cursor + JOINT_OBSERVATION_DIM)
+    cursor += JOINT_OBSERVATION_DIM
+    slices["eef"] = slice(cursor, cursor + 7)
+    cursor += 7
+    slices["body_forces"] = slice(cursor, cursor + 42)
+    cursor += 42
+    slices["center_rgb"] = slice(cursor, cursor + IMAGE_FEATURE_DIM)
+    cursor += IMAGE_FEATURE_DIM
+    slices["left_rgb"] = slice(cursor, cursor + IMAGE_FEATURE_DIM)
+    cursor += IMAGE_FEATURE_DIM
+    slices["right_rgb"] = slice(cursor, cursor + IMAGE_FEATURE_DIM)
+    cursor += IMAGE_FEATURE_DIM
+    slices["last_action"] = slice(cursor, cursor + 6)
+    return slices
 
 
 def _quat_multiply_xyzw(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
@@ -264,6 +293,9 @@ class RslRlCheckpointPolicy(Policy):
       position/velocity observations. Defaults false.
     - ``AIC_RSLRL_ZERO_BODY_FORCES``: optional diagnostic that zeros the 42D body
       force block. Defaults false.
+    - ``AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA``: optional legal SFP actor mode
+      that appends official ``Task.target_module_name`` as a 2D mount one-hot.
+      Defaults false to preserve existing 3149D exported actors.
     - ``AIC_RSLRL_TRACE_DIR``: optional directory for JSONL policy traces from
       legal ``Task``/``Observation`` inputs and emitted ``MotionUpdate`` targets.
     - ``AIC_RSLRL_TRACE_FULL_OBS``: optional compressed dump of full actor
@@ -324,6 +356,9 @@ class RslRlCheckpointPolicy(Policy):
         self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
         self._zero_joint_obs = _env_bool("AIC_RSLRL_ZERO_JOINT_OBS", False)
         self._zero_body_forces = _env_bool("AIC_RSLRL_ZERO_BODY_FORCES", False)
+        self._sfp_include_mount_metadata = _env_bool(
+            "AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA", False
+        )
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
         self._trace_dir = os.environ.get("AIC_RSLRL_TRACE_DIR", "")
@@ -361,6 +396,8 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
             f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
             f"AIC_RSLRL_ZERO_BODY_FORCES={self._zero_body_forces!r}, "
+            "AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA="
+            f"{self._sfp_include_mount_metadata!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
             f"AIC_RSLRL_TRACE_DIR={self._trace_dir!r}, "
             f"AIC_RSLRL_TRACE_EVERY_N={self._trace_every_n!r}, "
@@ -432,7 +469,16 @@ class RslRlCheckpointPolicy(Policy):
 
     def _sfp_port_name(self, task: Task) -> str | None:
         for candidate in (task.port_name, task.target_module_name):
+            candidate = candidate.lower()
             for name in SFP_PORT_ONE_HOT:
+                if name in candidate:
+                    return name
+        return None
+
+    def _sfp_mount_name(self, task: Task) -> str | None:
+        for candidate in (task.target_module_name, task.port_name):
+            candidate = candidate.lower()
+            for name in SFP_MOUNT_ONE_HOT:
                 if name in candidate:
                     return name
         return None
@@ -452,6 +498,50 @@ class RslRlCheckpointPolicy(Policy):
             # suffix, keep the policy running with the first Isaac SC target.
             return "sc_port"
         return None
+
+    def _task_metadata_dim(self, task_kind: str) -> int:
+        if task_kind == "sfp" and self._sfp_include_mount_metadata:
+            return DEFAULT_TASK_METADATA_DIM + len(SFP_MOUNT_ONE_HOT)
+        return DEFAULT_TASK_METADATA_DIM
+
+    def _expected_actor_observation_dim(self, task_kind: str) -> int:
+        if task_kind == "sfp" and self._sfp_include_mount_metadata:
+            return SFP_GAZEBO_ACTOR_OBSERVATION_DIM
+        if task_kind in {"sc", "sfp"}:
+            return ACTOR_OBSERVATION_DIM
+        return ACTOR_OBSERVATION_FIXED_DIM + self._task_metadata_dim(task_kind)
+
+    def _task_metadata(self, task: Task, task_kind: str) -> np.ndarray:
+        if task_kind == "sfp":
+            port_name = self._sfp_port_name(task)
+            if port_name is None:
+                raise ValueError(
+                    "Unable to infer SFP target port from official task metadata: "
+                    f"port_name={task.port_name!r}, "
+                    f"target_module_name={task.target_module_name!r}"
+                )
+            metadata = [SFP_PORT_ONE_HOT[port_name]]
+            if self._sfp_include_mount_metadata:
+                mount_name = self._sfp_mount_name(task)
+                if mount_name is None:
+                    raise ValueError(
+                        "Unable to infer SFP target module from official task metadata: "
+                        f"target_module_name={task.target_module_name!r}"
+                    )
+                metadata.append(SFP_MOUNT_ONE_HOT[mount_name])
+            return np.concatenate(metadata).astype(np.float32, copy=False)
+
+        if task_kind == "sc":
+            port_name = self._sc_port_name(task)
+            if port_name is None:
+                raise ValueError(
+                    "Unable to infer SC target port from official task metadata: "
+                    f"port_name={task.port_name!r}, "
+                    f"target_module_name={task.target_module_name!r}"
+                )
+            return SC_PORT_ONE_HOT[port_name]
+
+        raise ValueError(f"Unsupported task kind for actor observation: {task_kind!r}")
 
     def _joint_vectors(self, observation) -> tuple[np.ndarray, np.ndarray]:
         if self._zero_joint_obs:
@@ -552,6 +642,13 @@ class RslRlCheckpointPolicy(Policy):
                         "sfp_command_frame": self._sfp_command_frame,
                         "sc_position_scale": self._sc_position_scale,
                         "sfp_position_scale": self._sfp_position_scale,
+                        "actor_observation_dim": self._expected_actor_observation_dim(
+                            task_kind
+                        ),
+                        "task_metadata_dim": self._task_metadata_dim(task_kind),
+                        "sfp_include_mount_metadata": (
+                            self._sfp_include_mount_metadata
+                        ),
                         "trace_every_n": self._trace_every_n,
                         "trace_full_obs": self._trace_full_obs,
                     },
@@ -664,6 +761,7 @@ class RslRlCheckpointPolicy(Policy):
     ) -> None:
         if self._trace_path is None:
             return
+        slices = _actor_observation_slices(self._task_metadata_dim(task_kind))
         if self._trace_full_obs:
             self._trace_actor_obs.append(actor_obs.copy())
             self._trace_actions.append(action.copy())
@@ -678,24 +776,29 @@ class RslRlCheckpointPolicy(Policy):
             "task": self._task_trace(task),
             "port_selection": {
                 "sfp": self._sfp_port_name(task),
+                "sfp_mount": self._sfp_mount_name(task),
                 "sc": self._sc_port_name(task),
             },
             "actor_obs": {
-                "task_metadata": _array_list(actor_obs[OBS_SLICE_TASK]),
+                "task_metadata": _array_list(actor_obs[slices["task"]]),
                 "joint_pos_rel_first6": _array_list(
-                    actor_obs[OBS_SLICE_JOINT_POS][:6]
+                    actor_obs[slices["joint_pos"]][:6]
                 ),
                 "joint_vel_rel_first6": _array_list(
-                    actor_obs[OBS_SLICE_JOINT_VEL][:6]
+                    actor_obs[slices["joint_vel"]][:6]
                 ),
-                "eef_pose_xyz_wxyz": _array_list(actor_obs[OBS_SLICE_EEF]),
-                "body_forces_last6": _array_list(actor_obs[OBS_SLICE_BODY_FORCES][-6:]),
+                "eef_pose_xyz_wxyz": _array_list(actor_obs[slices["eef"]]),
+                "body_forces_last6": _array_list(
+                    actor_obs[slices["body_forces"]][-6:]
+                ),
                 "center_rgb_resnet18": _feature_summary(
-                    actor_obs[OBS_SLICE_CENTER_RGB]
+                    actor_obs[slices["center_rgb"]]
                 ),
-                "left_rgb_resnet18": _feature_summary(actor_obs[OBS_SLICE_LEFT_RGB]),
-                "right_rgb_resnet18": _feature_summary(actor_obs[OBS_SLICE_RIGHT_RGB]),
-                "last_action": _array_list(actor_obs[OBS_SLICE_LAST_ACTION]),
+                "left_rgb_resnet18": _feature_summary(actor_obs[slices["left_rgb"]]),
+                "right_rgb_resnet18": _feature_summary(
+                    actor_obs[slices["right_rgb"]]
+                ),
+                "last_action": _array_list(actor_obs[slices["last_action"]]),
             },
             "observation": {
                 "tcp_pose": self._pose_trace(controller_state.tcp_pose),
@@ -827,22 +930,10 @@ class RslRlCheckpointPolicy(Policy):
             return np.zeros(IMAGE_FEATURE_DIM, dtype=np.float32)
 
     def _actor_observation(self, task: Task, observation, task_kind: str) -> np.ndarray:
-        if task_kind == "sfp":
-            port_name = self._sfp_port_name(task)
-            one_hot_by_port = SFP_PORT_ONE_HOT
-        elif task_kind == "sc":
-            port_name = self._sc_port_name(task)
-            one_hot_by_port = SC_PORT_ONE_HOT
-        else:
-            raise ValueError(f"Unsupported task kind for actor observation: {task_kind!r}")
-        if port_name is None:
-            raise ValueError(
-                f"Unable to infer {task_kind.upper()} target port from official task metadata: "
-                f"port_name={task.port_name!r}, target_module_name={task.target_module_name!r}"
-            )
+        task_metadata = self._task_metadata(task, task_kind)
         joint_pos_rel, joint_vel_rel = self._joint_vectors(observation)
         pieces = [
-            one_hot_by_port[port_name],
+            task_metadata,
             joint_pos_rel,
             joint_vel_rel,
             self._eef_pose(observation),
@@ -853,10 +944,11 @@ class RslRlCheckpointPolicy(Policy):
             self._last_action,
         ]
         actor_obs = np.concatenate(pieces).astype(np.float32, copy=False)
-        if actor_obs.shape != (ACTOR_OBSERVATION_DIM,):
+        expected_shape = (self._expected_actor_observation_dim(task_kind),)
+        if actor_obs.shape != expected_shape:
             raise ValueError(
                 f"Unexpected {task_kind.upper()} actor observation shape {actor_obs.shape}; "
-                f"expected {(ACTOR_OBSERVATION_DIM,)}"
+                f"expected {expected_shape}"
             )
         return actor_obs
 

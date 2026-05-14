@@ -45,6 +45,8 @@ SC_PORT_INSERTION_AXIS_LOCAL = (0.0, -1.0, 0.0)
 
 SFP_TARGET_NAMES = ("sfp_port_0", "sfp_port_1")
 SFP_ACTIVE_TARGET_ATTR = "aic_active_sfp_target_ids"
+SFP_MOUNT_NAMES = ("nic_card_mount_0", "nic_card_mount_1")
+SFP_ACTIVE_MOUNT_ATTR = "aic_active_sfp_mount_ids"
 SFP_PLUG_TIP_BODY = "sfp_tip_link"
 SFP_PLUG_AXIS_LOCAL = (0.0, 0.0, -1.0)
 SFP_PREV_DISTANCE_ATTR = "aic_prev_sfp_distance"
@@ -451,6 +453,46 @@ def active_sfp_target_names(env: ManagerBasedEnv | ManagerBasedRLEnv) -> list[st
     """Return active SFP target names for debugging."""
     target_ids = active_sfp_target_ids(env).detach().cpu().tolist()
     return [SFP_TARGET_NAMES[int(target_id)] for target_id in target_ids]
+
+
+def active_sfp_mount_ids(env: ManagerBasedEnv | ManagerBasedRLEnv) -> torch.Tensor:
+    """Return per-env active Gazebo-style SFP mount ids, defaulting to mount 0."""
+    mount_ids = getattr(env, SFP_ACTIVE_MOUNT_ATTR, None)
+    if not isinstance(mount_ids, torch.Tensor) or mount_ids.shape[0] != env.num_envs:
+        mount_ids = torch.zeros(env.num_envs, device=_device(env), dtype=torch.long)
+        setattr(env, SFP_ACTIVE_MOUNT_ATTR, mount_ids)
+    return mount_ids
+
+
+def active_sfp_mount_names(env: ManagerBasedEnv | ManagerBasedRLEnv) -> list[str]:
+    """Return active Gazebo-style SFP mount names for debugging."""
+    mount_ids = active_sfp_mount_ids(env).detach().cpu().tolist()
+    return [SFP_MOUNT_NAMES[int(mount_id)] for mount_id in mount_ids]
+
+
+def sample_active_sfp_mount(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    mount_id: int | None = None,
+) -> None:
+    """Sample or set the active Gazebo-style SFP mount for each environment."""
+    active_ids = active_sfp_mount_ids(env)
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=active_ids.device)
+    if mount_id is None:
+        active_ids[env_ids] = torch.randint(
+            low=0,
+            high=len(SFP_MOUNT_NAMES),
+            size=(len(env_ids),),
+            device=active_ids.device,
+            dtype=active_ids.dtype,
+        )
+        return
+    if mount_id < 0 or mount_id >= len(SFP_MOUNT_NAMES):
+        raise RuntimeError(
+            f"Invalid SFP mount_id {mount_id}. Expected 0..{len(SFP_MOUNT_NAMES) - 1}."
+        )
+    active_ids[env_ids] = int(mount_id)
 
 
 def sample_active_sfp_target(
