@@ -285,6 +285,9 @@ class RslRlCheckpointPolicy(Policy):
       experiment duration. Defaults disabled.
     - ``AIC_RSLRL_SFP_BASE_INSERT_SEC``: optional SFP base-frame downward
       insertion push after actor replay. Defaults disabled.
+    - ``AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH``: optional legal SFP terminal search
+      after actor replay. It uses only the official TCP observation and emitted
+      Cartesian commands, not TF/scoring internals.
     - ``AIC_RSLRL_SC_ACTOR_ENABLED``: optional diagnostic toggle. Defaults true;
       set false to evaluate legal SC prepose without actor handoff.
     - ``AIC_RSLRL_FIXED_STEP_REPLAY``: optional replay of the full planned actor
@@ -352,6 +355,24 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_base_insert_step = _env_float(
             "AIC_RSLRL_SFP_BASE_INSERT_STEP", -0.003
         )
+        self._sfp_local_search_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH", False
+        )
+        self._sfp_local_search_radius = _env_float(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_RADIUS", 0.065
+        )
+        self._sfp_local_search_step = _env_float(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_STEP", 0.0125
+        )
+        self._sfp_local_search_dwell_sec = _env_float(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_DWELL_SEC", 0.10
+        )
+        self._sfp_local_search_z_down = _env_float(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_Z_DOWN", 0.018
+        )
+        self._sfp_local_search_z_step = _env_float(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_Z_STEP", 0.006
+        )
         self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
         self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
         self._zero_joint_obs = _env_bool("AIC_RSLRL_ZERO_JOINT_OBS", False)
@@ -392,6 +413,14 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SFP_FINAL_SETTLE_SEC={self._sfp_final_settle_sec!r}, "
             f"AIC_RSLRL_SFP_BASE_INSERT_SEC={self._sfp_base_insert_sec!r}, "
             f"AIC_RSLRL_SFP_BASE_INSERT_STEP={self._sfp_base_insert_step!r}, "
+            "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH="
+            f"{self._sfp_local_search_enabled!r}, "
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_RADIUS="
+            f"{self._sfp_local_search_radius!r}, "
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_STEP="
+            f"{self._sfp_local_search_step!r}, "
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_DWELL_SEC="
+            f"{self._sfp_local_search_dwell_sec!r}, "
             f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
             f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
             f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
@@ -1053,6 +1082,64 @@ class RslRlCheckpointPolicy(Policy):
         )
         return motion_update
 
+    def _make_base_pose_update(
+        self,
+        position: np.ndarray,
+        quat_xyzw: np.ndarray,
+    ) -> MotionUpdate:
+        target = Pose()
+        target.position.x = float(position[0])
+        target.position.y = float(position[1])
+        target.position.z = float(position[2])
+        quat_xyzw = _normalize_quat_xyzw(quat_xyzw)
+        target.orientation.x = float(quat_xyzw[0])
+        target.orientation.y = float(quat_xyzw[1])
+        target.orientation.z = float(quat_xyzw[2])
+        target.orientation.w = float(quat_xyzw[3])
+
+        motion_update = MotionUpdate()
+        motion_update.header.frame_id = "base_link"
+        motion_update.header.stamp = self.get_clock().now().to_msg()
+        motion_update.pose = target
+        motion_update.velocity = Twist(
+            linear=Vector3(x=0.0, y=0.0, z=0.0),
+            angular=Vector3(x=0.0, y=0.0, z=0.0),
+        )
+        motion_update.target_stiffness = np.diag(
+            [85.0, 85.0, 85.0, 45.0, 45.0, 45.0]
+        ).flatten()
+        motion_update.target_damping = np.diag(
+            [38.0, 38.0, 38.0, 14.0, 14.0, 14.0]
+        ).flatten()
+        motion_update.feedforward_wrench_at_tip = Wrench(
+            force=Vector3(x=0.0, y=0.0, z=0.0),
+            torque=Vector3(x=0.0, y=0.0, z=0.0),
+        )
+        motion_update.wrench_feedback_gains_at_tip = [0.5, 0.5, 0.5, 0.0, 0.0, 0.0]
+        motion_update.trajectory_generation_mode = TrajectoryGenerationMode(
+            mode=TrajectoryGenerationMode.MODE_POSITION
+        )
+        return motion_update
+
+    def _sfp_local_search_offsets(self) -> list[tuple[float, float]]:
+        radius = max(0.0, self._sfp_local_search_radius)
+        step = max(1.0e-4, self._sfp_local_search_step)
+        values = np.arange(-radius, radius + 0.5 * step, step, dtype=np.float64)
+        offsets = [
+            (float(dx), float(dy))
+            for dx in values
+            for dy in values
+            if (dx * dx + dy * dy) <= (radius * radius + 1.0e-9)
+        ]
+        offsets.sort(
+            key=lambda item: (
+                item[0] * item[0] + item[1] * item[1],
+                item[0],
+                item[1],
+            )
+        )
+        return offsets
+
     def _run_joint_prepose(
         self,
         target_name: str | None,
@@ -1171,6 +1258,66 @@ class RslRlCheckpointPolicy(Policy):
             )
             move_robot(motion_update=command)
             self.sleep_for(dt)
+
+    def _run_sfp_local_search(
+        self,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sfp_local_search_enabled:
+            return
+        observation = get_observation()
+        if observation is None:
+            self.get_logger().error("Observation unavailable before SFP local search.")
+            return
+
+        pose = observation.controller_state.tcp_pose
+        anchor = np.array(
+            [pose.position.x, pose.position.y, pose.position.z],
+            dtype=np.float64,
+        )
+        quat = np.array(
+            [
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w,
+            ],
+            dtype=np.float64,
+        )
+        z_step = max(1.0e-4, self._sfp_local_search_z_step)
+        z_down = max(0.0, self._sfp_local_search_z_down)
+        z_offsets = -np.arange(0.0, z_down + 0.5 * z_step, z_step, dtype=np.float64)
+        xy_offsets = self._sfp_local_search_offsets()
+        dwell = max(0.02, self._sfp_local_search_dwell_sec)
+
+        send_feedback("running legal SFP local search")
+        self.get_logger().info(
+            "Running legal SFP local search: "
+            f"anchor={np.array2string(anchor, precision=4)}, "
+            f"radius={self._sfp_local_search_radius}, "
+            f"step={self._sfp_local_search_step}, "
+            f"z_down={z_down}, xy_points={len(xy_offsets)}, "
+            f"z_levels={len(z_offsets)}"
+        )
+        command_count = 0
+        for z_offset in z_offsets:
+            for dx, dy in xy_offsets:
+                target = anchor + np.array([dx, dy, float(z_offset)], dtype=np.float64)
+                command = self._make_base_pose_update(target, quat)
+                move_robot(motion_update=command)
+                command_count += 1
+                if command_count % 25 == 0:
+                    self.get_logger().info(
+                        "SFP local search command "
+                        f"{command_count}: dx={dx:.4f}, dy={dy:.4f}, dz={z_offset:.4f}"
+                    )
+                self.sleep_for(dwell)
+
+        # Let the contact plugin observe a stable final pose if the search found
+        # the socket.
+        self.sleep_for(1.0)
 
     def insert_cable(
         self,
@@ -1349,6 +1496,7 @@ class RslRlCheckpointPolicy(Policy):
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
             self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_local_search(get_observation, move_robot, send_feedback)
 
         self.get_logger().info(
             f"RslRlCheckpointPolicy {task_kind.upper()} control loop completed."
