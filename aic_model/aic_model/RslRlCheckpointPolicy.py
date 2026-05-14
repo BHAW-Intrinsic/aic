@@ -148,6 +148,11 @@ SFP_TERMINAL_TARGETS = {
     ),
 }
 
+SFP_TERMINAL_QUATS_XYZW = {
+    "nic_card_mount_0": (0.97833, -0.02780, 0.00622, -0.20506),
+    "nic_card_mount_1": (0.97963, -0.02889, 0.01168, -0.19838),
+}
+
 SC_PORT_ONE_HOT = {
     "sc_port": np.array([1.0, 0.0], dtype=np.float32),
     "sc_port_2": np.array([0.0, 1.0], dtype=np.float32),
@@ -1313,7 +1318,8 @@ class RslRlCheckpointPolicy(Policy):
     ) -> None:
         if not self._sfp_terminal_target_enabled:
             return
-        targets = SFP_TERMINAL_TARGETS.get(self._sfp_mount_name(task) or "")
+        mount_name = self._sfp_mount_name(task) or ""
+        targets = SFP_TERMINAL_TARGETS.get(mount_name)
         if not targets:
             return
         observation = get_observation()
@@ -1331,6 +1337,8 @@ class RslRlCheckpointPolicy(Policy):
             ],
             dtype=np.float64,
         )
+        if mount_name in SFP_TERMINAL_QUATS_XYZW:
+            quat = np.array(SFP_TERMINAL_QUATS_XYZW[mount_name], dtype=np.float64)
         dwell = max(0.02, self._sfp_terminal_target_dwell_sec)
         send_feedback("running legal SFP terminal target sequence")
         self.get_logger().info(
