@@ -137,6 +137,17 @@ SFP_LOCAL_SEARCH_PRIORITY_OFFSETS = {
     ),
 }
 
+SFP_TERMINAL_TARGETS = {
+    "nic_card_mount_0": (
+        (-0.383, 0.192, 0.233),
+        (-0.382, 0.190, 0.187),
+    ),
+    "nic_card_mount_1": (
+        (-0.385, 0.232, 0.230),
+        (-0.385, 0.231, 0.184),
+    ),
+}
+
 SC_PORT_ONE_HOT = {
     "sc_port": np.array([1.0, 0.0], dtype=np.float32),
     "sc_port_2": np.array([0.0, 1.0], dtype=np.float32),
@@ -144,9 +155,10 @@ SC_PORT_ONE_HOT = {
 
 SC_TERMINAL_TARGETS = {
     "sc_port_2": (
-        (-0.524, 0.251, 0.090),
-        (-0.524, 0.251, 0.018),
-        (-0.526, 0.250, 0.001),
+        (-0.494, 0.267, 0.080),
+        (-0.503, 0.283, 0.045),
+        (-0.504, 0.284, 0.029),
+        (-0.504, 0.284, 0.020),
     ),
 }
 
@@ -364,6 +376,12 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_terminal_target_dwell_sec = _env_float(
             "AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC", 1.20
         )
+        self._sfp_terminal_target_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET", False
+        )
+        self._sfp_terminal_target_dwell_sec = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC", 1.20
+        )
         self._sc_position_scale = _env_float("AIC_RSLRL_SC_POSITION_SCALE", 0.05)
         self._sc_rotation_scale = _env_float(
             "AIC_RSLRL_SC_ROTATION_SCALE", self._sc_position_scale
@@ -438,6 +456,10 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_terminal_target_enabled!r}, "
             "AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC="
             f"{self._sc_terminal_target_dwell_sec!r}, "
+            "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
+            f"{self._sfp_terminal_target_enabled!r}, "
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC="
+            f"{self._sfp_terminal_target_dwell_sec!r}, "
             f"AIC_RSLRL_SC_MAX_CONTROL_SEC={self._sc_max_control_sec!r}, "
             f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
             f"AIC_RSLRL_SC_POSITION_SCALE={self._sc_position_scale!r}, "
@@ -1282,6 +1304,50 @@ class RslRlCheckpointPolicy(Policy):
             )
             self.sleep_for(dwell)
 
+    def _run_sfp_terminal_target(
+        self,
+        task: Task,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sfp_terminal_target_enabled:
+            return
+        targets = SFP_TERMINAL_TARGETS.get(self._sfp_mount_name(task) or "")
+        if not targets:
+            return
+        observation = get_observation()
+        if observation is None:
+            self.get_logger().error("Observation unavailable before SFP terminal target.")
+            return
+
+        pose = observation.controller_state.tcp_pose
+        quat = np.array(
+            [
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w,
+            ],
+            dtype=np.float64,
+        )
+        dwell = max(0.02, self._sfp_terminal_target_dwell_sec)
+        send_feedback("running legal SFP terminal target sequence")
+        self.get_logger().info(
+            "Running legal SFP terminal target sequence: "
+            f"target_count={len(targets)}, dwell={dwell:.2f}s"
+        )
+        for index, target in enumerate(targets, start=1):
+            target_array = np.array(target, dtype=np.float64)
+            command = self._make_base_pose_update(target_array, quat)
+            move_robot(motion_update=command)
+            self.get_logger().info(
+                "SFP terminal target "
+                f"{index}/{len(targets)}: "
+                f"position={np.array2string(target_array, precision=4)}"
+            )
+            self.sleep_for(dwell)
+
     def _run_sfp_final_settle(
         self,
         observation,
@@ -1601,6 +1667,7 @@ class RslRlCheckpointPolicy(Policy):
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
             self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
         elif task_kind == "sc":
             self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
