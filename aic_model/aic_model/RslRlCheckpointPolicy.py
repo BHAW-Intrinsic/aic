@@ -140,7 +140,7 @@ SFP_LOCAL_SEARCH_PRIORITY_OFFSETS = {
 SFP_TERMINAL_TARGETS = {
     "nic_card_mount_0": (
         (-0.383, 0.192, 0.233),
-        (-0.382, 0.190, 0.187),
+        (-0.382, 0.196, 0.187),
     ),
     "nic_card_mount_1": (
         (-0.385, 0.232, 0.230),
