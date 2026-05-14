@@ -932,3 +932,74 @@ Decision:
   default `AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER=true`.
 - The next legal check is mirrored SC prepose with SFP final-settle disabled, so
   the SFP result is not contaminated by the rejected final-settle experiment.
+
+## Final mirrored SC prepose, no SFP final settle
+
+Host command:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-sc-mirror \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true
+```
+
+Result:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/scoring.yaml
+total: 92.631565804455263
+trial_1 SFP: tier1=1, tier2=18.320959564659177, tier3=23.714641175284299,
+             no insertion, final distance 0.05m
+trial_2 SFP: tier1=1, tier2=22.595965064511788, tier3=25,
+             no insertion, final distance 0.04m
+trial_3 SC:  tier1=1, tier2=0, tier3=0,
+             no insertion, final distance 0.29m
+```
+
+Video export:
+
+```bash
+cd ~/ws_aic/src/aic
+distrobox enter -r aic_eval -- bash -lc '
+  cd /var/home/bahw/ws_aic/src/aic &&
+  source /ws_aic/install/setup.bash &&
+  ros2 bag reindex logs/gazebo_eval/20260514_100007/camera_bags/wrist_cameras &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260514_100007/camera_bags/wrist_cameras \
+    --image-field center_image \
+    --output logs/gazebo_eval/20260514_100007/videos/center_image.mp4 \
+    --fps 20 &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260514_100007/camera_bags/wrist_cameras \
+    --image-field left_image \
+    --output logs/gazebo_eval/20260514_100007/videos/left_image.mp4 \
+    --fps 20 &&
+  python3 aic_utils/aic_training_utils/scripts/rosbag_images_to_video.py \
+    logs/gazebo_eval/20260514_100007/camera_bags/wrist_cameras \
+    --image-field right_image \
+    --output logs/gazebo_eval/20260514_100007/videos/right_image.mp4 \
+    --fps 20
+'
+```
+
+Exported files:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/videos/center_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/videos/left_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/videos/right_image.mp4
+```
+
+Decision:
+
+- This is the best legal official run so far by total score.
+- Keep `AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER=true`.
+- Keep SFP final-settle disabled; the controlled final-settle run worsened SFP.
+- The run still does not solve insertion. SFP remains a close controller/action
+  mapping miss, and SC remains out of distribution even with the legal prepose.

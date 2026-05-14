@@ -243,6 +243,12 @@ The actor adapter currently defines:
 - optional `AIC_RSLRL_SFP_FINAL_SETTLE_SEC` / `AIC_RSLRL_SFP_FINAL_SETTLE_STEP`
   to test a legal TCP-frame final insertion settle after the SFP actor loop
 
+As of the legal official run in
+`logs/gazebo_eval/20260514_100007/`, the best wrapper result is total
+`92.631565804455263` with SFP final misses of `0.05m` and `0.04m`, and an SC
+final miss of `0.29m`. The tested SFP final-settle option worsened scoring, so
+keep it disabled unless a new controlled eval shows improvement.
+
 Still required:
 
 - resolve the remaining final SFP approach miss in Gazebo

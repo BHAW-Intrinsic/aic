@@ -44,27 +44,30 @@ Completed work so far:
 - The SFP Gazebo adapter reconstructs the 3149D Isaac actor observation from
   official `Task`/`Observation` fields and reaches partial tier-2/tier-3 scores
   in official Gazebo, but it still misses insertion.
+- The current best legal official Gazebo run is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/scoring.yaml`, total
+  `92.631565804455263`, with videos under
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/videos/`.
 
 Current blocker:
 
 - The SFP deployment mapping is close but not complete. The best official run so
-  far ended the two SFP trials at about `0.05m` plug-port distance without
+  far ended the two SFP trials at `0.05m` and `0.04m` plug-port distance without
   triggering insertion.
 - SC routing and observation reconstruction now run with the exported SC actor
-  in official Gazebo, but direct replay fails from the official sequential start.
-  The next SC check is the legal near-port joint prepose selected only from
-  official SC task metadata.
+  in official Gazebo, but the legal near-port joint prepose only improves the SC
+  final distance to about `0.29m`.
 - The highest-risk deployment assumptions are observation equivalence
   (ResNet18 image features, TCP pose frame, wrench/body-force padding) and the
   relative-IK action replay frame.
 
 Next recommended work:
 
-- Rerun official Gazebo with both `--sc-policy-artifact` and
-  `--sfp-policy-artifact` after the SC prepose patch.
-- For SFP, test the optional TCP-frame final-settle hook and command-frame/scale
-  environment overrides, then keep only changes that improve official
-  `ground_truth:=false` scoring.
+- For SFP, continue the controller/action-frame mapping work from the current
+  `0.04-0.05m` miss. The tested TCP-frame final-settle hook worsened official
+  scoring and should stay disabled.
+- For SC, improve the official-start approach path before actor handoff. The
+  current legal prepose is not close enough for the accepted SC actor.
 - Compare one Isaac actor observation and one reconstructed Gazebo actor
   observation around a near-port pose to find semantic mismatches.
 

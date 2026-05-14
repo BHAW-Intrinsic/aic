@@ -1082,6 +1082,14 @@ High-level work later:
     `logs/gazebo_eval/20260514_095648/`; SC regressed to `0.60m`, so keep the
     mirrored preset and continue with mirrored SC prepose plus SFP final-settle
     disabled.
+  - Mirrored SC-prepose rerun with SFP final-settle disabled completed under
+    `logs/gazebo_eval/20260514_100007/`. This is the best legal official run
+    so far by total score (`92.631565804455263`) and used
+    `ground_truth:=false`, official `Task`/`Observation` inputs, and
+    `AIC_RSLRL_REQUIRE_RESNET18=true`. It still did not insert: SFP final
+    plug-port distances were `0.05m` and `0.04m`; SC ended `0.29m` away.
+    Continue with controller/approach mapping work rather than treating this as
+    solved by more checkpoint training alone.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.
@@ -1099,6 +1107,11 @@ High-level work later:
     `logs/gazebo_eval/20260514_005106/videos/center_image.mp4`,
     `logs/gazebo_eval/20260514_005106/videos/left_image.mp4`, and
     `logs/gazebo_eval/20260514_005106/videos/right_image.mp4`.
+  - Best-run review videos were exported after reindexing the interrupted MCAP
+    camera bag:
+    `logs/gazebo_eval/20260514_100007/videos/center_image.mp4`,
+    `logs/gazebo_eval/20260514_100007/videos/left_image.mp4`, and
+    `logs/gazebo_eval/20260514_100007/videos/right_image.mp4`.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
   - [x] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
   - [x] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
