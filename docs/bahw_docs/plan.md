@@ -1121,6 +1121,12 @@ High-level work later:
     still at `0.05m` / `0.05m` and SC at `0.32m`. Keep
     `logs/gazebo_eval/20260514_100007/` as the best saved official evidence so
     far.
+  - SFP `gripper/tcp` command-frame diagnostic completed under
+    `logs/gazebo_eval/20260514_103409/`; total regressed to
+    `25.33397048270108`, with SFP final distances `0.12m` and `0.10m`. Keep SFP
+    actor replay in `base_link`.
+  - Added disabled-by-default `AIC_RSLRL_ZERO_JOINT_OBS=true` to test whether
+    Isaac/Gazebo joint-observation convention mismatch is hurting deployment.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.

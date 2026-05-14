@@ -227,6 +227,8 @@ class RslRlCheckpointPolicy(Policy):
       set false to evaluate legal SC prepose without actor handoff.
     - ``AIC_RSLRL_FIXED_STEP_REPLAY``: optional replay of the full planned actor
       step count. Defaults false because controlled official eval regressed.
+    - ``AIC_RSLRL_ZERO_JOINT_OBS``: optional diagnostic that zeros arm joint
+      position/velocity observations. Defaults false.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -281,6 +283,7 @@ class RslRlCheckpointPolicy(Policy):
         )
         self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
         self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
+        self._zero_joint_obs = _env_bool("AIC_RSLRL_ZERO_JOINT_OBS", False)
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
 
@@ -310,6 +313,7 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SFP_BASE_INSERT_STEP={self._sfp_base_insert_step!r}, "
             f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
             f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
+            f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}"
         )
 
@@ -400,6 +404,11 @@ class RslRlCheckpointPolicy(Policy):
         return None
 
     def _joint_vectors(self, observation) -> tuple[np.ndarray, np.ndarray]:
+        if self._zero_joint_obs:
+            return (
+                np.zeros(JOINT_OBSERVATION_DIM, dtype=np.float32),
+                np.zeros(JOINT_OBSERVATION_DIM, dtype=np.float32),
+            )
         pos_by_name = dict(
             zip(observation.joint_states.name, observation.joint_states.position)
         )

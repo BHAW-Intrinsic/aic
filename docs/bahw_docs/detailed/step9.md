@@ -1211,3 +1211,37 @@ Decision:
   `AIC_RSLRL_SC_ACTOR_ENABLED=true`.
 - The best saved official evidence remains
   `logs/gazebo_eval/20260514_100007/`, total `92.631565804455263`.
+
+SFP command-frame diagnostic:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-sfp-tcpframe \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true \
+  --model-env AIC_RSLRL_SFP_COMMAND_FRAME=gripper/tcp
+```
+
+Result:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_103409/scoring.yaml
+total: 25.33397048270108
+trial_1 SFP: no insertion, final distance 0.12m
+trial_2 SFP: no insertion, final distance 0.10m
+trial_3 SC:  no insertion, final distance 0.29m
+```
+
+Decision:
+
+- Reject `AIC_RSLRL_SFP_COMMAND_FRAME=gripper/tcp`. It is much worse than the
+  base-link replay default.
+- Added disabled-by-default `AIC_RSLRL_ZERO_JOINT_OBS=true` as the next
+  observation-mismatch diagnostic. Gazebo joint values appear to be in a
+  different convention from the Isaac actor's joint observations, so this tests
+  whether removing misleading joint inputs helps.

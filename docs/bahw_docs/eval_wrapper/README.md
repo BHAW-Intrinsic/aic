@@ -247,6 +247,8 @@ The actor adapter currently defines:
   disabled by default pending official scoring
 - optional `AIC_RSLRL_SC_ACTOR_ENABLED=false` to diagnose the legal SC prepose
   without handing off to the exported SC actor
+- optional `AIC_RSLRL_ZERO_JOINT_OBS=true` to diagnose whether Gazebo arm joint
+  values are hurting the actor because of Isaac/Gazebo convention mismatch
 
 As of the legal official run in
 `logs/gazebo_eval/20260514_100007/`, the best wrapper result is total
@@ -267,6 +269,8 @@ Controlled follow-ups:
   default.
 - `AIC_RSLRL_SC_ACTOR_ENABLED=false` confirmed the legal SC prepose alone still
   ends about `0.28m` from target, so SC needs a better official-start approach.
+- `AIC_RSLRL_SFP_COMMAND_FRAME=gripper/tcp` regressed to total
+  `25.33397048270108`; keep SFP actor replay in `base_link`.
 
 Still required:
 
