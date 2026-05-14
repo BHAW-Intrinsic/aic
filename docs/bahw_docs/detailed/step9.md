@@ -890,3 +890,43 @@ Next legal adapter change:
   because it uses no scoring TF, hidden Gazebo state, or ground-truth geometry.
   It is intended to bring the official sequential trial back into the same
   near-port distribution as the accepted SC actor.
+
+## SC Prepose And SFP Final-Settle Test
+
+Commit `1c18264` added the legal SC joint-space prepose. A clean
+qualification-like rerun also enabled the optional SFP final-settle experiment:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-prepose-settle-clean \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true \
+  --model-env AIC_RSLRL_SFP_FINAL_SETTLE_SEC=2 \
+  --model-env AIC_RSLRL_SFP_FINAL_SETTLE_STEP=-0.002
+```
+
+Result:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_095112/scoring.yaml
+total: 58.255106729418905
+trial_1 SFP: no insertion, final distance 0.08m
+trial_2 SFP: no insertion, final distance 0.09m
+trial_3 SC:  no insertion, final distance 0.28m
+```
+
+Decision:
+
+- Reject `AIC_RSLRL_SFP_FINAL_SETTLE_SEC=2` / `STEP=-0.002`; it worsened SFP
+  from the prior `0.05-0.06m` miss to `0.08-0.09m`.
+- The SC prepose with shoulder mirroring only improved the SC final distance
+  from `0.32m` to about `0.28m`. Offline diagnostics showed the SC joint preset
+  command used Gazebo shoulder-pan `-0.7603` for `sc_port_1`, and the physical
+  `sc_tip_link` moved away in world `x` relative to the target port. The next
+  legal test disables shoulder mirroring for SC prepose only via
+  `AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER=false`.

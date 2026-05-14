@@ -210,6 +210,8 @@ class RslRlCheckpointPolicy(Policy):
       state-dict path. If unset, torchvision's ImageNet V1 weights are tried.
     - ``AIC_RSLRL_ENABLE_SC_PREPOSE``: optional legal joint-space warm start
       to the SC near-port curriculum pose selected by official task metadata.
+    - ``AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER``: whether to apply the
+      Isaac-to-Gazebo shoulder-pan sign conversion to the SC warm-start preset.
     - ``AIC_RSLRL_ENABLE_SFP_PREPOSE``: optional legal joint-space warm start
       to the SFP curriculum pose selected by ``Task.port_name``. Defaults false
       because the official Gazebo task spawn already starts SFP close to target.
@@ -246,6 +248,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 9.0)
         self._sc_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SC_PREPOSE", True)
         self._sc_prepose_sec = _env_float("AIC_RSLRL_SC_PREPOSE_SEC", 6.0)
+        self._sc_prepose_mirror_shoulder = _env_bool(
+            "AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER", False
+        )
         self._sfp_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SFP_PREPOSE", False)
         self._sfp_prepose_sec = _env_float("AIC_RSLRL_SFP_PREPOSE_SEC", 6.0)
         self._sc_position_scale = _env_float("AIC_RSLRL_SC_POSITION_SCALE", 0.05)
@@ -277,6 +282,8 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SFP_POLICY_ARTIFACT={self.sfp_policy_artifact_path!r}, "
             f"AIC_RSLRL_TASK_KIND={self.task_kind!r}, "
             f"AIC_RSLRL_ENABLE_SC_PREPOSE={self._sc_prepose_enabled!r}, "
+            "AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER="
+            f"{self._sc_prepose_mirror_shoulder!r}, "
             f"AIC_RSLRL_ENABLE_SFP_PREPOSE={self._sfp_prepose_enabled!r}, "
             f"AIC_RSLRL_SC_MAX_CONTROL_SEC={self._sc_max_control_sec!r}, "
             f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
@@ -579,9 +586,14 @@ class RslRlCheckpointPolicy(Policy):
     def _sc_actor_observation(self, task: Task, observation) -> np.ndarray:
         return self._actor_observation(task, observation, "sc")
 
-    def _make_joint_position_update(self, target: np.ndarray) -> JointMotionUpdate:
+    def _make_joint_position_update(
+        self,
+        target: np.ndarray,
+        mirror_shoulder: bool = True,
+    ) -> JointMotionUpdate:
         gazebo_target = target.astype(np.float64, copy=True)
-        gazebo_target[0] *= -1.0
+        if mirror_shoulder:
+            gazebo_target[0] *= -1.0
         return JointMotionUpdate(
             target_state=JointTrajectoryPoint(
                 positions=[float(value) for value in gazebo_target]
@@ -675,6 +687,7 @@ class RslRlCheckpointPolicy(Policy):
         presets: dict[str, np.ndarray],
         label: str,
         duration_sec: float,
+        mirror_shoulder: bool,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
     ) -> None:
@@ -682,7 +695,10 @@ class RslRlCheckpointPolicy(Policy):
             return
         target = presets[target_name]
         send_feedback(f"moving to legal {label} warm-start preset for {target_name}")
-        command = self._make_joint_position_update(target)
+        command = self._make_joint_position_update(
+            target,
+            mirror_shoulder=mirror_shoulder,
+        )
         steps = max(1, int(duration_sec * self._control_hz))
         dt = 1.0 / max(self._control_hz, 1e-6)
         for _ in range(steps):
@@ -702,6 +718,7 @@ class RslRlCheckpointPolicy(Policy):
             presets=SC_NEAR_PORT_JOINT_PRESETS,
             label="SC",
             duration_sec=self._sc_prepose_sec,
+            mirror_shoulder=self._sc_prepose_mirror_shoulder,
             move_robot=move_robot,
             send_feedback=send_feedback,
         )
@@ -719,6 +736,7 @@ class RslRlCheckpointPolicy(Policy):
             presets=SFP_NEAR_PORT_JOINT_PRESETS,
             label="SFP",
             duration_sec=self._sfp_prepose_sec,
+            mirror_shoulder=True,
             move_robot=move_robot,
             send_feedback=send_feedback,
         )

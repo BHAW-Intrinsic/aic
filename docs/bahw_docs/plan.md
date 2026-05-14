@@ -1050,6 +1050,9 @@ High-level work later:
     metadata only. This is needed because official SC trial 3 starts after the
     SFP trials, while the accepted SC actor was trained from near-SC reset
     states.
+  - The first SC prepose test with shoulder mirroring only improved SC from
+    `0.32m` to `0.28m`. The next patch makes SC prepose shoulder mirroring
+    configurable and defaults it off for Gazebo.
 - [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
   `scoring.yaml`, scoring bags, and optional camera rosbags.
   - Scaffold smoke run completed under
@@ -1071,6 +1074,10 @@ High-level work later:
     route executed the exported actor but ended `0.32m` from the SC port, so
     the next check is the legal SC prepose plus controlled SFP final-settle
     experiment.
+  - SC-prepose plus SFP-final-settle run completed under
+    `logs/gazebo_eval/20260514_095112/`. SFP final-settle worsened the SFP
+    distances to `0.08m` and `0.09m`, so do not keep that setting. SC improved
+    only to `0.28m`; continue with SC prepose shoulder-mirror isolation.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.
