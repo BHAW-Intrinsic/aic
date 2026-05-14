@@ -44,14 +44,30 @@ Completed work so far:
 - The SFP Gazebo adapter reconstructs the 3149D Isaac actor observation from
   official `Task`/`Observation` fields and reaches partial tier-2/tier-3 scores
   in official Gazebo, but it still misses insertion.
-- The current best legal official Gazebo run is
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/scoring.yaml`, total
-  `92.631565804455263`, with videos under
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/videos/`.
-- Later controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
+- The current best legal official Gazebo run with videos is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/scoring.yaml`, total
+  `154.67836105930783`, with review videos under
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/videos/`. Trials 1 and 2
+  were SFP near misses; trial 3 was an SC partial insertion.
+- The current best legal official Gazebo score observed without video is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
+  `155.11221437038648`.
+- The current packaged Docker submission candidate is built on the host as
+  `my-solution:v1` from commit `f6621aa` (`d292dd1317bc`, 40.6 GB). The image
+  includes the SC/SFP exported policy artifacts and pre-cached ResNet18 weights,
+  so it does not need runtime network access for the vision encoder.
+- Final Docker Compose verification completed from `docker/docker-compose.yaml`
+  with `--no-build`; log:
+  `/tmp/aic_docker_compose_eval_f6621aa.log`. The package starts, loads the
+  model, and completes all three official trials legally. Compose score was
+  `138.52215533700968`: all trials passed tier 1, but none triggered full
+  insertion.
+- The Docker image build log is `/tmp/aic_model_build_f6621aa_addhost.log`; the
+  smoke-test log is `/tmp/aic_model_smoke_final_f6621aa.log`.
+- Controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
   TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
   SFP `gripper/tcp` command-frame replay and zeroed joint observations were also
-  rejected. None produced insertion or beat the `20260514_100007` total score.
+  rejected. None reliably produced insertion.
 - Step 10 policy tracing showed that ResNet18 features are present and the
   Gazebo Cartesian controller tracks SFP commands to about `1-2 mm`. The SFP
   failure is now treated as a training-distribution/target-metadata mismatch:
@@ -74,18 +90,27 @@ Completed work so far:
   is gated by near-success alignment, sparse success is much larger, and deep
   overshoot terminates.
 
+Submission packaging status:
+
+- The repo contains the policy artifacts used by the Docker image:
+  `aic_model/artifacts/step6_sc_policy.pt` and
+  `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`.
+- The default Docker runtime policy is `aic_model.RslRlCheckpointPolicy`.
+- The runtime uses official `Task` metadata, official camera/joint observations,
+  previous legal actions, and internal command state only. It does not use
+  scoring internals, hidden Gazebo transforms, or ground-truth topics.
+- Final submission still needs the team ECR repository URI or team slug for
+  tagging and pushing `my-solution:v1`.
+
 Current blocker:
 
-- The SFP deployment mapping is close but not complete. The traced official run
-  ended both SFP trials around `0.05m` plug-port distance without triggering
-  insertion. Offline scoring TF showed the actor reaches depth but drifts
-  laterally under the official mount target distribution.
-- SC routing and observation reconstruction now run with the exported SC actor
-  in official Gazebo, but the legal near-port joint prepose only improves the SC
-  final distance to about `0.29m`.
-- The highest-risk remaining deployment assumptions are the official-start SC
-  approach and whether the new Gazebo-transfer SFP policy can learn visual
-  correction over mount-scale shifts.
+- The packaged policy is valid and legal, but it is not a solved insertion
+  submission yet. SFP reaches the port mouth and scores tier 2/tier 3 partial
+  credit; SC can reach partial insertion in some official trials. Full insertion
+  remains unreliable.
+- The highest-risk remaining assumptions are the final millimeter-scale SFP
+  approach under official mount distributions and the official-start SC approach
+  before actor handoff.
 
 Next recommended work:
 

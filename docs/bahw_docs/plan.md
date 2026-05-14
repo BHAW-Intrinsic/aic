@@ -42,12 +42,22 @@ Scope:
   `sfp_port_0` and `115/124` on `sfp_port_1`. The warm-start run passed
   overall but failed the per-port gate on `sfp_port_0`.
 - Official Gazebo eval wrapper status: scaffold orchestration works and writes
-  `scoring.yaml`/trial bags/videos. The SFP adapter now runs the exported
-  actor legally from official `Task`/`Observation` inputs and reaches partial
-  tier-2/tier-3 scores, but still does not complete insertion in Gazebo.
-  The SC adapter now routes to the exported SC actor, but still misses the
-  target by roughly `0.29m` in official Gazebo. Final functional Gazebo eval
-  remains blocked on SFP deployment transfer and the SC official-start approach.
+  `scoring.yaml`/trial bags/videos. The SFP adapter runs the exported actor
+  legally from official `Task`/`Observation` inputs and reaches partial
+  tier-2/tier-3 scores. The SC adapter routes to the exported SC actor and can
+  reach partial insertion in some official trials, but full insertion remains
+  unreliable.
+- Submission packaging status: the Docker candidate `my-solution:v1` was built
+  on the host from commit `f6621aa` and verified with
+  `docker/docker-compose.yaml --no-build`. The image includes branch-local
+  SC/SFP policy artifacts and pre-cached ResNet18 weights. The final Compose
+  verification log is `/tmp/aic_docker_compose_eval_f6621aa.log`, total
+  `138.52215533700968`, with all trials passing tier 1 but no full insertion.
+- Best legal official eval artifacts: the best run with videos is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/`, total
+  `154.67836105930783`; the best observed non-video score is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
+  `155.11221437038648`.
 - Step 10 transfer-audit result: ResNet18 camera features are available, and
   the Gazebo Cartesian controller follows emitted SFP `MotionUpdate` commands
   to about `1-2 mm`. The remaining SFP miss is dominated by target/distribution
