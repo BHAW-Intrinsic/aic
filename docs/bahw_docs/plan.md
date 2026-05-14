@@ -1026,8 +1026,10 @@ High-level work later:
     `aic_model.RslRlCheckpointPolicy`.
   - First SC routing/observation adapter support is now implemented locally.
     It maps official `sc_port_0` / `sc_port_1`-style target module names to
-    Isaac `[sc_port, sc_port_2]` one-hot metadata. It remains unchecked until
-    the accepted SC checkpoint is exported and validated in official Gazebo.
+    Isaac `[sc_port, sc_port_2]` one-hot metadata. The accepted SC actor was
+    exported and runs in official Gazebo, but direct replay still fails from the
+    official sequential start because the SC actor was trained from near-SC
+    reset states.
 - [ ] Convert actor actions into safe Gazebo `MotionUpdate` or
   `JointMotionUpdate` commands.
   - First SFP pass converts the 6D actor output to small Cartesian
@@ -1044,6 +1046,10 @@ High-level work later:
     scales, allows `base_link` or `gripper/tcp` command frames, and added an
     optional legal SFP TCP-frame final-settle experiment. This is not marked
     complete until official Gazebo scoring improves.
+  - Added a legal SC near-port joint prepose selected from official SC task
+    metadata only. This is needed because official SC trial 3 starts after the
+    SFP trials, while the accepted SC actor was trained from near-SC reset
+    states.
 - [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
   `scoring.yaml`, scoring bags, and optional camera rosbags.
   - Scaffold smoke run completed under
@@ -1058,6 +1064,13 @@ High-level work later:
     `logs/gazebo_eval/20260513_205601/`. It reproduced the same outcome:
     Tier 1 passed for all three trials; Tier 2 and Tier 3 scored zero. Final
     SFP plug-to-port distances were `0.27m` and `0.17m`.
+  - Combined SC/SFP actor run completed under
+    `logs/gazebo_eval/20260514_093740/` with `ground_truth:=false` and
+    `AIC_RSLRL_REQUIRE_RESNET18=true`. ResNet18 loaded successfully. SFP
+    improved to final distances `0.06m` and `0.05m` but did not insert. SC
+    route executed the exported actor but ended `0.32m` from the SC port, so
+    the next check is the legal SC prepose plus controlled SFP final-settle
+    experiment.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.

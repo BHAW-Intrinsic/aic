@@ -224,6 +224,10 @@ The actor adapter currently defines:
 - last-action bookkeeping in the ROS policy loop
 - SC routing from official `sc_port_0` / `sc_port_1`-style module names to the
   Isaac SC target one-hot `[sc_port, sc_port_2]`
+- optional legal SC warm-start joint preset selected only by official SC task
+  metadata; this defaults on because official SC evaluation currently follows
+  the two SFP trials, while the accepted SC actor was trained from near-SC reset
+  states
 - optional legal SFP warm-start joint preset selected only by official
   `Task.port_name`; this defaults off because the official Gazebo SFP task
   start is already near the target and the Isaac prepose was harmful in eval
@@ -240,7 +244,7 @@ The actor adapter currently defines:
 Still required:
 
 - resolve the remaining final SFP approach miss in Gazebo
-- export and validate the SC actor in Gazebo
+- validate the SC warm-start plus exported SC actor in official Gazebo
 - decide whether the warm-start should remain in the final policy or be
   replaced by a learned approach stage
 - produce a qualification-like `ground_truth:=false` run that completes both

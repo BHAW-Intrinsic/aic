@@ -50,19 +50,18 @@ Current blocker:
 - The SFP deployment mapping is close but not complete. The best official run so
   far ended the two SFP trials at about `0.05m` plug-port distance without
   triggering insertion.
-- SC routing and observation reconstruction exist locally in
-  `aic_model.RslRlCheckpointPolicy`, but the accepted SC checkpoint still needs
-  to be exported to TorchScript and validated in official Gazebo.
+- SC routing and observation reconstruction now run with the exported SC actor
+  in official Gazebo, but direct replay fails from the official sequential start.
+  The next SC check is the legal near-port joint prepose selected only from
+  official SC task metadata.
 - The highest-risk deployment assumptions are observation equivalence
   (ResNet18 image features, TCP pose frame, wrench/body-force padding) and the
   relative-IK action replay frame.
 
 Next recommended work:
 
-- Export the accepted SC actor with `export_rslrl_mlp_actor.py --obs-dim 3149
-  --action-dim 6`.
 - Rerun official Gazebo with both `--sc-policy-artifact` and
-  `--sfp-policy-artifact`.
+  `--sfp-policy-artifact` after the SC prepose patch.
 - For SFP, test the optional TCP-frame final-settle hook and command-frame/scale
   environment overrides, then keep only changes that improve official
   `ground_truth:=false` scoring.

@@ -810,3 +810,83 @@ Next host validation:
    --model-env AIC_RSLRL_SFP_FINAL_SETTLE_SEC=2 \
    --model-env AIC_RSLRL_SFP_FINAL_SETTLE_STEP=-0.002
    ```
+
+## SC/SFP Combined Gazebo Baseline
+
+After commit `0e12ccd`, the accepted SC checkpoint was exported on the host
+without touching the dirty Isaac training checkout:
+
+```bash
+cd ~/ws_aic/src/aic
+mkdir -p logs/checkpoints
+docker cp \
+  isaac-lab-base:/workspace/isaaclab/logs/rsl_rl/aic_sc_insert/2026-05-10_16-04-17_step6_sc_bc_strict_2e5987b/model_1000.pt \
+  logs/checkpoints/step6_sc_model_1000.pt
+pixi run python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
+  --checkpoint logs/checkpoints/step6_sc_model_1000.pt \
+  --output logs/checkpoints/step6_sc_policy.pt \
+  --obs-dim 3149 \
+  --action-dim 6
+```
+
+Export result:
+
+```text
+input_dim: 3149
+output_dim: 6
+logs/checkpoints/step6_sc_policy.pt  6.8M
+```
+
+Qualification-like combined run:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-base \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true
+```
+
+Result path:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_093740/scoring.yaml
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_093740/videos/center_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_093740/videos/left_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_093740/videos/right_image.mp4
+```
+
+Score:
+
+```text
+total: 91.318105837048677
+trial_1 SFP: tier_1=1, tier_2=21.6578, tier_3=19.7977, no insertion, final distance 0.06m
+trial_2 SFP: tier_1=1, tier_2=22.5798, tier_3=24.2828, no insertion, final distance 0.05m
+trial_3 SC:  tier_1=1, tier_2=0,       tier_3=0,       no insertion, final distance 0.32m
+```
+
+Key diagnostics:
+
+- ResNet18 loaded successfully with ImageNet V1 weights, so the run did not use
+  zeroed image features.
+- SFP still stops around `5cm` from the target. Offline scoring-TF diagnostics
+  are for analysis only; the runtime policy still uses only official task and
+  observation messages.
+- SC now routes and executes the SC actor, but the official SC trial starts
+  after both SFP trials with the TCP near the NIC/SFP area. The accepted SC
+  checkpoint was trained from near-SC reset states, so the direct actor replay
+  starts out of distribution. Trial 3 moved the TCP by roughly
+  `[+0.0846, -0.0913, +0.0563]m`, but the physical `sc_tip_link` ended about
+  `0.32m` from `task_board/sc_port_1/sc_port_base_link_entrance`.
+
+Next legal adapter change:
+
+- Add an optional SC joint-space prepose using the Step 6 first-success joint
+  seeds, selected only from official SC task metadata. This is legal for eval
+  because it uses no scoring TF, hidden Gazebo state, or ground-truth geometry.
+  It is intended to bring the official sequential trial back into the same
+  near-port distribution as the accepted SC actor.

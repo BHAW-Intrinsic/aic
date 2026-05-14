@@ -85,6 +85,31 @@ SFP_NEAR_PORT_JOINT_PRESETS = {
     ),
 }
 
+SC_NEAR_PORT_JOINT_PRESETS = {
+    "sc_port": np.array(
+        [
+            0.8141875863075256,
+            -1.8485052585601807,
+            -1.8315728902816772,
+            -1.0275382995605469,
+            1.5704457759857178,
+            2.171452760696411,
+        ],
+        dtype=np.float64,
+    ),
+    "sc_port_2": np.array(
+        [
+            0.7603225708007812,
+            -1.8013938665390015,
+            -1.8958141803741455,
+            -1.0111992359161377,
+            1.570515513420105,
+            2.1116960048675537,
+        ],
+        dtype=np.float64,
+    ),
+}
+
 SFP_PORT_ONE_HOT = {
     "sfp_port_0": np.array([1.0, 0.0], dtype=np.float32),
     "sfp_port_1": np.array([0.0, 1.0], dtype=np.float32),
@@ -183,6 +208,8 @@ class RslRlCheckpointPolicy(Policy):
     - ``AIC_RSLRL_TASK_KIND``: ``sc``, ``sfp``, or ``auto``.
     - ``AIC_RSLRL_RESNET18_WEIGHTS``: optional local torchvision ResNet18
       state-dict path. If unset, torchvision's ImageNet V1 weights are tried.
+    - ``AIC_RSLRL_ENABLE_SC_PREPOSE``: optional legal joint-space warm start
+      to the SC near-port curriculum pose selected by official task metadata.
     - ``AIC_RSLRL_ENABLE_SFP_PREPOSE``: optional legal joint-space warm start
       to the SFP curriculum pose selected by ``Task.port_name``. Defaults false
       because the official Gazebo task spawn already starts SFP close to target.
@@ -217,6 +244,8 @@ class RslRlCheckpointPolicy(Policy):
         self._control_hz = _env_float("AIC_RSLRL_CONTROL_HZ", 10.0)
         self._sc_max_control_sec = _env_float("AIC_RSLRL_SC_MAX_CONTROL_SEC", 9.0)
         self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 9.0)
+        self._sc_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SC_PREPOSE", True)
+        self._sc_prepose_sec = _env_float("AIC_RSLRL_SC_PREPOSE_SEC", 6.0)
         self._sfp_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SFP_PREPOSE", False)
         self._sfp_prepose_sec = _env_float("AIC_RSLRL_SFP_PREPOSE_SEC", 6.0)
         self._sc_position_scale = _env_float("AIC_RSLRL_SC_POSITION_SCALE", 0.05)
@@ -247,6 +276,7 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SC_POLICY_ARTIFACT={self.sc_policy_artifact_path!r}, "
             f"AIC_RSLRL_SFP_POLICY_ARTIFACT={self.sfp_policy_artifact_path!r}, "
             f"AIC_RSLRL_TASK_KIND={self.task_kind!r}, "
+            f"AIC_RSLRL_ENABLE_SC_PREPOSE={self._sc_prepose_enabled!r}, "
             f"AIC_RSLRL_ENABLE_SFP_PREPOSE={self._sfp_prepose_enabled!r}, "
             f"AIC_RSLRL_SC_MAX_CONTROL_SEC={self._sc_max_control_sec!r}, "
             f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
@@ -639,6 +669,43 @@ class RslRlCheckpointPolicy(Policy):
         )
         return motion_update
 
+    def _run_joint_prepose(
+        self,
+        target_name: str | None,
+        presets: dict[str, np.ndarray],
+        label: str,
+        duration_sec: float,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if target_name not in presets:
+            return
+        target = presets[target_name]
+        send_feedback(f"moving to legal {label} warm-start preset for {target_name}")
+        command = self._make_joint_position_update(target)
+        steps = max(1, int(duration_sec * self._control_hz))
+        dt = 1.0 / max(self._control_hz, 1e-6)
+        for _ in range(steps):
+            move_robot(joint_motion_update=command)
+            self.sleep_for(dt)
+
+    def _run_sc_prepose(
+        self,
+        task: Task,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sc_prepose_enabled:
+            return
+        self._run_joint_prepose(
+            target_name=self._sc_port_name(task),
+            presets=SC_NEAR_PORT_JOINT_PRESETS,
+            label="SC",
+            duration_sec=self._sc_prepose_sec,
+            move_robot=move_robot,
+            send_feedback=send_feedback,
+        )
+
     def _run_sfp_prepose(
         self,
         task: Task,
@@ -647,17 +714,14 @@ class RslRlCheckpointPolicy(Policy):
     ) -> None:
         if not self._sfp_prepose_enabled:
             return
-        port_name = self._sfp_port_name(task)
-        if port_name not in SFP_NEAR_PORT_JOINT_PRESETS:
-            return
-        target = SFP_NEAR_PORT_JOINT_PRESETS[port_name]
-        send_feedback(f"moving to legal SFP warm-start preset for {port_name}")
-        command = self._make_joint_position_update(target)
-        steps = max(1, int(self._sfp_prepose_sec * self._control_hz))
-        dt = 1.0 / max(self._control_hz, 1e-6)
-        for _ in range(steps):
-            move_robot(joint_motion_update=command)
-            self.sleep_for(dt)
+        self._run_joint_prepose(
+            target_name=self._sfp_port_name(task),
+            presets=SFP_NEAR_PORT_JOINT_PRESETS,
+            label="SFP",
+            duration_sec=self._sfp_prepose_sec,
+            move_robot=move_robot,
+            send_feedback=send_feedback,
+        )
 
     def _run_sfp_final_settle(
         self,
@@ -738,7 +802,9 @@ class RslRlCheckpointPolicy(Policy):
             return False
 
         self._last_action[:] = 0.0
-        if task_kind == "sfp":
+        if task_kind == "sc":
+            self._run_sc_prepose(task, move_robot, send_feedback)
+        elif task_kind == "sfp":
             self._run_sfp_prepose(task, move_robot, send_feedback)
 
         actor_input_dim = None
@@ -751,11 +817,11 @@ class RslRlCheckpointPolicy(Policy):
                 self._sfp_max_control_sec if task_kind == "sfp" else self._sc_max_control_sec
             )
         )
-        prepose_budget = (
-            self._sfp_prepose_sec
-            if task_kind == "sfp" and self._sfp_prepose_enabled
-            else 0.0
-        )
+        prepose_budget = 0.0
+        if task_kind == "sc" and self._sc_prepose_enabled:
+            prepose_budget = self._sc_prepose_sec
+        elif task_kind == "sfp" and self._sfp_prepose_enabled:
+            prepose_budget = self._sfp_prepose_sec
         max_control_sec = (
             self._sfp_max_control_sec if task_kind == "sfp" else self._sc_max_control_sec
         )
