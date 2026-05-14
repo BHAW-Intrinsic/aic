@@ -1127,6 +1127,10 @@ High-level work later:
     actor replay in `base_link`.
   - Added disabled-by-default `AIC_RSLRL_ZERO_JOINT_OBS=true` to test whether
     Isaac/Gazebo joint-observation convention mismatch is hurting deployment.
+  - Zero-joint-observation diagnostic completed under
+    `logs/gazebo_eval/20260514_103958/`; total regressed to
+    `82.898135541085352`, with SFP final distances `0.05m` and `0.08m`. Keep
+    joint observations enabled by default.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.

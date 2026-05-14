@@ -1245,3 +1245,37 @@ Decision:
   observation-mismatch diagnostic. Gazebo joint values appear to be in a
   different convention from the Isaac actor's joint observations, so this tests
   whether removing misleading joint inputs helps.
+
+Zero-joint-observation diagnostic:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-zerojoint \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true \
+  --model-env AIC_RSLRL_ZERO_JOINT_OBS=true
+```
+
+Result:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_103958/scoring.yaml
+total: 82.898135541085352
+trial_1 SFP: no insertion, final distance 0.05m
+trial_2 SFP: no insertion, final distance 0.08m
+trial_3 SC:  no insertion, final distance 0.27m
+```
+
+Decision:
+
+- Reject `AIC_RSLRL_ZERO_JOINT_OBS=true`. It does not improve insertion and
+  worsens total score.
+- Keep Gazebo joint observations enabled by default.
+- Remaining blocker is not a single wrapper toggle: SFP needs a better final
+  approach/controller strategy from the `0.04-0.05m` miss, and SC needs a better
+  legal official-start approach before actor handoff.

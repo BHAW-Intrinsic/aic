@@ -50,7 +50,8 @@ Completed work so far:
   `~/ws_aic/src/aic/logs/gazebo_eval/20260514_100007/videos/`.
 - Later controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
   TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
-  None produced insertion or beat the `20260514_100007` total score.
+  SFP `gripper/tcp` command-frame replay and zeroed joint observations were also
+  rejected. None produced insertion or beat the `20260514_100007` total score.
 
 Current blocker:
 

@@ -271,6 +271,8 @@ Controlled follow-ups:
   ends about `0.28m` from target, so SC needs a better official-start approach.
 - `AIC_RSLRL_SFP_COMMAND_FRAME=gripper/tcp` regressed to total
   `25.33397048270108`; keep SFP actor replay in `base_link`.
+- `AIC_RSLRL_ZERO_JOINT_OBS=true` regressed to total `82.898135541085352`; keep
+  Gazebo joint observations enabled by default.
 
 Still required:
 
