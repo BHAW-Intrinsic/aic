@@ -1051,8 +1051,8 @@ High-level work later:
     SFP trials, while the accepted SC actor was trained from near-SC reset
     states.
   - The first SC prepose test with shoulder mirroring only improved SC from
-    `0.32m` to `0.28m`. The next patch makes SC prepose shoulder mirroring
-    configurable and defaults it off for Gazebo.
+    `0.32m` to `0.28m`. A no-mirror isolation run regressed SC to `0.60m`, so
+    keep SC prepose shoulder mirroring enabled by default.
 - [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
   `scoring.yaml`, scoring bags, and optional camera rosbags.
   - Scaffold smoke run completed under
@@ -1077,7 +1077,11 @@ High-level work later:
   - SC-prepose plus SFP-final-settle run completed under
     `logs/gazebo_eval/20260514_095112/`. SFP final-settle worsened the SFP
     distances to `0.08m` and `0.09m`, so do not keep that setting. SC improved
-    only to `0.28m`; continue with SC prepose shoulder-mirror isolation.
+    only to `0.28m`.
+  - SC no-mirror isolation run completed under
+    `logs/gazebo_eval/20260514_095648/`; SC regressed to `0.60m`, so keep the
+    mirrored preset and continue with mirrored SC prepose plus SFP final-settle
+    disabled.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.

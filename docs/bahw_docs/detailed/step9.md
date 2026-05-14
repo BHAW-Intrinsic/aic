@@ -926,7 +926,9 @@ Decision:
   from the prior `0.05-0.06m` miss to `0.08-0.09m`.
 - The SC prepose with shoulder mirroring only improved the SC final distance
   from `0.32m` to about `0.28m`. Offline diagnostics showed the SC joint preset
-  command used Gazebo shoulder-pan `-0.7603` for `sc_port_1`, and the physical
-  `sc_tip_link` moved away in world `x` relative to the target port. The next
-  legal test disables shoulder mirroring for SC prepose only via
-  `AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER=false`.
+  command used Gazebo shoulder-pan `-0.7603` for `sc_port_1`.
+- A follow-up no-mirror isolation run under
+  `logs/gazebo_eval/20260514_095648/` regressed SC to `0.60m`, so keep the
+  default `AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER=true`.
+- The next legal check is mirrored SC prepose with SFP final-settle disabled, so
+  the SFP result is not contaminated by the rejected final-settle experiment.

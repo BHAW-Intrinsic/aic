@@ -249,7 +249,7 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SC_PREPOSE", True)
         self._sc_prepose_sec = _env_float("AIC_RSLRL_SC_PREPOSE_SEC", 6.0)
         self._sc_prepose_mirror_shoulder = _env_bool(
-            "AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER", False
+            "AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER", True
         )
         self._sfp_prepose_enabled = _env_bool("AIC_RSLRL_ENABLE_SFP_PREPOSE", False)
         self._sfp_prepose_sec = _env_float("AIC_RSLRL_SFP_PREPOSE_SEC", 6.0)

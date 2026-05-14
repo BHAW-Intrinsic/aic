@@ -228,8 +228,8 @@ The actor adapter currently defines:
   metadata; this defaults on because official SC evaluation currently follows
   the two SFP trials, while the accepted SC actor was trained from near-SC reset
   states
-- optional `AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER`; this defaults off after the
-  mirrored SC preset moved the physical SC tip away from the target in Gazebo
+- optional `AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER`; this defaults on because the
+  no-mirror isolation run regressed SC in Gazebo
 - optional legal SFP warm-start joint preset selected only by official
   `Task.port_name`; this defaults off because the official Gazebo SFP task
   start is already near the target and the Isaac prepose was harmful in eval
