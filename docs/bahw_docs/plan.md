@@ -48,12 +48,15 @@ Scope:
   The SC adapter now routes to the exported SC actor, but still misses the
   target by roughly `0.29m` in official Gazebo. Final functional Gazebo eval
   remains blocked on SFP deployment transfer and the SC official-start approach.
-- Post-Step 9 transfer-audit decision: do not simply train the existing setup
-  longer until the Gazebo adapter records enough legal observation/action traces
-  to identify the sim-to-sim mismatch. The next pass should inspect
-  observation equivalence, image feature availability, controller response, and
-  action mapping using only official `Task`/`Observation` inputs plus emitted
-  controller commands.
+- Step 10 transfer-audit result: ResNet18 camera features are available, and
+  the Gazebo Cartesian controller follows emitted SFP `MotionUpdate` commands
+  to about `1-2 mm`. The remaining SFP miss is dominated by target/distribution
+  mismatch: official Gazebo asks for `sfp_port_0` on different
+  `nic_card_mount_*` modules, while the selected Isaac checkpoint was trained
+  to choose between `sfp_port_0` and `sfp_port_1` on one NIC with only
+  `+/-0.002 m` y randomization. The next implementation pass is a separate
+  Gazebo-transfer SFP Isaac task with `sfp_port_0` fixed and mount-scale NIC y
+  randomization, keeping actor observations eval-compatible.
 
 ## Relevant Files
 
@@ -1361,9 +1364,9 @@ Work:
 - [x] Add an opt-in wrapper flag to place traces next to official
   `scoring.yaml`.
 - [x] Add a policy-trace summarizer script.
-- [ ] Run a qualification-like official Gazebo eval with policy tracing enabled.
-- [ ] Summarize trace output and scoring bags.
-- [ ] Decide the next implementation change from evidence:
+- [x] Run a qualification-like official Gazebo eval with policy tracing enabled.
+- [x] Summarize trace output and scoring bags.
+- [x] Decide the next implementation change from evidence:
   - controller/action mapping fix,
   - body-force/image-feature observation ablation,
   - deployment-native PPO retraining,
@@ -1372,10 +1375,43 @@ Work:
 
 Done when:
 
-- [ ] We know whether the current failure is dominated by observation mismatch,
+- [x] We know whether the current failure is dominated by observation mismatch,
   action/controller mismatch, or insufficient target localization.
-- [ ] The next implementation pass is documented before changing policy
+- [x] The next implementation pass is documented before changing policy
   behavior.
+
+## Step 11: Gazebo-Compatible SFP Retraining
+
+Why:
+
+Step 10 showed that the official SFP task metadata differs from the current
+Isaac SFP training distribution. Gazebo trials request `sfp_port_0` on different
+NIC mounts. The selected Isaac SFP checkpoint learned `sfp_port_0` vs
+`sfp_port_1` within one NIC and only saw tiny NIC y randomization.
+
+Work:
+
+- [x] Add a sibling Isaac task instead of mutating `AIC-SFP-Task-v0`.
+- [x] Register `AIC-SFP-Gazebo-Transfer-Task-v0`.
+- [x] Keep active SFP target fixed to `sfp_port_0`.
+- [x] Randomize the NIC/card y pose over a mount-scale range while preserving
+  the 3149D eval-compatible actor observation shape.
+- [x] Add a separate RSL-RL config with experiment name
+  `aic_sfp_gazebo_transfer`.
+- [ ] Verify the new task is discoverable in Isaac Lab.
+- [ ] Smoke-test deterministic eval/play on the new task from the selected SFP
+  checkpoint to confirm the task runs.
+- [ ] Train PPO on `AIC-SFP-Gazebo-Transfer-Task-v0`.
+- [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
+  shifts.
+- [ ] Export the actor artifact and run official Gazebo eval.
+- [ ] Save videos on the host for user review.
+
+Done when:
+
+- [ ] Isaac eval passes the randomized port-0/mount-shift gate.
+- [ ] Official Gazebo SFP trials trigger insertion or substantially improve over
+  the `0.04-0.05 m` miss without hidden runtime state.
 
 ## Global Done Criteria
 

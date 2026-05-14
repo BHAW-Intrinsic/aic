@@ -456,18 +456,26 @@ def active_sfp_target_names(env: ManagerBasedEnv | ManagerBasedRLEnv) -> list[st
 def sample_active_sfp_target(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor | None,
+    target_id: int | None = None,
 ) -> None:
-    """Sample the active SFP target for each resetting environment."""
+    """Sample or set the active SFP target for each resetting environment."""
     active_ids = active_sfp_target_ids(env)
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=active_ids.device)
-    active_ids[env_ids] = torch.randint(
-        low=0,
-        high=len(SFP_TARGET_NAMES),
-        size=(len(env_ids),),
-        device=active_ids.device,
-        dtype=active_ids.dtype,
-    )
+    if target_id is None:
+        active_ids[env_ids] = torch.randint(
+            low=0,
+            high=len(SFP_TARGET_NAMES),
+            size=(len(env_ids),),
+            device=active_ids.device,
+            dtype=active_ids.dtype,
+        )
+        return
+    if target_id < 0 or target_id >= len(SFP_TARGET_NAMES):
+        raise RuntimeError(
+            f"Invalid SFP target_id {target_id}. Expected 0..{len(SFP_TARGET_NAMES) - 1}."
+        )
+    active_ids[env_ids] = int(target_id)
 
 
 def reset_sfp_progress_buffers(

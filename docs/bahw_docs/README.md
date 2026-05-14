@@ -52,28 +52,33 @@ Completed work so far:
   TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
   SFP `gripper/tcp` command-frame replay and zeroed joint observations were also
   rejected. None produced insertion or beat the `20260514_100007` total score.
+- Step 10 policy tracing showed that ResNet18 features are present and the
+  Gazebo Cartesian controller tracks SFP commands to about `1-2 mm`. The SFP
+  failure is now treated as a training-distribution/target-metadata mismatch:
+  official Gazebo requests `sfp_port_0` on different `nic_card_mount_*`
+  modules, while the selected Isaac checkpoint was trained on
+  `sfp_port_0`/`sfp_port_1` within one NIC.
+- A new sibling task, `AIC-SFP-Gazebo-Transfer-Task-v0`, keeps
+  `sfp_port_0` fixed and randomizes NIC y over a mount-scale range while
+  preserving the same eval-compatible actor observation shape.
 
 Current blocker:
 
-- The SFP deployment mapping is close but not complete. The best official run so
-  far ended the two SFP trials at `0.05m` and `0.04m` plug-port distance without
-  triggering insertion.
+- The SFP deployment mapping is close but not complete. The traced official run
+  ended both SFP trials around `0.05m` plug-port distance without triggering
+  insertion. Offline scoring TF showed the actor reaches depth but drifts
+  laterally under the official mount target distribution.
 - SC routing and observation reconstruction now run with the exported SC actor
   in official Gazebo, but the legal near-port joint prepose only improves the SC
   final distance to about `0.29m`.
-- The highest-risk deployment assumptions are observation equivalence
-  (ResNet18 image features, TCP pose frame, wrench/body-force padding) and the
-  relative-IK action replay frame.
-- Step 10 is a transfer-audit pass. It adds opt-in policy traces so the next
-  change is based on legal Gazebo observation/action evidence rather than
-  another blind training run.
+- The highest-risk remaining deployment assumptions are the official-start SC
+  approach and whether the new Gazebo-transfer SFP policy can learn visual
+  correction over mount-scale shifts.
 
 Next recommended work:
 
-- For SFP, continue the controller/action-frame mapping work from the current
-  `0.04-0.05m` miss. The tested TCP-frame final-settle hook worsened official
-  scoring, the tested base-frame insert worsened total score, and fixed-step
-  replay overshot the useful approach region; keep these disabled by default.
+- For SFP, train and evaluate `AIC-SFP-Gazebo-Transfer-Task-v0`, then export
+  the resulting actor and run the official Gazebo eval.
 - For SC, improve the official-start approach path before actor handoff. The
   current legal prepose is not close enough even without actor handoff.
 - Compare one Isaac actor observation and one reconstructed Gazebo actor
@@ -95,6 +100,8 @@ Next recommended work:
   `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_cfg.py`
 - SFP PPO config:
   `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py`
+- SFP Gazebo-transfer PPO config:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_gazebo_transfer_cfg.py`
 - Evaluation script:
   `aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py`
 - SFP action-frame diagnostic:
@@ -115,6 +122,7 @@ Next recommended work:
 - Step 8 SFP specialist PPO work: `detailed/step8.md`
 - Step 9 distillation/export blocker: `detailed/step9.md`
 - Step 10 Gazebo transfer audit: `detailed/step10.md`
+- Step 11 Gazebo-compatible SFP retraining: `detailed/step11.md`
 
 ## Per-Step Workflow
 

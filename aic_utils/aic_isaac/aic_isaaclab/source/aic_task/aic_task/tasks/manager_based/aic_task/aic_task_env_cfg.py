@@ -698,6 +698,48 @@ class SfpEventCfg:
 
 
 @configclass
+class SfpGazeboTransferEventCfg(SfpEventCfg):
+    """SFP reset events that match the official Gazebo SFP target structure."""
+
+    randomize_board_and_parts = EventTerm(
+        func=randomize_board_and_parts,
+        mode="reset",
+        params={
+            "board_scene_name": "task_board",
+            "board_default_pos": (0.2837, 0.229, 0.0),
+            "board_range": {"x": (0.0, 0.0), "y": (0.0, 0.0)},
+            "parts": [
+                {
+                    "scene_name": "sc_port",
+                    "offset": (0.0067, -0.0362, 0.005),
+                    "pose_range": {"x": (0.0, 0.0)},
+                },
+                {
+                    "scene_name": "sc_port_2",
+                    "offset": (0.0076, -0.0783, 0.005),
+                    "pose_range": {"x": (0.0, 0.0)},
+                },
+                {
+                    "scene_name": "nic_card",
+                    "offset": (-0.03235, 0.02329, 0.0743),
+                    # Official Gazebo SFP trials use sfp_port_0 on different
+                    # NIC mounts separated by roughly 0.04 m in y. Train over
+                    # that mount-scale shift instead of only the previous
+                    # +/-0.002 m perturbation.
+                    "pose_range": {"y": (-0.045, 0.005)},
+                    "snap_step": {"y": 0.0},
+                },
+            ],
+        },
+    )
+    sample_active_sfp_target = EventTerm(
+        func=mdp.sample_active_sfp_target,
+        mode="reset",
+        params={"target_id": 0},
+    )
+
+
+@configclass
 class SfpTerminationsCfg:
     """Termination terms for the SFP insertion task variant."""
 
@@ -1084,3 +1126,10 @@ class AICTaskSfpEnvCfg(AICTaskEnvCfg):
         # Final insertion should resolve quickly from the near-port curriculum.
         # Short episodes keep failed non-terminated attempts from drifting far.
         self.episode_length_s = 5.0
+
+
+@configclass
+class AICTaskSfpGazeboTransferEnvCfg(AICTaskSfpEnvCfg):
+    """SFP variant for official Gazebo transfer training."""
+
+    events: SfpGazeboTransferEventCfg = SfpGazeboTransferEventCfg()
