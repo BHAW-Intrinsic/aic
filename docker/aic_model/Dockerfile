@@ -1,7 +1,9 @@
 FROM docker.io/library/ros:kilted-ros-core AS build
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Install pixi
-RUN apt update && apt install -y git && curl -fsSL https://pixi.sh/install.sh | bash
+RUN apt update && apt install -y ca-certificates curl git && curl -fsSL https://pixi.sh/install.sh | bash
 ENV PATH="/root/.pixi/bin:$PATH"
 
 # Add base dependencies
@@ -24,7 +26,6 @@ ENV AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH=false
 ENV AIC_RSLRL_ENABLE_SC_TERMINAL_TARGET=true
 ENV AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC=1.30
 
-SHELL ["/bin/bash", "-c"]
 RUN --mount=type=cache,target=/root/.cache/rattler/cache --mount=type=cache,target=/ws_aic/src/aic/.pixi/build \
     cd /ws_aic/src/aic && pixi install --locked
 
