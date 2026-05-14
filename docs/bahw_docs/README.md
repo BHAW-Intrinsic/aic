@@ -81,8 +81,9 @@ Current blocker:
 
 Next recommended work:
 
-- For SFP, smoke-test the 3151D `AIC-SFP-Gazebo-Transfer-Task-v0`, retrain,
-  export with `--obs-dim 3151`, and run the official Gazebo eval with
+- For SFP, retrain the smoke-tested 3151D
+  `AIC-SFP-Gazebo-Transfer-Task-v0`, export with `--obs-dim 3151`, and run the
+  official Gazebo eval with
   `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
 - For SC, improve the official-start approach path before actor handoff. The
   current legal prepose is not close enough even without actor handoff.

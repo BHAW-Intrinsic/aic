@@ -296,7 +296,7 @@ Result:
 no output; exit 0
 ```
 
-Next verification command on the host:
+Verification command on the host:
 
 ```bash
 cd ~/IsaacLab
@@ -311,10 +311,18 @@ docker exec isaac-lab-base bash -lc \
    --enable_cameras"
 ```
 
-Expected changed output:
+Run session:
+
+```text
+isaac-step11-meta-smoke-f00eb1e
+```
+
+Important output:
 
 ```text
 Active Observation Terms in Group: 'policy' (shape: (3151,))
+task_metadata shape: (4,)
 Actor Model: Linear(in_features=3151, out_features=512, ...)
 Critic Model: Linear(in_features=3171, out_features=512, ...)
+ISAAC_META_SMOKE_EXIT:0
 ```

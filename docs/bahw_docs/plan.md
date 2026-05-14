@@ -1411,6 +1411,9 @@ Work:
   - Stopped the first scratch run at iteration 52 after success stayed roughly
     `0.14-0.26`. Next run uses legal target-module metadata and higher PPO
     action exploration.
+  - 3151D metadata smoke test passed in tmux
+    `isaac-step11-meta-smoke-f00eb1e`; actor input is `3151` and critic input
+    is `3171`.
 - [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
   shifts.
 - [ ] Export the actor artifact and run official Gazebo eval.
