@@ -9,6 +9,7 @@ state.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -224,6 +225,8 @@ class RslRlCheckpointPolicy(Policy):
       insertion push after actor replay. Defaults disabled.
     - ``AIC_RSLRL_SC_ACTOR_ENABLED``: optional diagnostic toggle. Defaults true;
       set false to evaluate legal SC prepose without actor handoff.
+    - ``AIC_RSLRL_FIXED_STEP_REPLAY``: optional replay of the full planned actor
+      step count. Defaults false because controlled official eval regressed.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -277,6 +280,7 @@ class RslRlCheckpointPolicy(Policy):
             "AIC_RSLRL_SFP_BASE_INSERT_STEP", -0.003
         )
         self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
+        self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
 
@@ -305,6 +309,7 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SFP_BASE_INSERT_SEC={self._sfp_base_insert_sec!r}, "
             f"AIC_RSLRL_SFP_BASE_INSERT_STEP={self._sfp_base_insert_step!r}, "
             f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
+            f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}"
         )
 
@@ -878,6 +883,7 @@ class RslRlCheckpointPolicy(Policy):
 
         actor_input_dim = None
         self._load_resnet18()
+        start_time = time.monotonic()
         task_limit_sec = (
             float(task.time_limit)
             if int(task.time_limit) > 0
@@ -926,8 +932,8 @@ class RslRlCheckpointPolicy(Policy):
                         f"{task_kind.upper()} actor input dimension: {actor_input_dim}"
                     )
                     self.get_logger().info(
-                        f"{task_kind.upper()} actor fixed-step replay: "
-                        f"steps={steps}, dt={dt:.4f}s"
+                        f"{task_kind.upper()} actor replay: steps={steps}, "
+                        f"dt={dt:.4f}s, fixed_step={self._fixed_step_replay}"
                     )
                 with self._torch.inference_mode():
                     action_tensor = actor(obs_tensor)
@@ -961,7 +967,13 @@ class RslRlCheckpointPolicy(Policy):
                 )
                 send_feedback(f"{task_kind.upper()} actor control failed: {exc}")
                 return False
-            self.sleep_for(dt)
+            if self._fixed_step_replay:
+                self.sleep_for(dt)
+            else:
+                elapsed = time.monotonic() - start_time
+                self.sleep_for(max(0.0, min(dt, control_sec - elapsed)))
+                if elapsed >= control_sec:
+                    break
 
         if task_kind == "sfp":
             observation = get_observation()

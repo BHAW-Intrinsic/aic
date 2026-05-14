@@ -1116,3 +1116,35 @@ Decision:
   slightly but worsened total score and did not trigger insertion.
 - Keep `AIC_RSLRL_SFP_BASE_INSERT_SEC=0` by default.
 - Next eval should test the fixed-step replay patch without extra base insert.
+
+Fixed-step replay command:
+
+```bash
+cd ~/ws_aic/src/aic
+python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --sc-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact /var/home/bahw/ws_aic/src/aic/logs/checkpoints/step9_sfp_randy002_scratch_policy.pt \
+  --session-prefix gazebo-final-fixedstep \
+  --record-camera-bag \
+  --camera-bag-duration-sec 900 \
+  --replace \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true
+```
+
+Result:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260514_102325/scoring.yaml
+total: 79.399977111014948
+trial_1 SFP: no insertion, final distance 0.06m
+trial_2 SFP: no insertion, final distance 0.06m
+trial_3 SC:  no insertion, final distance 0.29m
+```
+
+Decision:
+
+- Reject fixed-step replay as the default. It ran the intended 90 actor steps,
+  but official SFP scoring worsened, so full replay likely overshoots the useful
+  approach region.
+- Keep the previous wall-budgeted replay default and expose full fixed-step
+  replay only behind `AIC_RSLRL_FIXED_STEP_REPLAY=true`.

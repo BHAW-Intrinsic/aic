@@ -261,8 +261,10 @@ Controlled follow-ups:
 - `AIC_RSLRL_SFP_BASE_INSERT_SEC=2` with
   `AIC_RSLRL_SFP_BASE_INSERT_STEP=-0.002` regressed to total
   `91.55788002615509`; keep the base insert disabled by default.
-- The wrapper now avoids the wall-clock early-break in actor replay and runs the
-  planned fixed step count with sim-time sleeps.
+- `AIC_RSLRL_FIXED_STEP_REPLAY=true` runs the planned fixed actor step count
+  with sim-time sleeps instead of the wall-budgeted replay. That controlled run
+  regressed to total `79.399977111014948`, so fixed-step replay is disabled by
+  default.
 
 Still required:
 

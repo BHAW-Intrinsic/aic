@@ -1107,6 +1107,11 @@ High-level work later:
   - Controlled base-frame SFP insert run completed under
     `logs/gazebo_eval/20260514_101713/`; total regressed to
     `91.55788002615509`, so keep the base insert disabled by default.
+  - Controlled fixed-step replay run completed under
+    `logs/gazebo_eval/20260514_102325/`; total regressed to
+    `79.399977111014948`, with SFP final distances worsening to `0.06m` and
+    `0.06m`. Full fixed-step replay appears to overshoot the useful SFP region,
+    so `AIC_RSLRL_FIXED_STEP_REPLAY` remains disabled by default.
   - Review videos were exported from the official `/observations` bag to:
     `videos/center_image.mp4`, `videos/left_image.mp4`, and
     `videos/right_image.mp4`.
