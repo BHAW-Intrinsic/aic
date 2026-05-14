@@ -325,6 +325,9 @@ class RslRlCheckpointPolicy(Policy):
       experiment duration. Defaults disabled.
     - ``AIC_RSLRL_SFP_BASE_INSERT_SEC``: optional SFP base-frame downward
       insertion push after actor replay. Defaults disabled.
+    - ``AIC_RSLRL_ENABLE_SFP_GUARDED_INSERT``: optional TCP-frame guarded
+      close-range insertion. It uses only the official wrist wrench observation
+      to back off on contact.
     - ``AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH``: optional legal SFP terminal search
       after actor replay. It uses only the official TCP observation and emitted
       Cartesian commands, not TF/scoring internals.
@@ -413,6 +416,24 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_base_insert_step = _env_float(
             "AIC_RSLRL_SFP_BASE_INSERT_STEP", -0.003
         )
+        self._sfp_guarded_insert_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_GUARDED_INSERT", False
+        )
+        self._sfp_guarded_insert_sec = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_SEC", 4.0
+        )
+        self._sfp_guarded_insert_down_step = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_DOWN_STEP", -0.0008
+        )
+        self._sfp_guarded_insert_lateral_step = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LATERAL_STEP", 0.0010
+        )
+        self._sfp_guarded_insert_retract_step = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_RETRACT_STEP", 0.0012
+        )
+        self._sfp_guarded_insert_force_limit = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_FORCE_LIMIT", 18.0
+        )
         self._sfp_local_search_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH", False
         )
@@ -487,6 +508,16 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SFP_FINAL_SETTLE_SEC={self._sfp_final_settle_sec!r}, "
             f"AIC_RSLRL_SFP_BASE_INSERT_SEC={self._sfp_base_insert_sec!r}, "
             f"AIC_RSLRL_SFP_BASE_INSERT_STEP={self._sfp_base_insert_step!r}, "
+            "AIC_RSLRL_ENABLE_SFP_GUARDED_INSERT="
+            f"{self._sfp_guarded_insert_enabled!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_SEC="
+            f"{self._sfp_guarded_insert_sec!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_DOWN_STEP="
+            f"{self._sfp_guarded_insert_down_step!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LATERAL_STEP="
+            f"{self._sfp_guarded_insert_lateral_step!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_FORCE_LIMIT="
+            f"{self._sfp_guarded_insert_force_limit!r}, "
             "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH="
             f"{self._sfp_local_search_enabled!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_RADIUS="
@@ -1199,6 +1230,59 @@ class RslRlCheckpointPolicy(Policy):
         )
         return motion_update
 
+    def _make_tcp_delta_update(
+        self,
+        delta_position: np.ndarray,
+        *,
+        linear_stiffness: float = 35.0,
+        angular_stiffness: float = 12.0,
+    ) -> MotionUpdate:
+        target = Pose()
+        target.position.x = float(delta_position[0])
+        target.position.y = float(delta_position[1])
+        target.position.z = float(delta_position[2])
+        target.orientation.x = 0.0
+        target.orientation.y = 0.0
+        target.orientation.z = 0.0
+        target.orientation.w = 1.0
+
+        motion_update = MotionUpdate()
+        motion_update.header.frame_id = "gripper/tcp"
+        motion_update.header.stamp = self.get_clock().now().to_msg()
+        motion_update.pose = target
+        motion_update.velocity = Twist(
+            linear=Vector3(x=0.0, y=0.0, z=0.0),
+            angular=Vector3(x=0.0, y=0.0, z=0.0),
+        )
+        motion_update.target_stiffness = np.diag(
+            [
+                linear_stiffness,
+                linear_stiffness,
+                linear_stiffness,
+                angular_stiffness,
+                angular_stiffness,
+                angular_stiffness,
+            ]
+        ).flatten()
+        motion_update.target_damping = np.diag(
+            [18.0, 18.0, 18.0, 6.0, 6.0, 6.0]
+        ).flatten()
+        motion_update.feedforward_wrench_at_tip = Wrench(
+            force=Vector3(x=0.0, y=0.0, z=0.0),
+            torque=Vector3(x=0.0, y=0.0, z=0.0),
+        )
+        motion_update.wrench_feedback_gains_at_tip = [0.8, 0.8, 0.8, 0.0, 0.0, 0.0]
+        motion_update.trajectory_generation_mode = TrajectoryGenerationMode(
+            mode=TrajectoryGenerationMode.MODE_POSITION
+        )
+        return motion_update
+
+    def _force_norm(self, observation) -> float:
+        wrench = observation.wrist_wrench.wrench
+        return float(
+            np.linalg.norm([wrench.force.x, wrench.force.y, wrench.force.z])
+        )
+
     def _sfp_local_search_offsets(self) -> list[tuple[float, float]]:
         radius = max(0.0, self._sfp_local_search_radius)
         step = max(1.0e-4, self._sfp_local_search_step)
@@ -1429,6 +1513,62 @@ class RslRlCheckpointPolicy(Policy):
                 frame_id="base_link",
             )
             move_robot(motion_update=command)
+            self.sleep_for(dt)
+
+    def _run_sfp_guarded_insert(
+        self,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sfp_guarded_insert_enabled:
+            return
+        steps = max(1, int(self._sfp_guarded_insert_sec * self._control_hz))
+        dt = 1.0 / max(self._control_hz, 1e-6)
+        send_feedback("running legal SFP guarded insertion")
+        self.get_logger().info(
+            "Running legal SFP guarded insertion: "
+            f"steps={steps}, down_step={self._sfp_guarded_insert_down_step}, "
+            f"lateral_step={self._sfp_guarded_insert_lateral_step}, "
+            f"force_limit={self._sfp_guarded_insert_force_limit}"
+        )
+        golden_angle = 2.399963229728653
+        for step in range(steps):
+            observation = get_observation()
+            if observation is None:
+                self.get_logger().error(
+                    "Observation became unavailable during SFP guarded insert."
+                )
+                return
+            force_norm = self._force_norm(observation)
+            angle = step * golden_angle
+            lateral_step = self._sfp_guarded_insert_lateral_step
+            if force_norm > self._sfp_guarded_insert_force_limit:
+                delta = np.array(
+                    [
+                        -0.5 * lateral_step * np.cos(angle),
+                        -0.5 * lateral_step * np.sin(angle),
+                        self._sfp_guarded_insert_retract_step,
+                    ],
+                    dtype=np.float64,
+                )
+            else:
+                delta = np.array(
+                    [
+                        lateral_step * np.cos(angle),
+                        lateral_step * np.sin(angle),
+                        self._sfp_guarded_insert_down_step,
+                    ],
+                    dtype=np.float64,
+                )
+            command = self._make_tcp_delta_update(delta)
+            move_robot(motion_update=command)
+            if step % self._log_every_n == 0:
+                self.get_logger().info(
+                    "SFP guarded insert "
+                    f"step={step}/{steps}, force_norm={force_norm:.2f}, "
+                    f"delta={np.array2string(delta, precision=4)}"
+                )
             self.sleep_for(dt)
 
     def _run_sfp_local_search(
@@ -1692,6 +1832,7 @@ class RslRlCheckpointPolicy(Policy):
             observation = get_observation()
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
+            self._run_sfp_guarded_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
             self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
