@@ -20,9 +20,13 @@ TorchScript actor adapter:
   `aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py`
 - can pass controlled policy environment overrides with repeatable
   `--model-env KEY=VALUE`
+- can record legal policy observation/action traces with `--record-policy-trace`
 - includes a bag analyzer,
   `aic_utils/aic_training_utils/scripts/analyze_gazebo_eval_bag.py`, for
   post-run command/TCP/scoring-TF diagnostics
+- includes a policy-trace summarizer,
+  `aic_utils/aic_training_utils/scripts/summarize_policy_trace.py`, for
+  post-run adapter diagnostics
 
 Raw Isaac Lab RSL-RL `.pt` checkpoints are still not directly deployable in
 Gazebo. Export the actor first with Isaac Lab `play.py` and pass the exported
@@ -40,9 +44,9 @@ python3 aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py \
 
 `aic_model.RslRlCheckpointPolicy` implements the SFP adapter and a first SC
 route/observation adapter. The best post-fix official run reaches partial
-tier-2/tier-3 SFP scores, but does not yet trigger insertion. The SC path still
-needs an exported SC actor artifact and official Gazebo validation before this
-is a full qualification policy.
+tier-2/tier-3 SFP scores, but does not yet trigger insertion. The SC path now
+loads the exported SC actor and runs, but still misses from the official Gazebo
+start.
 
 ## Files
 
@@ -54,6 +58,8 @@ is a full qualification policy.
   converts recorded observation or image-topic bags into MP4 review videos.
 - `aic_utils/aic_training_utils/scripts/export_rslrl_mlp_actor.py`
   exports simple RSL-RL MLP actor checkpoints without launching Isaac Sim.
+- `aic_utils/aic_training_utils/scripts/summarize_policy_trace.py`
+  summarizes policy JSONL traces emitted by `RslRlCheckpointPolicy`.
 - `docs/bahw_docs/eval_wrapper/README.md`
   is this usage and implementation guide.
 
@@ -104,12 +110,44 @@ python3 aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
   --sfp-policy-artifact /path/to/sfp_exported/policy.pt \
   --session-prefix gazebo-rslrl-final \
   --record-camera-bag \
+  --record-policy-trace \
   --camera-bag-duration-sec 900
 ```
 
 The policy routes with official `Task` metadata such as `plug_type`,
 `port_type`, `port_name`, and `target_module_name`. It does not use hidden
 Gazebo state or ground-truth transforms.
+
+## Policy Trace Diagnostics
+
+Use `--record-policy-trace` for transfer debugging. The trace is written under:
+
+```text
+logs/gazebo_eval/<timestamp>/policy_trace/
+```
+
+Trace files are JSONL and include only official `Task`/`Observation` fields,
+actor outputs, and emitted controller commands. They do not subscribe to
+`/scoring`, `/gazebo`, hidden TF, or simulator internals.
+
+Summarize a run with:
+
+```bash
+python3 aic_utils/aic_training_utils/scripts/summarize_policy_trace.py \
+  logs/gazebo_eval/<timestamp>/policy_trace
+```
+
+Useful trace controls:
+
+```text
+--policy-trace-every-n 1
+--policy-trace-full-obs
+--model-env AIC_RSLRL_ZERO_BODY_FORCES=true
+```
+
+`AIC_RSLRL_ZERO_BODY_FORCES=true` is a legal diagnostic ablation for the
+Gazebo-to-Isaac body-force observation mismatch. Keep it disabled unless a
+controlled run shows improvement.
 
 ## Qualification-Like Settings
 

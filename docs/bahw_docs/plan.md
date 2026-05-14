@@ -45,8 +45,15 @@ Scope:
   `scoring.yaml`/trial bags/videos. The SFP adapter now runs the exported
   actor legally from official `Task`/`Observation` inputs and reaches partial
   tier-2/tier-3 scores, but still does not complete insertion in Gazebo.
-  Final functional Gazebo eval remains blocked on the last SFP deployment
-  approach and the missing SC adapter.
+  The SC adapter now routes to the exported SC actor, but still misses the
+  target by roughly `0.29m` in official Gazebo. Final functional Gazebo eval
+  remains blocked on SFP deployment transfer and the SC official-start approach.
+- Post-Step 9 transfer-audit decision: do not simply train the existing setup
+  longer until the Gazebo adapter records enough legal observation/action traces
+  to identify the sim-to-sim mismatch. The next pass should inspect
+  observation equivalence, image feature availability, controller response, and
+  action mapping using only official `Task`/`Observation` inputs plus emitted
+  controller commands.
 
 ## Relevant Files
 
@@ -1333,6 +1340,42 @@ Done when:
 	      gates. The warm-start run scored `235/256` overall but failed the
 	      per-target gate on `sfp_port_0` (`114/129`).
 - [ ] 14. Revisit distillation only after both teachers work.
+
+## Step 10: Gazebo Transfer Audit
+
+Why:
+
+The selected randomized SFP PPO checkpoint solves the Isaac task above the
+accepted gate, but the legal official Gazebo wrapper stops near the SFP port
+mouth and misses SC by a much larger margin. This indicates a deployment
+transfer issue rather than a pure Isaac training issue.
+
+Work:
+
+- [x] Add optional policy JSONL traces under `AIC_RSLRL_TRACE_DIR`.
+- [x] Include legal `Task` metadata, reconstructed actor-observation summaries,
+  ResNet18 feature norms, TCP/controller-state summaries, actor actions, and
+  emitted `MotionUpdate` targets.
+- [x] Add optional compressed full actor-observation/action dumps for deeper
+  offline comparison.
+- [x] Add an opt-in wrapper flag to place traces next to official
+  `scoring.yaml`.
+- [x] Add a policy-trace summarizer script.
+- [ ] Run a qualification-like official Gazebo eval with policy tracing enabled.
+- [ ] Summarize trace output and scoring bags.
+- [ ] Decide the next implementation change from evidence:
+  - controller/action mapping fix,
+  - body-force/image-feature observation ablation,
+  - deployment-native PPO retraining,
+  - task-specific legal vision features,
+  - or a legal visual-servo/hybrid controller fallback.
+
+Done when:
+
+- [ ] We know whether the current failure is dominated by observation mismatch,
+  action/controller mismatch, or insufficient target localization.
+- [ ] The next implementation pass is documented before changing policy
+  behavior.
 
 ## Global Done Criteria
 

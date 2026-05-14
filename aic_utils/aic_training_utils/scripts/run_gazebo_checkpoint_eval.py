@@ -196,6 +196,26 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--record-policy-trace",
+        action="store_true",
+        help=(
+            "Enable JSONL policy traces under <results-dir>/policy_trace. "
+            "Traces use only official Task/Observation inputs and emitted "
+            "controller commands."
+        ),
+    )
+    parser.add_argument(
+        "--policy-trace-every-n",
+        type=int,
+        default=1,
+        help="Write one policy trace summary every N actor steps.",
+    )
+    parser.add_argument(
+        "--policy-trace-full-obs",
+        action="store_true",
+        help="Also save compressed full actor observations/actions next to JSONL traces.",
+    )
+    parser.add_argument(
         "--replace",
         action="store_true",
         help="Kill existing tmux sessions with the selected names before starting.",
@@ -242,6 +262,9 @@ def main() -> int:
         for session in (eval_session, model_session, camera_session):
             _tmux_kill(session, dry_run=args.dry_run)
 
+    if args.policy_trace_every_n < 1:
+        raise SystemExit("--policy-trace-every-n must be >= 1")
+
     eval_launch_args = [
         f"ground_truth:={_bool_launch(args.ground_truth)}",
         "start_aic_engine:=true",
@@ -271,6 +294,16 @@ def main() -> int:
         f"export AIC_RSLRL_SFP_POLICY_ARTIFACT={_quote(args.sfp_policy_artifact)}",
         f"export AIC_RSLRL_TASK_KIND={_quote(args.task_kind)}",
     ]
+    if args.record_policy_trace:
+        trace_dir = results_dir / "policy_trace"
+        model_env.extend(
+            [
+                f"export AIC_RSLRL_TRACE_DIR={_quote(trace_dir)}",
+                f"export AIC_RSLRL_TRACE_EVERY_N={_quote(args.policy_trace_every_n)}",
+                "export AIC_RSLRL_TRACE_FULL_OBS="
+                + _quote(_bool_launch(args.policy_trace_full_obs)),
+            ]
+        )
     for item in args.model_env:
         if "=" not in item:
             raise SystemExit(f"--model-env expects KEY=VALUE, got: {item!r}")
@@ -293,6 +326,8 @@ def main() -> int:
     print(f"model_session: {model_session}")
     if args.record_camera_bag:
         print(f"camera_session: {camera_session}")
+    if args.record_policy_trace:
+        print(f"policy_trace_dir: {results_dir / 'policy_trace'}")
 
     _tmux_new(eval_session, eval_cmd, dry_run=args.dry_run)
     _tmux_new(model_session, model_cmd, dry_run=args.dry_run)

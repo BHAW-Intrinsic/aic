@@ -8,8 +8,10 @@ state.
 
 from __future__ import annotations
 
+import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -131,6 +133,16 @@ IMAGE_FEATURE_DIM = 1000
 JOINT_OBSERVATION_DIM = 46
 ACTOR_OBSERVATION_DIM = 3149
 
+OBS_SLICE_TASK = slice(0, 2)
+OBS_SLICE_JOINT_POS = slice(2, 48)
+OBS_SLICE_JOINT_VEL = slice(48, 94)
+OBS_SLICE_EEF = slice(94, 101)
+OBS_SLICE_BODY_FORCES = slice(101, 143)
+OBS_SLICE_CENTER_RGB = slice(143, 1143)
+OBS_SLICE_LEFT_RGB = slice(1143, 2143)
+OBS_SLICE_RIGHT_RGB = slice(2143, 3143)
+OBS_SLICE_LAST_ACTION = slice(3143, 3149)
+
 
 def _env_bool(name: str, default: bool) -> bool:
     value = os.environ.get(name)
@@ -151,6 +163,27 @@ def _env_int(name: str, default: int) -> int:
     if value is None or value == "":
         return default
     return int(value)
+
+
+def _safe_token(value: str) -> str:
+    token = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "_" for char in value
+    )
+    return token.strip("_") or "unknown"
+
+
+def _array_list(values: np.ndarray) -> list[float]:
+    return [float(value) for value in values.tolist()]
+
+
+def _feature_summary(values: np.ndarray) -> dict[str, float]:
+    return {
+        "norm": float(np.linalg.norm(values)),
+        "mean": float(np.mean(values)),
+        "std": float(np.std(values)),
+        "min": float(np.min(values)),
+        "max": float(np.max(values)),
+    }
 
 
 def _quat_multiply_xyzw(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
@@ -229,6 +262,12 @@ class RslRlCheckpointPolicy(Policy):
       step count. Defaults false because controlled official eval regressed.
     - ``AIC_RSLRL_ZERO_JOINT_OBS``: optional diagnostic that zeros arm joint
       position/velocity observations. Defaults false.
+    - ``AIC_RSLRL_ZERO_BODY_FORCES``: optional diagnostic that zeros the 42D body
+      force block. Defaults false.
+    - ``AIC_RSLRL_TRACE_DIR``: optional directory for JSONL policy traces from
+      legal ``Task``/``Observation`` inputs and emitted ``MotionUpdate`` targets.
+    - ``AIC_RSLRL_TRACE_FULL_OBS``: optional compressed dump of full actor
+      observations/actions next to the JSONL trace. Defaults false.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -284,8 +323,15 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
         self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
         self._zero_joint_obs = _env_bool("AIC_RSLRL_ZERO_JOINT_OBS", False)
+        self._zero_body_forces = _env_bool("AIC_RSLRL_ZERO_BODY_FORCES", False)
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
+        self._trace_dir = os.environ.get("AIC_RSLRL_TRACE_DIR", "")
+        self._trace_every_n = max(1, _env_int("AIC_RSLRL_TRACE_EVERY_N", 1))
+        self._trace_full_obs = _env_bool("AIC_RSLRL_TRACE_FULL_OBS", False)
+        self._trace_path: Path | None = None
+        self._trace_actor_obs: list[np.ndarray] = []
+        self._trace_actions: list[np.ndarray] = []
 
         self.get_logger().info(
             "RslRlCheckpointPolicy configured with "
@@ -314,7 +360,11 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
             f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
             f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
-            f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}"
+            f"AIC_RSLRL_ZERO_BODY_FORCES={self._zero_body_forces!r}, "
+            f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
+            f"AIC_RSLRL_TRACE_DIR={self._trace_dir!r}, "
+            f"AIC_RSLRL_TRACE_EVERY_N={self._trace_every_n!r}, "
+            f"AIC_RSLRL_TRACE_FULL_OBS={self._trace_full_obs!r}"
         )
 
         artifact_paths = {
@@ -458,6 +508,8 @@ class RslRlCheckpointPolicy(Policy):
 
     def _body_forces(self, observation) -> np.ndarray:
         body_forces = np.zeros(42, dtype=np.float32)
+        if self._zero_body_forces:
+            return body_forces
         wrench = observation.wrist_wrench.wrench
         wrist_wrench = np.array(
             [
@@ -472,6 +524,209 @@ class RslRlCheckpointPolicy(Policy):
         )
         body_forces[-6:] = 0.1 * wrist_wrench
         return body_forces
+
+    def _start_trace(self, task: Task, task_kind: str) -> None:
+        self._trace_path = None
+        self._trace_actor_obs = []
+        self._trace_actions = []
+        if not self._trace_dir:
+            return
+        try:
+            trace_dir = Path(self._trace_dir).expanduser()
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            name = (
+                f"{stamp}_{_safe_token(task_kind)}_"
+                f"{_safe_token(task.target_module_name)}_"
+                f"{_safe_token(task.port_name)}.jsonl"
+            )
+            self._trace_path = trace_dir / name
+            self._write_trace(
+                {
+                    "event": "start",
+                    "task_kind": task_kind,
+                    "task": self._task_trace(task),
+                    "policy": {
+                        "control_hz": self._control_hz,
+                        "sc_command_frame": self._sc_command_frame,
+                        "sfp_command_frame": self._sfp_command_frame,
+                        "sc_position_scale": self._sc_position_scale,
+                        "sfp_position_scale": self._sfp_position_scale,
+                        "trace_every_n": self._trace_every_n,
+                        "trace_full_obs": self._trace_full_obs,
+                    },
+                }
+            )
+            self.get_logger().info(f"Writing policy trace to {self._trace_path}")
+        except Exception as exc:
+            self.get_logger().error(f"Unable to start policy trace: {exc}")
+            self._trace_path = None
+
+    def _finish_trace(self, status: str) -> None:
+        if self._trace_path is None:
+            return
+        try:
+            npz_path = ""
+            if self._trace_full_obs and self._trace_actor_obs:
+                npz = self._trace_path.with_suffix(".npz")
+                np.savez_compressed(
+                    npz,
+                    actor_obs=np.stack(self._trace_actor_obs, axis=0),
+                    actions=np.stack(self._trace_actions, axis=0),
+                )
+                npz_path = str(npz)
+            self._write_trace(
+                {
+                    "event": "finish",
+                    "status": status,
+                    "full_obs_npz": npz_path,
+                    "full_obs_count": len(self._trace_actor_obs),
+                }
+            )
+        except Exception as exc:
+            self.get_logger().error(f"Unable to finish policy trace: {exc}")
+        finally:
+            self._trace_path = None
+            self._trace_actor_obs = []
+            self._trace_actions = []
+
+    def _write_trace(self, payload: dict) -> None:
+        if self._trace_path is None:
+            return
+        with self._trace_path.open("a", encoding="utf-8") as trace_file:
+            trace_file.write(json.dumps(payload, sort_keys=True) + "\n")
+
+    def _task_trace(self, task: Task) -> dict[str, str | int]:
+        return {
+            "plug_type": task.plug_type,
+            "plug_name": task.plug_name,
+            "port_type": task.port_type,
+            "port_name": task.port_name,
+            "target_module_name": task.target_module_name,
+            "cable_type": task.cable_type,
+            "cable_name": task.cable_name,
+            "time_limit": int(task.time_limit),
+        }
+
+    def _pose_trace(self, pose: Pose) -> dict[str, list[float]]:
+        return {
+            "xyz": [
+                float(pose.position.x),
+                float(pose.position.y),
+                float(pose.position.z),
+            ],
+            "quat_xyzw": [
+                float(pose.orientation.x),
+                float(pose.orientation.y),
+                float(pose.orientation.z),
+                float(pose.orientation.w),
+            ],
+        }
+
+    def _wrench_trace(self, observation) -> list[float]:
+        wrench = observation.wrist_wrench.wrench
+        return [
+            float(wrench.force.x),
+            float(wrench.force.y),
+            float(wrench.force.z),
+            float(wrench.torque.x),
+            float(wrench.torque.y),
+            float(wrench.torque.z),
+        ]
+
+    def _joint_trace(self, observation) -> dict[str, list[float]]:
+        pos_by_name = dict(
+            zip(observation.joint_states.name, observation.joint_states.position)
+        )
+        vel_by_name = dict(
+            zip(observation.joint_states.name, observation.joint_states.velocity)
+        )
+        return {
+            "names": list(ARM_JOINT_NAMES),
+            "positions": [
+                float(pos_by_name.get(name, float("nan"))) for name in ARM_JOINT_NAMES
+            ],
+            "velocities": [
+                float(vel_by_name.get(name, float("nan"))) for name in ARM_JOINT_NAMES
+            ],
+        }
+
+    def _trace_actor_step(
+        self,
+        *,
+        task: Task,
+        task_kind: str,
+        step: int,
+        observation,
+        actor_obs: np.ndarray,
+        action: np.ndarray,
+        motion_update: MotionUpdate,
+    ) -> None:
+        if self._trace_path is None:
+            return
+        if self._trace_full_obs:
+            self._trace_actor_obs.append(actor_obs.copy())
+            self._trace_actions.append(action.copy())
+        if step % self._trace_every_n != 0:
+            return
+
+        controller_state = observation.controller_state
+        payload = {
+            "event": "actor_step",
+            "task_kind": task_kind,
+            "step": int(step),
+            "task": self._task_trace(task),
+            "port_selection": {
+                "sfp": self._sfp_port_name(task),
+                "sc": self._sc_port_name(task),
+            },
+            "actor_obs": {
+                "task_metadata": _array_list(actor_obs[OBS_SLICE_TASK]),
+                "joint_pos_rel_first6": _array_list(
+                    actor_obs[OBS_SLICE_JOINT_POS][:6]
+                ),
+                "joint_vel_rel_first6": _array_list(
+                    actor_obs[OBS_SLICE_JOINT_VEL][:6]
+                ),
+                "eef_pose_xyz_wxyz": _array_list(actor_obs[OBS_SLICE_EEF]),
+                "body_forces_last6": _array_list(actor_obs[OBS_SLICE_BODY_FORCES][-6:]),
+                "center_rgb_resnet18": _feature_summary(
+                    actor_obs[OBS_SLICE_CENTER_RGB]
+                ),
+                "left_rgb_resnet18": _feature_summary(actor_obs[OBS_SLICE_LEFT_RGB]),
+                "right_rgb_resnet18": _feature_summary(actor_obs[OBS_SLICE_RIGHT_RGB]),
+                "last_action": _array_list(actor_obs[OBS_SLICE_LAST_ACTION]),
+            },
+            "observation": {
+                "tcp_pose": self._pose_trace(controller_state.tcp_pose),
+                "reference_tcp_pose": self._pose_trace(
+                    controller_state.reference_tcp_pose
+                ),
+                "tcp_error": [float(value) for value in controller_state.tcp_error],
+                "target_mode": int(controller_state.target_mode.mode),
+                "wrist_wrench": self._wrench_trace(observation),
+                "arm_joints": self._joint_trace(observation),
+            },
+            "action": _array_list(action),
+            "command": {
+                "frame_id": motion_update.header.frame_id,
+                "pose": self._pose_trace(motion_update.pose),
+                "stiffness_diag": [
+                    float(motion_update.target_stiffness[i * 6 + i])
+                    for i in range(6)
+                ],
+                "damping_diag": [
+                    float(motion_update.target_damping[i * 6 + i])
+                    for i in range(6)
+                ],
+                "mode": int(motion_update.trajectory_generation_mode.mode),
+            },
+        }
+        try:
+            self._write_trace(payload)
+        except Exception as exc:
+            self.get_logger().error(f"Unable to write policy trace step: {exc}")
+            self._trace_path = None
 
     def _load_resnet18(self):
         if self._resnet18 is not None or self._resnet18_failed:
@@ -880,6 +1135,7 @@ class RslRlCheckpointPolicy(Policy):
             send_feedback(reason)
             return False
 
+        self._start_trace(task, task_kind)
         self._last_action[:] = 0.0
         if task_kind == "sc":
             self._run_sc_prepose(task, move_robot, send_feedback)
@@ -888,6 +1144,7 @@ class RslRlCheckpointPolicy(Policy):
         if task_kind == "sc" and not self._sc_actor_enabled:
             send_feedback("SC actor disabled after legal prepose")
             self.get_logger().info("SC actor disabled after legal prepose.")
+            self._finish_trace("sc_actor_disabled")
             return True
 
         actor_input_dim = None
@@ -931,6 +1188,7 @@ class RslRlCheckpointPolicy(Policy):
                 self.get_logger().error(
                     f"Observation became unavailable during {task_kind.upper()} control loop."
                 )
+                self._finish_trace("missing_observation")
                 return False
             try:
                 actor_obs = self._actor_observation(task, observation, task_kind)
@@ -962,6 +1220,15 @@ class RslRlCheckpointPolicy(Policy):
                     rotation_scale=rotation_scale,
                     frame_id=command_frame,
                 )
+                self._trace_actor_step(
+                    task=task,
+                    task_kind=task_kind,
+                    step=step,
+                    observation=observation,
+                    actor_obs=actor_obs,
+                    action=action,
+                    motion_update=motion_update,
+                )
                 move_robot(motion_update=motion_update)
                 self._last_action = action.astype(np.float32, copy=True)
                 if step % self._log_every_n == 0:
@@ -975,6 +1242,7 @@ class RslRlCheckpointPolicy(Policy):
                     f"{task_kind.upper()} actor control failed at step {step}: {exc}"
                 )
                 send_feedback(f"{task_kind.upper()} actor control failed: {exc}")
+                self._finish_trace("actor_control_failed")
                 return False
             if self._fixed_step_replay:
                 self.sleep_for(dt)
@@ -993,4 +1261,5 @@ class RslRlCheckpointPolicy(Policy):
         self.get_logger().info(
             f"RslRlCheckpointPolicy {task_kind.upper()} control loop completed."
         )
+        self._finish_trace("completed")
         return True

@@ -64,6 +64,9 @@ Current blocker:
 - The highest-risk deployment assumptions are observation equivalence
   (ResNet18 image features, TCP pose frame, wrench/body-force padding) and the
   relative-IK action replay frame.
+- Step 10 is a transfer-audit pass. It adds opt-in policy traces so the next
+  change is based on legal Gazebo observation/action evidence rather than
+  another blind training run.
 
 Next recommended work:
 
@@ -111,6 +114,7 @@ Next recommended work:
 - Step 7 SFP task extension: `detailed/step7.md`
 - Step 8 SFP specialist PPO work: `detailed/step8.md`
 - Step 9 distillation/export blocker: `detailed/step9.md`
+- Step 10 Gazebo transfer audit: `detailed/step10.md`
 
 ## Per-Step Workflow
 
