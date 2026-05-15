@@ -645,6 +645,15 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_local_search_z_step = _env_float(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_Z_STEP", 0.006
         )
+        self._sfp_terminal_fallback_joints_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_TERMINAL_FALLBACK_JOINTS", False
+        )
+        self._sfp_terminal_fallback_tcp_z_threshold = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_FALLBACK_TCP_Z_THRESHOLD", 0.21
+        )
+        self._sfp_terminal_fallback_joint_steps = _env_int(
+            "AIC_RSLRL_SFP_TERMINAL_FALLBACK_JOINT_STEPS", 0
+        )
         self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
         self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
         self._zero_joint_obs = _env_bool("AIC_RSLRL_ZERO_JOINT_OBS", False)
@@ -2139,6 +2148,7 @@ class RslRlCheckpointPolicy(Policy):
         self,
         task: Task,
         task_kind: str,
+        target_key: str,
         get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
@@ -2148,6 +2158,9 @@ class RslRlCheckpointPolicy(Policy):
                 task, get_observation, move_robot, send_feedback
             )
             self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            self._run_sfp_terminal_fallback_joint_finish(
+                target_key, get_observation, move_robot, send_feedback
+            )
             observation = get_observation()
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
@@ -2155,6 +2168,52 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
         elif task_kind == "sc":
             self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
+
+    def _run_sfp_terminal_fallback_joint_finish(
+        self,
+        target_key: str,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sfp_terminal_fallback_joints_enabled:
+            return
+        if target_key not in PUBLIC_SCRIPTED_FINAL_JOINTS:
+            return
+        observation = get_observation()
+        if observation is None:
+            self.get_logger().error(
+                "Observation unavailable before SFP terminal fallback joint finish."
+            )
+            return
+        tcp_z = float(observation.controller_state.tcp_pose.position.z)
+        threshold = self._sfp_terminal_fallback_tcp_z_threshold
+        if tcp_z <= threshold:
+            self.get_logger().info(
+                "Skipping SFP terminal fallback joint finish: "
+                f"target_key={target_key}, tcp_z={tcp_z:.4f}, "
+                f"threshold={threshold:.4f}"
+            )
+            return
+
+        steps_override = (
+            self._sfp_terminal_fallback_joint_steps
+            if self._sfp_terminal_fallback_joint_steps > 0
+            else None
+        )
+        send_feedback("running legal SFP terminal fallback joint finish")
+        self.get_logger().info(
+            "Running SFP terminal fallback joint finish: "
+            f"target_key={target_key}, tcp_z={tcp_z:.4f}, "
+            f"threshold={threshold:.4f}, steps_override={steps_override}"
+        )
+        self._run_public_scripted_joint_finish(
+            target_key,
+            move_robot,
+            send_feedback,
+            force=True,
+            steps_override=steps_override,
+        )
 
     def _run_public_scripted_joint_trace_replay(
         self,
@@ -2201,7 +2260,7 @@ class RslRlCheckpointPolicy(Policy):
             self.sleep_for(dt)
 
         self._run_public_scripted_post_trace_refinements(
-            task, task_kind, get_observation, move_robot, send_feedback
+            task, task_kind, target_key, get_observation, move_robot, send_feedback
         )
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
@@ -2319,7 +2378,7 @@ class RslRlCheckpointPolicy(Policy):
         )
 
         self._run_public_scripted_post_trace_refinements(
-            task, task_kind, get_observation, move_robot, send_feedback
+            task, task_kind, target_key, get_observation, move_robot, send_feedback
         )
 
         if self._public_scripted_dwell_sec > 0.0:
@@ -2331,10 +2390,15 @@ class RslRlCheckpointPolicy(Policy):
         target_key: str,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
+        *,
+        force: bool = False,
+        steps_override: int | None = None,
     ) -> bool:
-        if not self._public_scripted_final_joints_enabled:
+        if not self._public_scripted_final_joints_enabled and not force:
             return True
         if (
+            not force
+            and
             self._public_scripted_final_joint_targets is not None
             and target_key not in self._public_scripted_final_joint_targets
         ):
@@ -2350,7 +2414,12 @@ class RslRlCheckpointPolicy(Policy):
             )
             return False
         final_joint_target = np.array(final_joint_raw, dtype=np.float64)
-        final_joint_steps = max(1, self._public_scripted_final_joint_steps)
+        final_joint_steps = max(
+            1,
+            steps_override
+            if steps_override is not None
+            else self._public_scripted_final_joint_steps,
+        )
         final_joint_dt = max(0.01, self._public_scripted_final_joint_dt)
         joint_command = self._make_joint_position_update(
             final_joint_target,
@@ -2361,6 +2430,7 @@ class RslRlCheckpointPolicy(Policy):
             "Running public-geometry scripted joint finish: "
             f"target_key={target_key}, steps={final_joint_steps}, "
             f"dt={final_joint_dt:.3f}s, "
+            f"force={force!r}, "
             f"target={np.array2string(final_joint_target, precision=4)}"
         )
         for step in range(final_joint_steps):
