@@ -576,6 +576,8 @@ class RslRlCheckpointPolicy(Policy):
         self._resnet18 = None
         self._resnet18_failed = False
         self._last_action = np.zeros(6, dtype=np.float32)
+        self._image_dump_dir = os.environ.get("AIC_RSLRL_DUMP_IMAGES_DIR", "").strip()
+        self._image_dump_counter = 0
         self._control_hz = _env_float("AIC_RSLRL_CONTROL_HZ", 10.0)
         self._sc_max_control_sec = _env_float("AIC_RSLRL_SC_MAX_CONTROL_SEC", 9.0)
         self._sfp_max_control_sec = _env_float("AIC_RSLRL_SFP_MAX_CONTROL_SEC", 9.0)
@@ -1609,6 +1611,50 @@ class RslRlCheckpointPolicy(Policy):
             image = image[..., :3]
         return np.ascontiguousarray(image)
 
+    def _dump_observation_images(
+        self,
+        observation,
+        task: Task | None,
+        stage: str,
+        *,
+        task_kind: str | None = None,
+        target_key: str | None = None,
+    ) -> None:
+        if not self._image_dump_dir:
+            return
+        try:
+            dump_dir = Path(self._image_dump_dir)
+            dump_dir.mkdir(parents=True, exist_ok=True)
+            self._image_dump_counter += 1
+            if task_kind is None and task is not None:
+                task_kind = self._task_kind_from_task(task)
+            if target_key is None and task is not None and task_kind is not None:
+                target_key = self._public_scripted_target_key(task, task_kind)
+            task_kind = task_kind or "unknown"
+            target_key = target_key or "unknown"
+            stem = (
+                f"{self._image_dump_counter:04d}_"
+                f"{_safe_token(task_kind)}_"
+                f"{_safe_token(target_key)}_"
+                f"{_safe_token(stage)}"
+            )
+            for name, image_msg in (
+                ("left", observation.left_image),
+                ("center", observation.center_image),
+                ("right", observation.right_image),
+            ):
+                image = self._image_array(image_msg)
+                path = dump_dir / f"{stem}_{name}.ppm"
+                header = f"P6\n{image.shape[1]} {image.shape[0]}\n255\n".encode("ascii")
+                with path.open("wb") as outfile:
+                    outfile.write(header)
+                    outfile.write(np.ascontiguousarray(image).tobytes())
+            self.get_logger().info(
+                f"Dumped official observation images for stage={stage!r} to {dump_dir}"
+            )
+        except Exception as exc:
+            self.get_logger().error(f"Unable to dump official observation images: {exc}")
+
     def _image_features(self, image_msg) -> np.ndarray:
         model = self._load_resnet18()
         torch = self._torch
@@ -1993,6 +2039,7 @@ class RslRlCheckpointPolicy(Policy):
         if observation is None:
             self.get_logger().error("Observation unavailable before SC terminal target.")
             return None
+        self._dump_observation_images(observation, task, "sc_terminal_start")
 
         pose = observation.controller_state.tcp_pose
         quat = np.array(
@@ -2174,6 +2221,7 @@ class RslRlCheckpointPolicy(Policy):
         if observation is None:
             self.get_logger().error("Observation unavailable before SFP terminal target.")
             return None
+        self._dump_observation_images(observation, task, "sfp_terminal_start")
 
         pose = observation.controller_state.tcp_pose
         quat = np.array(
@@ -2573,6 +2621,13 @@ class RslRlCheckpointPolicy(Policy):
         if observation is None:
             self.get_logger().error("Observation unavailable before public grid search.")
             return
+        self._dump_observation_images(
+            observation,
+            None,
+            f"{task_kind}_grid_start",
+            task_kind=task_kind,
+            target_key=target_key,
+        )
         pose = observation.controller_state.tcp_pose
         anchor = np.array(
             [pose.position.x, pose.position.y, pose.position.z],
@@ -3323,6 +3378,7 @@ class RslRlCheckpointPolicy(Policy):
             f"center_image={observation.center_image.width}x{observation.center_image.height}, "
             f"right_image={observation.right_image.width}x{observation.right_image.height}"
         )
+        self._dump_observation_images(observation, task, "task_start")
 
         if task_kind not in {"sc", "sfp"}:
             reason = (
