@@ -192,6 +192,33 @@ PUBLIC_SCRIPTED_FINAL_POSES = {
     ),
 }
 
+PUBLIC_SCRIPTED_FINAL_JOINTS = {
+    "nic_card_mount_0": (
+        -0.430668,
+        -1.574238,
+        -1.843707,
+        -1.436053,
+        1.914470,
+        1.171947,
+    ),
+    "nic_card_mount_1": (
+        -0.501412,
+        -1.638057,
+        -1.778756,
+        -1.461580,
+        1.903620,
+        1.097928,
+    ),
+    "sc_port_2": (
+        -0.507122,
+        -2.047606,
+        -1.694057,
+        -1.161794,
+        1.997277,
+        1.146562,
+    ),
+}
+
 SC_PORT_ALIASES = {
     # Isaac uses sc_port/sc_port_2 for the two available SC targets. The official
     # Gazebo task metadata names the mounted modules as sc_port_0/sc_port_1.
@@ -460,6 +487,8 @@ class RslRlCheckpointPolicy(Policy):
     - ``AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_DELTA`` and
       ``AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_DELTA_<TARGET>``: optional JSON
       ``[x, y, z]`` offsets for the public-sample scripted final pose.
+    - ``AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_JOINTS``: optional final
+      joint-space finish using offline public-sample calibration targets.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -604,6 +633,15 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_dwell_sec = _env_float(
             "AIC_RSLRL_PUBLIC_SCRIPTED_DWELL_SEC", 5.0
         )
+        self._public_scripted_final_joints_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_JOINTS", False
+        )
+        self._public_scripted_final_joint_steps = _env_int(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_STEPS", 120
+        )
+        self._public_scripted_final_joint_dt = _env_float(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_DT", 0.05
+        )
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
         self._trace_dir = os.environ.get("AIC_RSLRL_TRACE_DIR", "")
@@ -685,6 +723,10 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_include_mount_metadata!r}, "
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_INSERT="
             f"{self._public_scripted_insert_enabled!r}, "
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_JOINTS="
+            f"{self._public_scripted_final_joints_enabled!r}, "
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_STEPS="
+            f"{self._public_scripted_final_joint_steps!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
             f"AIC_RSLRL_TRACE_DIR={self._trace_dir!r}, "
             f"AIC_RSLRL_TRACE_EVERY_N={self._trace_every_n!r}, "
@@ -1942,6 +1984,40 @@ class RslRlCheckpointPolicy(Policy):
                     f"position={np.array2string(position, precision=4)}"
                 )
             self.sleep_for(dt)
+
+        if self._public_scripted_final_joints_enabled:
+            final_joint_raw = PUBLIC_SCRIPTED_FINAL_JOINTS.get(target_key)
+            if final_joint_raw is None:
+                self.get_logger().error(
+                    f"No public scripted final joint target for {target_key!r}"
+                )
+                return False
+            final_joint_target = np.array(final_joint_raw, dtype=np.float64)
+            final_joint_steps = max(1, self._public_scripted_final_joint_steps)
+            final_joint_dt = max(0.01, self._public_scripted_final_joint_dt)
+            joint_command = self._make_joint_position_update(
+                final_joint_target,
+                mirror_shoulder=False,
+            )
+            send_feedback("running public-geometry scripted joint finish")
+            self.get_logger().info(
+                "Running public-geometry scripted joint finish: "
+                f"target_key={target_key}, steps={final_joint_steps}, "
+                f"dt={final_joint_dt:.3f}s, "
+                f"target={np.array2string(final_joint_target, precision=4)}"
+            )
+            for step in range(final_joint_steps):
+                move_robot(joint_motion_update=joint_command)
+                if (
+                    step == 0
+                    or step + 1 == final_joint_steps
+                    or step % self._log_every_n == 0
+                ):
+                    self.get_logger().info(
+                        "Public scripted joint finish "
+                        f"{step + 1}/{final_joint_steps}"
+                    )
+                self.sleep_for(final_joint_dt)
 
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
