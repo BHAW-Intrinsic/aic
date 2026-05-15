@@ -582,6 +582,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_guarded_insert_retract_step = _env_float(
             "AIC_RSLRL_SC_GUARDED_INSERT_RETRACT_STEP", 0.0012
         )
+        self._sc_guarded_insert_retract_on_force = _env_bool(
+            "AIC_RSLRL_SC_GUARDED_INSERT_RETRACT_ON_FORCE", True
+        )
         self._sc_guarded_insert_force_limit = _env_float(
             "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT", 18.0
         )
@@ -909,6 +912,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_guarded_insert_down_step!r}, "
             "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT="
             f"{self._sc_guarded_insert_force_limit!r}, "
+            "AIC_RSLRL_SC_GUARDED_INSERT_RETRACT_ON_FORCE="
+            f"{self._sc_guarded_insert_retract_on_force!r}, "
             "AIC_RSLRL_SC_GUARDED_INSERT_LINEAR_STIFFNESS="
             f"{self._sc_guarded_insert_linear_stiffness!r}, "
             "AIC_RSLRL_SC_GUARDED_INSERT_LINEAR_DAMPING="
@@ -2006,6 +2011,7 @@ class RslRlCheckpointPolicy(Policy):
             f"steps={steps}, down_step={self._sc_guarded_insert_down_step}, "
             f"retract_step={self._sc_guarded_insert_retract_step}, "
             f"force_limit={self._sc_guarded_insert_force_limit}, "
+            f"retract_on_force={self._sc_guarded_insert_retract_on_force!r}, "
             f"linear_stiffness={self._sc_guarded_insert_linear_stiffness}, "
             f"linear_damping={self._sc_guarded_insert_linear_damping}"
         )
@@ -2017,11 +2023,10 @@ class RslRlCheckpointPolicy(Policy):
                 )
                 return
             force_norm = self._force_norm(observation)
-            z_step = (
-                self._sc_guarded_insert_retract_step
-                if force_norm > self._sc_guarded_insert_force_limit
-                else self._sc_guarded_insert_down_step
-            )
+            force_limited = force_norm > self._sc_guarded_insert_force_limit
+            z_step = self._sc_guarded_insert_down_step
+            if force_limited and self._sc_guarded_insert_retract_on_force:
+                z_step = self._sc_guarded_insert_retract_step
             command = self._make_tcp_delta_update(
                 np.array([0.0, 0.0, z_step], dtype=np.float64),
                 linear_stiffness=self._sc_guarded_insert_linear_stiffness,
