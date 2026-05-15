@@ -211,9 +211,9 @@ PUBLIC_SCRIPTED_FINAL_JOINTS = {
     ),
     "sc_port_2": (
         -0.507122,
-        -2.063300,
-        -1.708000,
-        -1.133300,
+        -2.047606,
+        -1.694057,
+        -1.161794,
         1.997277,
         1.146562,
     ),
@@ -545,6 +545,21 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_terminal_target_max_step = _env_float(
             "AIC_RSLRL_SC_TERMINAL_TARGET_MAX_STEP", 0.0
         )
+        self._sc_guarded_insert_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SC_GUARDED_INSERT", False
+        )
+        self._sc_guarded_insert_sec = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_SEC", 4.0
+        )
+        self._sc_guarded_insert_down_step = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_DOWN_STEP", -0.0008
+        )
+        self._sc_guarded_insert_retract_step = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_RETRACT_STEP", 0.0012
+        )
+        self._sc_guarded_insert_force_limit = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT", 18.0
+        )
         self._sfp_terminal_target_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET", False
         )
@@ -741,6 +756,14 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_terminal_orientation_enabled!r}, "
             "AIC_RSLRL_SC_TERMINAL_TARGET_MAX_STEP="
             f"{self._sc_terminal_target_max_step!r}, "
+            "AIC_RSLRL_ENABLE_SC_GUARDED_INSERT="
+            f"{self._sc_guarded_insert_enabled!r}, "
+            "AIC_RSLRL_SC_GUARDED_INSERT_SEC="
+            f"{self._sc_guarded_insert_sec!r}, "
+            "AIC_RSLRL_SC_GUARDED_INSERT_DOWN_STEP="
+            f"{self._sc_guarded_insert_down_step!r}, "
+            "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT="
+            f"{self._sc_guarded_insert_force_limit!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
             f"{self._sfp_terminal_target_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC="
@@ -1697,8 +1720,52 @@ class RslRlCheckpointPolicy(Policy):
                     "SC terminal target "
                     f"{index}/{len(path)}: "
                     f"position={np.array2string(target_array, precision=4)}"
-                )
+            )
             self.sleep_for(dwell)
+
+    def _run_sc_guarded_insert(
+        self,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sc_guarded_insert_enabled:
+            return
+        steps = max(1, int(self._sc_guarded_insert_sec * self._control_hz))
+        dt = 1.0 / max(self._control_hz, 1e-6)
+        send_feedback("running legal SC guarded insertion")
+        self.get_logger().info(
+            "Running legal SC guarded insertion: "
+            f"steps={steps}, down_step={self._sc_guarded_insert_down_step}, "
+            f"retract_step={self._sc_guarded_insert_retract_step}, "
+            f"force_limit={self._sc_guarded_insert_force_limit}"
+        )
+        for step in range(steps):
+            observation = get_observation()
+            if observation is None:
+                self.get_logger().error(
+                    "Observation became unavailable during SC guarded insert."
+                )
+                return
+            force_norm = self._force_norm(observation)
+            z_step = (
+                self._sc_guarded_insert_retract_step
+                if force_norm > self._sc_guarded_insert_force_limit
+                else self._sc_guarded_insert_down_step
+            )
+            command = self._make_tcp_delta_update(
+                np.array([0.0, 0.0, z_step], dtype=np.float64),
+                linear_stiffness=25.0,
+                angular_stiffness=8.0,
+            )
+            move_robot(motion_update=command)
+            if step % self._log_every_n == 0:
+                self.get_logger().info(
+                    "SC guarded insert "
+                    f"step={step}/{steps}, force_norm={force_norm:.2f}, "
+                    f"z_step={z_step:.5f}"
+                )
+            self.sleep_for(dt)
 
     def _run_sfp_terminal_target(
         self,
@@ -2375,6 +2442,7 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sc_terminal_target(
                 task, get_observation, move_robot, send_feedback
             )
+            self._run_sc_guarded_insert(get_observation, move_robot, send_feedback)
 
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
