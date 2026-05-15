@@ -695,6 +695,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_local_search_priority_enabled = _env_bool(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_ENABLED", False
         )
+        self._sfp_local_search_tcp_z_threshold = _env_float(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_TCP_Z_THRESHOLD", 0.0
+        )
         self._sfp_local_search_z_down = _env_float(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_Z_DOWN", 0.018
         )
@@ -899,6 +902,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_local_search_priority_dwell_sec!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_ENABLED="
             f"{self._sfp_local_search_priority_enabled!r}, "
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_TCP_Z_THRESHOLD="
+            f"{self._sfp_local_search_tcp_z_threshold!r}, "
             f"AIC_RSLRL_SC_ACTOR_ENABLED={self._sc_actor_enabled!r}, "
             f"AIC_RSLRL_FIXED_STEP_REPLAY={self._fixed_step_replay!r}, "
             f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
@@ -2175,6 +2180,17 @@ class RslRlCheckpointPolicy(Policy):
             return
 
         pose = observation.controller_state.tcp_pose
+        tcp_z = float(pose.position.z)
+        if (
+            self._sfp_local_search_tcp_z_threshold > 0.0
+            and tcp_z <= self._sfp_local_search_tcp_z_threshold
+        ):
+            self.get_logger().info(
+                "Skipping SFP local search: "
+                f"tcp_z={tcp_z:.4f}, "
+                f"threshold={self._sfp_local_search_tcp_z_threshold:.4f}"
+            )
+            return
         anchor = np.array(
             [pose.position.x, pose.position.y, pose.position.z],
             dtype=np.float64,
@@ -2207,6 +2223,8 @@ class RslRlCheckpointPolicy(Policy):
             f"anchor={np.array2string(anchor, precision=4)}, "
             f"radius={self._sfp_local_search_radius}, "
             f"step={self._sfp_local_search_step}, "
+            f"tcp_z={tcp_z:.4f}, "
+            f"tcp_z_threshold={self._sfp_local_search_tcp_z_threshold:.4f}, "
             f"z_down={z_down}, xy_points={len(xy_offsets)}, "
             f"z_levels={len(z_offsets)}, "
             f"priority_points={len(priority_offsets)}"
