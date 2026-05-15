@@ -108,6 +108,11 @@ Completed work so far:
 - The final packaged SFP artifact is the tightened Gazebo-transfer checkpoint
   `step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`. It is legal and gives
   partial official Gazebo credit, but it does not reliably trigger insertion.
+- [2026-05-16] [58b725c] Tune SFP body-force scale AIC_RSLRL_BODY_FORCE_SCALE=0.5:
+  total=3 (all SFP actor_control_failed 0-steps; SC 0.29m from port).
+  body_force_last6_norm ~10 (5× baseline). Clear regression — infrastructure
+  controller contamination also present. Scale=0.5 rejected; 0.1 remains default.
+  Log: logs/gazebo_eval/20260516_031058/scoring.yaml
 
 Submission packaging status:
 

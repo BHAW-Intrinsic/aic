@@ -737,6 +737,9 @@ class RslRlCheckpointPolicy(Policy):
         self._zero_joint_obs = _env_bool("AIC_RSLRL_ZERO_JOINT_OBS", False)
         self._zero_body_forces = _env_bool("AIC_RSLRL_ZERO_BODY_FORCES", False)
         self._body_force_scale = _env_float("AIC_RSLRL_BODY_FORCE_SCALE", 0.1)
+        self._body_force_first_slots = _env_bool(
+            "AIC_RSLRL_BODY_FORCE_FIRST_SLOTS", False
+        )
         self._sfp_include_mount_metadata = _env_bool(
             "AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA", False
         )
@@ -915,6 +918,8 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_ZERO_JOINT_OBS={self._zero_joint_obs!r}, "
             f"AIC_RSLRL_ZERO_BODY_FORCES={self._zero_body_forces!r}, "
             f"AIC_RSLRL_BODY_FORCE_SCALE={self._body_force_scale!r}, "
+            "AIC_RSLRL_BODY_FORCE_FIRST_SLOTS="
+            f"{self._body_force_first_slots!r}, "
             "AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA="
             f"{self._sfp_include_mount_metadata!r}, "
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_INSERT="
@@ -1155,7 +1160,10 @@ class RslRlCheckpointPolicy(Policy):
             ],
             dtype=np.float32,
         )
-        body_forces[-6:] = self._body_force_scale * wrist_wrench
+        if self._body_force_first_slots:
+            body_forces[:6] = self._body_force_scale * wrist_wrench
+        else:
+            body_forces[-6:] = self._body_force_scale * wrist_wrench
         return body_forces
 
     def _start_trace(self, task: Task, task_kind: str) -> None:
