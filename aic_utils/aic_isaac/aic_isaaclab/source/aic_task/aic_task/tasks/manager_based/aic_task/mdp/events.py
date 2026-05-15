@@ -53,25 +53,25 @@ SC_NEAR_PORT_JOINT_PRESETS = {
     ),
 }
 
-# Mean final joint positions from the Step 8 SFP scripted alignment diagnostic.
-# These are near-port, outside-insertion seeds; they are not expert success
-# labels because the scripted controller remained 0/32 on strict SFP success.
+# Mean joint positions after Step 8 intermediate-gate SFP pre-correction
+# diagnostics. Both ports use the short negative lateral correction that gave
+# the best first-hit SFP insertion result before the final z-negative push.
 SFP_NEAR_PORT_JOINT_PRESETS = {
     "sfp_port_0": (
-        0.8269333839416504,
-        -1.6315652132034302,
-        -1.792166829109192,
-        -1.1168278455734253,
-        1.8379584550857544,
-        2.102725028991699,
+        0.8302846551,
+        -1.5486999750,
+        -1.8918046951,
+        -1.0959614515,
+        1.8380267620,
+        2.1012129784,
     ),
     "sfp_port_1": (
-        0.7965589165687561,
-        -1.671587347984314,
-        -1.7475603818893433,
-        -1.1217869520187378,
-        1.837986946105957,
-        2.108513116836548,
+        0.8000932336,
+        -1.5981711149,
+        -1.8391590118,
+        -1.1001185179,
+        1.8383054733,
+        2.1077697277,
     ),
 }
 
@@ -166,6 +166,7 @@ def randomize_board_and_parts(
     board_range: dict = {"x": (0.0, 0.0), "y": (0.0, 0.0)},
     parts: list[dict] = (),
     sync_usd_xforms: bool = True,
+    sample_sfp_mount: bool = False,
 ) -> None:
     """Randomize the task board and its attached parts on reset.
 
@@ -181,6 +182,8 @@ def randomize_board_and_parts(
     n = len(env_ids)
     env_origins = env.scene.env_origins[env_ids]
     stage = omni.usd.get_context().get_stage() if sync_usd_xforms else None
+    if sample_sfp_mount:
+        geometry.sample_active_sfp_mount(env, env_ids)
 
     all_names = [board_scene_name] + [p["scene_name"] for p in parts]
     if not _cached_orientations:
@@ -226,11 +229,34 @@ def randomize_board_and_parts(
         ox, oy, oz = part_cfg["offset"]
         pr = part_cfg.get("pose_range", {})
         snap = part_cfg.get("snap_step", {})
+        sfp_mount_y_offsets = part_cfg.get("sfp_mount_y_offsets")
+        sfp_mount_y_delta = None
+        if sfp_mount_y_offsets is not None:
+            if len(sfp_mount_y_offsets) != len(geometry.SFP_MOUNT_NAMES):
+                raise RuntimeError(
+                    f"{pname} has {len(sfp_mount_y_offsets)} SFP mount offsets; "
+                    f"expected {len(geometry.SFP_MOUNT_NAMES)}"
+                )
+            offsets = torch.tensor(
+                sfp_mount_y_offsets, device=device, dtype=board_world_pos.dtype
+            )
+            mount_ids = geometry.active_sfp_mount_ids(env)[env_ids]
+            sfp_mount_y_delta = offsets[mount_ids]
+            jitter = part_cfg.get("sfp_mount_y_jitter", (0.0, 0.0))
+            if jitter != (0.0, 0.0):
+                sfp_mount_y_delta = sfp_mount_y_delta + torch.empty(
+                    n, device=device, dtype=board_world_pos.dtype
+                ).uniform_(*jitter)
 
         part_pos = board_world_pos.clone()
         for idx in range(n):
             part_pos[idx, 0] += ox + _sample_axis(pr, snap, "x")
-            part_pos[idx, 1] += oy + _sample_axis(pr, snap, "y")
+            y_delta = (
+                sfp_mount_y_delta[idx]
+                if sfp_mount_y_delta is not None
+                else _sample_axis(pr, snap, "y")
+            )
+            part_pos[idx, 1] += oy + y_delta
             part_pos[idx, 2] = board_world_pos[idx, 2] + oz
 
         part_asset.write_root_pose_to_sim(

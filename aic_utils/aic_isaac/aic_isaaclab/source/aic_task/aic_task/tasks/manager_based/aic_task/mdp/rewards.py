@@ -439,9 +439,11 @@ def sfp_depth_progress_reward(
     env: ManagerBasedRLEnv,
     scale: float = 0.01,
     clip: float = 1.0,
+    lateral_threshold: float | None = None,
+    orientation_threshold: float | None = None,
 ) -> torch.Tensor:
     """Reward increasing signed SFP insertion depth."""
-    return _metric_progress_reward(
+    reward = _metric_progress_reward(
         env,
         geometry.SFP_PREV_DEPTH_ATTR,
         geometry.sfp_insertion_depth(env),
@@ -449,6 +451,13 @@ def sfp_depth_progress_reward(
         scale=scale,
         clip=clip,
     )
+    if lateral_threshold is not None:
+        reward = reward * (geometry.sfp_lateral_error(env) < lateral_threshold).float()
+    if orientation_threshold is not None:
+        reward = reward * (
+            geometry.sfp_orientation_error(env) < orientation_threshold
+        ).float()
+    return reward
 
 
 def sfp_insertion_depth_reward(
@@ -540,6 +549,7 @@ def sfp_port_frame_lateral_action_reward(
     env: ManagerBasedRLEnv,
     action_name: str = "arm_action",
     command_scale: float = 0.02,
+    realized_lateral_scale: float = 3.0e-5,
     min_lateral_error: float = 0.002,
     lateral_scale: float = 0.006,
     lateral_threshold: float = 0.060,
@@ -561,6 +571,15 @@ def sfp_port_frame_lateral_action_reward(
     desired_raw_x = -signed_x / lateral_denom
     desired_raw_y = signed_y / lateral_denom
     correction_command = raw[:, 0] * desired_raw_x + raw[:, 1] * desired_raw_y
+    realized_progress = _metric_progress_reward(
+        env,
+        geometry.SFP_PREV_LATERAL_ACTION_ATTR,
+        lateral_error,
+        improvement="decrease",
+        scale=realized_lateral_scale,
+        clip=1.0,
+    )
+    realized_gain = torch.clamp(realized_progress, min=0.0, max=1.0)
     scaled_command = torch.clamp(
         correction_command / max(command_scale, 1.0e-6), min=0.0, max=1.0
     )
@@ -578,7 +597,7 @@ def sfp_port_frame_lateral_action_reward(
         & (depth > min_depth)
         & (depth < max_depth)
     )
-    return active.float() * lateral_gain * scaled_command
+    return active.float() * lateral_gain * realized_gain * scaled_command
 
 
 def sfp_port_frame_depth_action_reward(

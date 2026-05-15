@@ -33,6 +33,42 @@ Scope:
   acceptable for unblocking SFP work, provided a video artifact is saved. The
   current BC checkpoint is a neural actor, not a runtime hardcoded CheatCode,
   but PPO remains the preferred final/generalizable training path.
+- Step 9 precondition decision: before distillation/export, run a randomized SFP
+  reliability pass with two PPO tracks: one warm-started from the successful
+  fixed-NIC SFP checkpoint and one control run from scratch. If the scratch run
+  learns better randomized insertion, prefer it over the warm-started run.
+- Step 9 result: the scratch randomized SFP PPO run is the selected candidate.
+  Deterministic Isaac eval was `238/256` overall, with `123/132` on
+  `sfp_port_0` and `115/124` on `sfp_port_1`. The warm-start run passed
+  overall but failed the per-port gate on `sfp_port_0`.
+- Official Gazebo eval wrapper status: scaffold orchestration works and writes
+  `scoring.yaml`/trial bags/videos. The SFP adapter runs the exported actor
+  legally from official `Task`/`Observation` inputs and reaches partial
+  tier-2/tier-3 scores. The SC adapter routes to the exported SC actor and can
+  reach partial insertion in some official trials, but full insertion remains
+  unreliable.
+- Submission packaging status: the final host-packaged Docker candidate is
+  `my-solution:v1`, also tagged `my-solution:fc7fb3a-0e6e100`, from source
+  commit `0e6e100` as image
+  `sha256:fc7fb3a897d19d072553ae089f72e973160fa2dc4b6d1c4a370a3c975ec66a1f`.
+  It includes branch-local SC/SFP policy artifacts and pre-cached ResNet18
+  weights. Final Docker Compose verification from `docker/docker-compose.yaml`
+  with `--no-build` scored `154.62729379313998`.
+  Compose artifacts are under
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/`.
+- Best legal official eval artifacts: the final package score evidence is
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/results/scoring.yaml`.
+  Final review videos are from the separate legal `/observations` wrapper run
+  at `~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/`.
+  The best observed non-video wrapper score remains
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
+  `155.11221437038648`.
+- Step 10 transfer-audit result: ResNet18 camera features are available, and
+  the Gazebo Cartesian controller follows emitted SFP `MotionUpdate` commands
+  to about `1-2 mm`. Step 11 added a separate Gazebo-transfer SFP Isaac task
+  with `sfp_port_0` fixed and legal `target_module_name` metadata for
+  `nic_card_mount_*` choices. That produced the current package artifact, but
+  full Gazebo insertion remains unreliable.
 
 ## Relevant Files
 
@@ -890,10 +926,75 @@ Immediate Step 8 note from Step 7:
 	    timeout-only behavior by iteration `72`. Evaluation of `model_50.pt`
 	    produced `0/64` successes, `mean_lateral=0.013022`,
 	    `mean_orientation=0.342141`, and `mean_depth=-0.003365`.
-	  - Current blocker: SFP final insertion requires a depth-advancing action
-	    that does not induce lateral drift. Before more PPO, extend
-	    `check_sfp_action_frame.py` to test custom combined action vectors and use
-	    that to derive the next reset/curriculum or action-shaping change.
+	  - Added custom combined-action and sequence diagnostics for
+	    `check_sfp_action_frame.py`. The direct combined compensation
+	    `(0.13, 0.10, -1.0)` did not work (`0/64`), but a two-phase sequence did:
+	    `(0.5, 0.5, 0.0)@30; (0.0, 0.0, -1.0)@120` reached `46/64` final
+	    successes and `46/64` ever-successes.
+	  - Used the successful lateral pre-correction diagnostic to derive
+	    per-target SFP reset joint presets. From those pre-corrected resets, pure
+	    raw `z-` succeeds in `64/64` deterministic action-probe episodes with
+	    mean first success step `8.14`.
+	  - Current SFP status: the deterministic final-insertion curriculum is now
+	    controllable. PPO run `step8_sfp_ppo_precorr_54b5879` reached `1.0000`
+	    `Episode_Termination/sfp_insertion_success` by iteration `20`.
+	  - Detached evaluation of
+	    `2026-05-11_15-49-50_step8_sfp_ppo_precorr_54b5879/model_50.pt` reached
+	    `64/64` successes under the temporary coarse SFP gate
+	    (`lateral <0.020`, `orientation <0.50`, `depth >0.005`).
+	  - Next blocker: this solves only the fixed/pre-corrected final-stage reset
+	    under a coarse lateral gate. The evaluated mean lateral error is
+	    `0.017177`, close to the `0.020` threshold and far outside the older
+	    strict SFP scripted gate of `0.004`. Improve lateral centering, then
+	    reintroduce reset/NIC randomization gradually before starting Step 9.
+	  - A strict 16-env action-sequence grid found no successes under
+	    `lateral <0.004`, `orientation <0.20`, `depth >0.015`. Negative lateral
+	    corrections can reach mean lateral `0.003805`, but depth remains negative;
+	    positive corrections preserve depth but leave lateral around `0.0145` to
+	    `0.0164`. The next PPO stage is therefore an intermediate gate:
+	    `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
+	  - The first intermediate-gate resume briefly recovered low success
+	    (`0.0156-0.0312`) but was stopped because
+	    `sfp_port_frame_depth_action` still rewarded inward action outside the new
+	    lateral/orientation gate and targeted only `0.012 m` depth. Tighten that
+	    shaping term to the intermediate gate and raise its target depth before
+	    retrying.
+	  - The gated-depth retry was evaluated at `model_100.pt` and reached only
+	    `2/64` successes under the intermediate gate. It ended close on depth
+	    (`mean_depth=0.019861`) but still missed lateral/orientation
+	    (`mean_lateral=0.016383`, `mean_orientation=0.301070`). The reward logs
+	    showed `sfp_port_frame_lateral_action` saturating while measured lateral
+	    error stayed clipped, so the next patch makes the lateral penalty
+	    informative across the corridor, requires realized lateral improvement
+	    for the lateral-action reward, and loosens depth-shaping gates to
+	    lateral `<0.030` while keeping terminal success at `<0.015`.
+	  - The realized-lateral-action retry also evaluated at `2/64` under the
+	    intermediate gate (`mean_lateral=0.016442`,
+	    `mean_orientation=0.296399`, `mean_depth=0.021180`).
+	  - Action-sequence search showed the intermediate gate is reachable:
+	    pure `z-` reached only `2/32`, while
+	    `0.5,0.75,0@10;0,0,-1@130` reached `23/32` final successes and `28/32`
+	    ever-successes. The next curriculum reset uses the joint state after the
+	    `0.5,0.75,0@10` pre-correction so PPO does not have to discover that
+	    first phase from scratch.
+	  - A later target-specific reset pass replaced both SFP reset presets with
+	    joint means after `-0.25,-0.25,0@4` from the current reset. From this
+	    final deterministic reset, pure `z-` reached `122/128` first-hit
+	    successes under the intermediate gate.
+	  - SFP PPO was changed to full 150-step rollouts because the useful
+	    insertion signal usually appears around step `83`; the previous 24-step
+	    rollout updated PPO before it saw success.
+	  - Full-rollout PPO run
+	    `2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt`
+	    evaluated at `118/128` successes (`92.1875%`) under the intermediate
+	    gate. Per-target rates were `67/74` for `sfp_port_0` and `51/54` for
+	    `sfp_port_1`.
+	  - First reset-noise reintroduction is stable at
+	    `reset_robot_near_sfp_port.position_noise=0.002`: the same `model_19.pt`
+	    evaluated at `121/128` successes, with both SFP ports above `94%`.
+	  - `position_noise=0.005` is not accepted as the default yet. PPO resume
+	    reached `118/128` overall, but `sfp_port_0` stayed below `90%`
+	    (`61/69`). The checked-in curriculum was backed off to `0.002`.
 
 Later distilled outputs:
 
@@ -903,7 +1004,13 @@ Later distilled outputs:
 Done when:
 
 - [ ] SC checkpoint solves SC validation.
-- [ ] SFP checkpoint solves SFP validation.
+- [x] SFP checkpoint solves SFP validation.
+  - Current accepted deterministic SFP checkpoint:
+    `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-11_18-14-11_step8_sfp_ppo_fullrollout_303652b/model_19.pt`
+  - Detached eval: `118/128` successes (`92.1875%`) at
+    `lateral <0.015`, `orientation <0.25`, `depth >0.015`.
+  - This is still fixed-NIC/final-stage curriculum validation; randomized SFP
+    insertion remains future work before final qualification confidence.
 - [ ] Each checkpoint has recorded config, commit hash, and success metrics.
 
 ## Step 9: Distillation, High Level Only
@@ -919,9 +1026,160 @@ High-level work later:
 - [ ] Export student policies.
   - If the reliable specialist policy already uses only eval-compatible actor
     observations, direct export may be valid and distillation may be unnecessary.
+- [x] Add official Gazebo eval wrapper scaffold for checkpoint-backed policies.
+  - Added `aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py`
+    to start official `aic_eval`, `aic_model`, and optional camera-topic rosbag
+    recording in separate tmux sessions.
+  - Added `aic_model/aic_model/RslRlCheckpointPolicy.py` as the ROS policy
+    scaffold that receives checkpoint/artifact paths and logs official task and
+    observation metadata.
+  - Documented usage and limitations in `docs/bahw_docs/eval_wrapper/README.md`.
+  - Fixed the wrapper to launch branch-local policy modules inside the pixi
+    shell, avoiding stale installed `aic_model` packages.
+  - Ran the scaffold wrapper with `ground_truth:=false` against the selected
+    randomized SFP checkpoint. Tier-1 model validation passed for all three
+    official trials; tier-2/tier-3 scores remained zero as expected because the
+    policy scaffold still returns failure.
+- [ ] Implement the Gazebo `Observation` + `Task` to Isaac actor-observation
+  adapter for exported SC/SFP actor artifacts.
+  - SFP adapter is implemented for the selected exported actor artifact. It
+    uses only official `Task` and `Observation` fields, reconstructs the
+    3149D Isaac actor input, and runs the TorchScript actor in
+    `aic_model.RslRlCheckpointPolicy`.
+  - First SC routing/observation adapter support is now implemented locally.
+    It maps official `sc_port_0` / `sc_port_1`-style target module names to
+    Isaac `[sc_port, sc_port_2]` one-hot metadata. The accepted SC actor was
+    exported and runs in official Gazebo, but direct replay still fails from the
+    official sequential start because the SC actor was trained from near-SC
+    reset states.
+- [ ] Convert actor actions into safe Gazebo `MotionUpdate` or
+  `JointMotionUpdate` commands.
+  - First SFP pass converts the 6D actor output to small Cartesian
+    `MotionUpdate` deltas in `base_link`. Official Gazebo scoring shows this
+    mapping is not yet functionally correct: SFP trials ended `0.30m` and
+    `0.20m` from the target port.
+  - Follow-up SFP fixes disabled the harmful Isaac near-port joint prepose by
+    default, preloaded ResNet18 before starting the control timer, replayed
+    actor rotation deltas as small axis-angle orientation updates, and capped
+    the default SFP control horizon at `9s`. The best rerun improved both SFP
+    trials to final plug-port distances of `0.05m`, but still did not detect
+    insertion.
+  - Local follow-up generalized command replay for SC/SFP task-specific
+    scales, allows `base_link` or `gripper/tcp` command frames, and added an
+    optional legal SFP TCP-frame final-settle experiment. This is not marked
+    complete until official Gazebo scoring improves.
+  - Added a legal SC near-port joint prepose selected from official SC task
+    metadata only. This is needed because official SC trial 3 starts after the
+    SFP trials, while the accepted SC actor was trained from near-SC reset
+    states.
+  - The first SC prepose test with shoulder mirroring only improved SC from
+    `0.32m` to `0.28m`. A no-mirror isolation run regressed SC to `0.60m`, so
+    keep SC prepose shoulder mirroring enabled by default.
+- [ ] Run official Gazebo eval with `ground_truth:=false` and preserve
+  `scoring.yaml`, scoring bags, and optional camera rosbags.
+  - Scaffold smoke run completed under
+    `logs/gazebo_eval/20260513_193949/`; keep this unchecked until the adapter
+    drives the robot and produces functional scores.
+  - First actor-backed official run completed under
+    `logs/gazebo_eval/20260513_203832/` with `ground_truth:=false`.
+    Tier 1 passed for all three trials. Tier 2 and Tier 3 scored zero:
+    SFP trials did not insert, and the third official trial was SC, which is
+    not implemented in the adapter yet.
+  - Final video-recorded actor-backed run completed under
+    `logs/gazebo_eval/20260513_205601/`. It reproduced the same outcome:
+    Tier 1 passed for all three trials; Tier 2 and Tier 3 scored zero. Final
+    SFP plug-to-port distances were `0.27m` and `0.17m`.
+  - Combined SC/SFP actor run completed under
+    `logs/gazebo_eval/20260514_093740/` with `ground_truth:=false` and
+    `AIC_RSLRL_REQUIRE_RESNET18=true`. ResNet18 loaded successfully. SFP
+    improved to final distances `0.06m` and `0.05m` but did not insert. SC
+    route executed the exported actor but ended `0.32m` from the SC port, so
+    the next check is the legal SC prepose plus controlled SFP final-settle
+    experiment.
+  - SC-prepose plus SFP-final-settle run completed under
+    `logs/gazebo_eval/20260514_095112/`. SFP final-settle worsened the SFP
+    distances to `0.08m` and `0.09m`, so do not keep that setting. SC improved
+    only to `0.28m`.
+  - SC no-mirror isolation run completed under
+    `logs/gazebo_eval/20260514_095648/`; SC regressed to `0.60m`, so keep the
+    mirrored preset and continue with mirrored SC prepose plus SFP final-settle
+    disabled.
+  - Mirrored SC-prepose rerun with SFP final-settle disabled completed under
+    `logs/gazebo_eval/20260514_100007/`. This is the best legal official run
+    so far by total score (`92.631565804455263`) and used
+    `ground_truth:=false`, official `Task`/`Observation` inputs, and
+    `AIC_RSLRL_REQUIRE_RESNET18=true`. It still did not insert: SFP final
+    plug-port distances were `0.05m` and `0.04m`; SC ended `0.29m` away.
+    Continue with controller/approach mapping work rather than treating this as
+    solved by more checkpoint training alone.
+  - Offline diagnostics of the best-run scoring bags show SFP stops at the port
+    mouth: the SFP tip was about `0.011m` from the entrance in trial 1 but still
+    about `0.049m` from the deeper port link. Added a disabled-by-default legal
+    `AIC_RSLRL_SFP_BASE_INSERT_SEC` / `AIC_RSLRL_SFP_BASE_INSERT_STEP` experiment
+    to test a base-frame downward insert after actor replay. Also added
+    `AIC_RSLRL_SC_ACTOR_ENABLED=false` as a diagnostic to evaluate the legal SC
+    prepose without the actor handoff.
+  - Controlled `AIC_RSLRL_CONTROL_HZ=30` official run completed under
+    `logs/gazebo_eval/20260514_101451/`; total regressed to
+    `90.001609774891335`, so do not keep 30 Hz as a deployment default. The run
+    exposed a real replay bug: the actor loop planned 90/270 fixed steps but
+    stopped early because it mixed wall-clock elapsed checks with sim-time
+    sleeps. The wrapper now replays the planned fixed step count and relies on
+    sim-time sleeping.
+  - Controlled base-frame SFP insert run completed under
+    `logs/gazebo_eval/20260514_101713/`; total regressed to
+    `91.55788002615509`, so keep the base insert disabled by default.
+  - Controlled fixed-step replay run completed under
+    `logs/gazebo_eval/20260514_102325/`; total regressed to
+    `79.399977111014948`, with SFP final distances worsening to `0.06m` and
+    `0.06m`. Full fixed-step replay appears to overshoot the useful SFP region,
+    so `AIC_RSLRL_FIXED_STEP_REPLAY` remains disabled by default.
+  - SC prepose-only diagnostic run completed under
+    `logs/gazebo_eval/20260514_102722/`; total was `78.759224629052937`, and SC
+    ended `0.28m` from the target. This confirms the legal SC prepose is itself
+    not close enough; the SC actor handoff is not the main blocker.
+  - Latest-code default confirmation run completed under
+    `logs/gazebo_eval/20260514_102952/`; total was `90.51278931029411`, with SFP
+    still at `0.05m` / `0.05m` and SC at `0.32m`. Keep
+    `logs/gazebo_eval/20260514_100007/` as the best saved official evidence so
+    far.
+  - SFP `gripper/tcp` command-frame diagnostic completed under
+    `logs/gazebo_eval/20260514_103409/`; total regressed to
+    `25.33397048270108`, with SFP final distances `0.12m` and `0.10m`. Keep SFP
+    actor replay in `base_link`.
+  - Added disabled-by-default `AIC_RSLRL_ZERO_JOINT_OBS=true` to test whether
+    Isaac/Gazebo joint-observation convention mismatch is hurting deployment.
+  - Zero-joint-observation diagnostic completed under
+    `logs/gazebo_eval/20260514_103958/`; total regressed to
+    `82.898135541085352`, with SFP final distances `0.05m` and `0.08m`. Keep
+    joint observations enabled by default.
+  - Review videos were exported from the official `/observations` bag to:
+    `videos/center_image.mp4`, `videos/left_image.mp4`, and
+    `videos/right_image.mp4`.
+  - Wrapper video evidence was revised to record `/observations` by default
+    from the sourced `aic_eval` container, then extract `left_image`,
+    `center_image`, or `right_image` to MP4. The host pixi environment lacks
+    `ros2 bag`, so direct host-side recording should not be used.
+  - Latest post-fix rerun completed under
+    `logs/gazebo_eval/20260514_005106/` with `ground_truth:=false`.
+    Total score was `92.514068059037598`. The two SFP trials scored tier 1
+    plus partial tier 2 and tier 3, with final plug-port distances of `0.05m`
+    and `0.05m`; neither detected insertion. The third official trial was SC
+    and still failed because the SC adapter had not been implemented in that run.
+  - Latest review videos were exported to:
+    `logs/gazebo_eval/20260514_005106/videos/center_image.mp4`,
+    `logs/gazebo_eval/20260514_005106/videos/left_image.mp4`, and
+    `logs/gazebo_eval/20260514_005106/videos/right_image.mp4`.
+  - Best-run review videos were exported after reindexing the interrupted MCAP
+    camera bag:
+    `logs/gazebo_eval/20260514_100007/videos/center_image.mp4`,
+    `logs/gazebo_eval/20260514_100007/videos/left_image.mp4`, and
+    `logs/gazebo_eval/20260514_100007/videos/right_image.mp4`.
 - [ ] In the final Gazebo wrapper, route using official `Task` metadata:
-  - [ ] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
-  - [ ] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
+  - [x] `plug_type == "sc"` or `port_type == "sc"` uses SC checkpoint
+  - [x] `plug_type == "sfp"` or `port_type == "sfp"` uses SFP checkpoint
+  - SC routing is implemented in code, but still needs a valid
+    `--sc-policy-artifact` and official Gazebo validation.
 
 Done when:
 
@@ -975,7 +1233,7 @@ Done when:
     Current best is a BC-trained neural actor checkpoint at `233/256`; PPO
     remains the preferred final path.
 - [x] 12. Extend the same geometry/reward interface to SFP.
-- [ ] 13. Train SFP teacher/policy.
+- [x] 13. Train SFP teacher/policy.
   - [x] Run SFP scripted-control diagnostic before long training.
   - [x] Verify SFP port helper geometry against USD semantic entrance frames.
   - [x] Add first SFP near-port reset curriculum.
@@ -1043,9 +1301,160 @@ Done when:
 	  - [x] Run insertion-action-progress SFP PPO.
 	  - [x] Run strong forced-action diagnostic for final SFP insertion motion.
 	  - [x] Add and evaluate coupled initial insertion push bias.
-	  - [ ] Add custom combined-action SFP diagnostic.
-	  - [ ] Train SFP PPO specialist checkpoint.
+	  - [x] Add custom combined-action SFP diagnostic.
+	  - [x] Add action-sequence SFP diagnostic and derive pre-corrected reset
+	    presets.
+	  - [x] Validate pre-corrected reset with pure raw `z-` action probe
+	    (`64/64` deterministic successes).
+	  - [x] Train and evaluate SFP PPO specialist checkpoint from the
+	    pre-corrected reset (`64/64` coarse deterministic successes).
+	  - [x] Tighten/improve SFP lateral centering beyond the temporary coarse
+	    `0.020` lateral gate.
+	  - [x] Train/evaluate first intermediate-gate SFP PPO
+	    (`2/64`; not sufficient).
+	  - [x] Retry intermediate-gate SFP PPO with realized-lateral-action shaping
+	    and widened lateral-error scale (`2/64`; not sufficient).
+	  - [x] Run positive-precorrection action grid and derive new deterministic
+	    SFP reset presets.
+	  - [x] Validate pure `z-` insertion from the positive/final pre-corrected
+	    reset (`122/128` first-hit successes under the intermediate gate).
+	  - [x] Retry intermediate-gate PPO from the pre-corrected reset
+	    (`118/128` detached eval successes with full 150-step PPO rollouts).
+	  - [x] Reintroduce small SFP reset noise while preserving success
+	    (`0.002` joint noise: `121/128`, both ports above `94%`).
+	  - [x] Reintroduce SFP reset/NIC randomization after the deterministic
+	    final-stage checkpoint is reliable under the tighter gate.
+	    - Current decision: train randomized SFP with two PPO tracks. Track A
+	      warm-starts from the best fixed-NIC SFP checkpoint as a weight
+	      initialization only; Track B starts PPO from scratch under the same
+	      randomized setup as a control.
+	    - Randomize NIC/port pose independently enough that joint state alone
+	      cannot identify the target correction, so the actor must use camera
+	      features plus proprioception.
+	    - First accepted curriculum stage uses continuous NIC/card `y`
+	      randomization in `[-0.002, 0.002]` meters and keeps the existing
+	      ResNet18 camera features. `snap_step.y` must stay `0.0` for this
+	      stage, otherwise the old `0.04` meter grid silently disables the small
+	      randomization range.
+	    - Do not simply enable NIC y randomization against the old fixed reset
+	      without changing the reset curriculum; the current SFP reset uses
+	      fixed joint presets and does not adapt to randomized NIC pose.
+	    - Prefer the better randomized policy. If the scratch control does
+	      better than the warm-started checkpoint, use the scratch run as the
+	      SFP candidate.
+	    - Status on 2026-05-12 14:50 +08: both randomized SFP PPO tracks were
+	      still training in remote tmux. Warm-start had reached `model_290.pt`
+	      with recent rollout success around `0.91-0.93`; scratch had reached
+	      `model_270.pt` with recent rollout success around `0.91-0.95`. These
+	      are training health signals only; the item stays open until
+	      deterministic randomized SFP eval passes overall and per-target gates.
+	    - Final randomized Isaac eval selected the scratch run:
+	      `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192/model_1499.pt`.
+	      It scored `238/256` overall, `123/132` on `sfp_port_0`, and
+	      `115/124` on `sfp_port_1`, passing the `>90%` overall and per-target
+	      gates. The warm-start run scored `235/256` overall but failed the
+	      per-target gate on `sfp_port_0` (`114/129`).
 - [ ] 14. Revisit distillation only after both teachers work.
+
+## Step 10: Gazebo Transfer Audit
+
+Why:
+
+The selected randomized SFP PPO checkpoint solves the Isaac task above the
+accepted gate, but the legal official Gazebo wrapper stops near the SFP port
+mouth and misses SC by a much larger margin. This indicates a deployment
+transfer issue rather than a pure Isaac training issue.
+
+Work:
+
+- [x] Add optional policy JSONL traces under `AIC_RSLRL_TRACE_DIR`.
+- [x] Include legal `Task` metadata, reconstructed actor-observation summaries,
+  ResNet18 feature norms, TCP/controller-state summaries, actor actions, and
+  emitted `MotionUpdate` targets.
+- [x] Add optional compressed full actor-observation/action dumps for deeper
+  offline comparison.
+- [x] Add an opt-in wrapper flag to place traces next to official
+  `scoring.yaml`.
+- [x] Add a policy-trace summarizer script.
+- [x] Run a qualification-like official Gazebo eval with policy tracing enabled.
+- [x] Summarize trace output and scoring bags.
+- [x] Decide the next implementation change from evidence:
+  - controller/action mapping fix,
+  - body-force/image-feature observation ablation,
+  - deployment-native PPO retraining,
+  - task-specific legal vision features,
+  - or a legal visual-servo/hybrid controller fallback.
+
+Done when:
+
+- [x] We know whether the current failure is dominated by observation mismatch,
+  action/controller mismatch, or insufficient target localization.
+- [x] The next implementation pass is documented before changing policy
+  behavior.
+
+## Step 11: Gazebo-Compatible SFP Retraining
+
+Why:
+
+Step 10 showed that the official SFP task metadata differs from the current
+Isaac SFP training distribution. Gazebo trials request `sfp_port_0` on different
+NIC mounts. The selected Isaac SFP checkpoint learned `sfp_port_0` vs
+`sfp_port_1` within one NIC and only saw tiny NIC y randomization.
+
+Work:
+
+- [x] Add a sibling Isaac task instead of mutating `AIC-SFP-Task-v0`.
+- [x] Register `AIC-SFP-Gazebo-Transfer-Task-v0`.
+- [x] Keep active SFP target fixed to `sfp_port_0`.
+- [x] Randomize the NIC/card y pose over Gazebo-style mount choices.
+- [x] Add optional official SFP target-module metadata, expanding only the
+  Gazebo-transfer SFP actor observation from 3149D to 3151D.
+  - The wrapper keeps the old 3149D path by default.
+  - New 3151D SFP artifacts must run with
+    `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
+- [x] Add a separate RSL-RL config with experiment name
+  `aic_sfp_gazebo_transfer`.
+- [x] Verify the new task is discoverable/runnable in Isaac Lab.
+- [x] Smoke-test the new task config with `num_envs=1` and `max_iterations=0`.
+- [x] Train PPO on `AIC-SFP-Gazebo-Transfer-Task-v0`.
+  - Started scratch PPO in tmux `isaac-step11-sfp-gazebo-train-d9ff95e`.
+    Iteration `0/1500` reported `sfp_insertion_success=0.0692` under the wider
+    mount-shift distribution.
+  - Stopped the first scratch run at iteration 52 after success stayed roughly
+    `0.14-0.26`. Next run uses legal target-module metadata and higher PPO
+    action exploration.
+  - 3151D metadata smoke test passed in tmux
+    `isaac-step11-meta-smoke-f00eb1e`; actor input is `3151` and critic input
+    is `3171`.
+  - Started metadata PPO in tmux
+    `isaac-step11-sfp-gazebo-meta-train-3bd2119`. Early success improved over
+    the first run: iteration 5 reached `0.4409`, and iteration 36 was `0.4110`.
+  - Stopped the metadata run after iteration 104 because success regressed to
+    `0.04-0.08` while mean reward kept rising. This exposed a reward shortcut:
+    deep misaligned pushes were over-rewarded.
+  - Tightened the Gazebo-transfer reward/curriculum so depth progress only pays
+    near alignment, sparse success is much larger, lateral penalties are
+    stronger, and deep overshoot terminates.
+  - Exported the tightened run checkpoint used by the final package as
+    `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`.
+- [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
+  shifts.
+- [x] Export the actor artifact and run official Gazebo eval.
+  - Final packaged candidate uses
+    `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`
+    with `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
+  - Final Docker Compose verification from the official compose file scored
+    `154.62729379313998` and saved artifacts under
+    `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/`.
+- [x] Save videos on the host for user review.
+  - Review videos from a separate legal `/observations` wrapper run are under
+    `~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/`.
+
+Done when:
+
+- [ ] Isaac eval passes the randomized port-0/mount-shift gate.
+- [ ] Official Gazebo SFP trials trigger insertion or substantially improve over
+  the `0.04-0.05 m` miss without hidden runtime state.
 
 ## Global Done Criteria
 
@@ -1061,7 +1470,13 @@ The SFP implementation is done when:
 
 - [x] The same MDP structure supports SFP.
 - [x] SFP plug and port entrance geometry are correct.
-- [ ] SFP teacher/policy inserts in randomized simulation.
+- [x] SFP teacher/policy inserts in randomized simulation.
+  - Current selected randomized SFP checkpoint is scratch
+    `model_1499.pt` from `2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192`.
+    Deterministic Isaac eval passed at `238/256` overall, `123/132` on
+    `sfp_port_0`, and `115/124` on `sfp_port_1`.
+  - This does not mean official Gazebo deployment is solved. The best
+    `ground_truth:=false` Gazebo run still stops about `0.05m` from insertion.
 
 The training path is ready for distillation when:
 

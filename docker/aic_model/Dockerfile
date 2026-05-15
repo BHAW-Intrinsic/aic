@@ -1,7 +1,9 @@
 FROM docker.io/library/ros:kilted-ros-core AS build
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Install pixi
-RUN apt update && apt install -y git && curl -fsSL https://pixi.sh/install.sh | bash
+RUN apt update && apt install -y ca-certificates curl git && curl -fsSL https://pixi.sh/install.sh | env PIXI_VERSION=0.67.0 bash
 ENV PATH="/root/.pixi/bin:$PATH"
 
 # Add base dependencies
@@ -13,10 +15,23 @@ COPY pixi.toml pixi.lock /ws_aic/src/aic/
 COPY pixi_env_setup.sh /ws_aic/src/aic/
 
 # Add other dependencies
+ENV AIC_RSLRL_SC_POLICY_ARTIFACT=/ws_aic/src/aic/aic_model/artifacts/step6_sc_policy.pt
+ENV AIC_RSLRL_SFP_POLICY_ARTIFACT=/ws_aic/src/aic/aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt
+ENV AIC_RSLRL_TASK_KIND=auto
+ENV AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true
+ENV AIC_RSLRL_REQUIRE_RESNET18=true
+ENV AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET=true
+ENV AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC=1.30
+ENV AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION=false
+ENV AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH=false
+ENV AIC_RSLRL_ENABLE_SC_TERMINAL_TARGET=true
+ENV AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC=1.30
 
-SHELL ["/bin/bash", "-c"]
-RUN --mount=type=cache,target=/root/.cache/rattler/cache --mount=type=cache,target=/ws_aic/src/aic/.pixi/build \
-    cd /ws_aic/src/aic && pixi install --locked
+RUN cd /ws_aic/src/aic && pixi install --frozen
+
+# Pre-cache torchvision weights needed by RslRlCheckpointPolicy so runtime
+# evaluation does not depend on external network access.
+RUN cd /ws_aic/src/aic && pixi run --as-is python -c "from torchvision.models import ResNet18_Weights, resnet18; resnet18(weights=ResNet18_Weights.DEFAULT)"
 
 WORKDIR /ws_aic/src/aic
 COPY --chmod=755 <<"EOF" /entrypoint.sh
@@ -57,4 +72,4 @@ exec pixi run --as-is ros2 run aic_model aic_model "$@"
 EOF
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["--ros-args", "-p", "policy:=aic_example_policies.ros.CheatCode", "-p", "use_sim_time:=true"]
+CMD ["--ros-args", "-p", "policy:=aic_model.RslRlCheckpointPolicy", "-p", "use_sim_time:=true"]

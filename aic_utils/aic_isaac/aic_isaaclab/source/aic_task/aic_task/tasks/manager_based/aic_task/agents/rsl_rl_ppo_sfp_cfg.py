@@ -18,15 +18,17 @@ from isaaclab_rl.rsl_rl import (
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     """Asymmetric actor-critic PPO config for the SFP insertion teacher."""
 
-    num_steps_per_env = 24
+    # SFP insertion successes usually occur after roughly 80 simulation steps.
+    # Use full-episode rollouts so PPO sees the success signal before updating.
+    num_steps_per_env = 150
     max_iterations = 1500
-    save_interval = 50
+    save_interval = 10
     experiment_name = "aic_sfp_insert"
     obs_groups = {"actor": ["policy"], "critic": ["policy", "privileged"]}
-    # Training-only PPO initialization: action-frame diagnostics showed raw
-    # z-negative inserts, but it needs small raw x/y compensation to stay
-    # laterally centered. PPO can still update this normally.
-    aic_actor_output_bias = (0.13, 0.10, -1.0, 0.0, 0.0, 0.0)
+    # Training-only PPO initialization: trajectory diagnostics showed pure raw
+    # z-negative reaches transient coarse successes, while coupled x/y
+    # compensation loses depth. PPO can still update this normally.
+    aic_actor_output_bias = (0.0, 0.0, -1.0, 0.0, 0.0, 0.0)
     aic_actor_output_zero_weights = True
     actor = RslRlMLPModelCfg(
         hidden_dims=[512, 256, 128],
@@ -44,9 +46,9 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         use_clipped_value_loss=True,
         clip_param=0.2,
         entropy_coef=0.0,
-        num_learning_epochs=8,
+        num_learning_epochs=4,
         num_mini_batches=4,
-        learning_rate=3.0e-4,
+        learning_rate=1.0e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,

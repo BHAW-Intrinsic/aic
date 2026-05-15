@@ -30,37 +30,106 @@ Completed work so far:
 - Step 7 extended the same MDP structure to SFP with `AIC-SFP-Task-v0`, active
   SFP port metadata, SFP helper geometry, SFP observations/rewards/terminations,
   and SFP PPO config.
-- Step 8 is in progress. The SFP scripted controller was tested and rejected as
-  a BC expert because it systematically misses the port by a few millimeters.
-  Multiple PPO curriculum and reward variants have been tested.
+- Step 8 produced the fixed-NIC SFP PPO checkpoint that unblocked randomized SFP
+  work.
+- Step 9 trained two randomized SFP PPO tracks. The scratch run beat the warm
+  start and is the selected randomized SFP candidate:
+  `/workspace/isaaclab/logs/rsl_rl/aic_sfp_insert/2026-05-12_01-40-05_step9_sfp_randy002_scratch_f2cd192/model_1499.pt`.
+- Deterministic randomized Isaac eval for that checkpoint reached `238/256`
+  overall (`92.97%`), with `123/132` on `sfp_port_0` (`93.18%`) and `115/124`
+  on `sfp_port_1` (`92.74%`).
+- The official Gazebo eval wrapper scaffold now launches `aic_eval`, loads the
+  branch-local `RslRlCheckpointPolicy`, receives official task/camera
+  observations, and writes `scoring.yaml` plus trial bags.
+- The SFP Gazebo adapter reconstructs the 3149D Isaac actor observation from
+  official `Task`/`Observation` fields and reaches partial tier-2/tier-3 scores
+  in official Gazebo, but it still misses insertion.
+- The final host-packaged Docker submission candidate is `my-solution:v1`,
+  also tagged `my-solution:fc7fb3a-0e6e100`, from source commit `0e6e100`.
+  Image ID:
+  `sha256:fc7fb3a897d19d072553ae089f72e973160fa2dc4b6d1c4a370a3c975ec66a1f`
+  (`40.6 GB` reported by Docker).
+- Final Docker Compose verification completed legally from
+  `docker/docker-compose.yaml` with `--no-build`. The package starts through
+  `/entrypoint.sh`, loads `aic_model.RslRlCheckpointPolicy`, and completes all
+  three official trials with `ground_truth:=false`. Compose score:
+  `154.62729379313998`.
+- Final Compose artifacts are saved on the host under
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/`, including
+  `results/scoring.yaml`, `results/bag_trial_1_20260515_010628_258/`,
+  `results/bag_trial_2_20260515_010646_972/`, and
+  `results/bag_trial_3_20260515_010701_870/`.
+- Final review videos are from a separate legal wrapper run that recorded the
+  `/observations` camera stream consumed by the policy:
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/`.
+  That run scored `138.8247978715018`; use it for qualitative inspection, not
+  as the final package score.
+- The previous best legal official Gazebo run with videos was
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/scoring.yaml`, total
+  `154.67836105930783`, with review videos under
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/videos/`.
+- The current best legal official Gazebo score observed without video is
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
+  `155.11221437038648`.
+- Earlier Docker/package attempts from commit `ebb57a2` and image `406a86a04849`
+  are superseded by the `fc7fb3a897d1` image above.
+- Controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
+  TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
+  SFP `gripper/tcp` command-frame replay and zeroed joint observations were also
+  rejected. None reliably produced insertion.
+- Step 10 policy tracing showed that ResNet18 features are present and the
+  Gazebo Cartesian controller tracks SFP commands to about `1-2 mm`. The SFP
+  failure is now treated as a training-distribution/target-metadata mismatch:
+  official Gazebo requests `sfp_port_0` on different `nic_card_mount_*`
+  modules, while the selected Isaac checkpoint was trained on
+  `sfp_port_0`/`sfp_port_1` within one NIC.
+- A new sibling task, `AIC-SFP-Gazebo-Transfer-Task-v0`, keeps
+  `sfp_port_0` fixed and randomizes NIC y over Gazebo-style
+  `nic_card_mount_*` choices.
+- The first scratch PPO run for that task plateaued early. The current revision
+  adds legal official `Task.target_module_name` metadata, expanding only the
+  Gazebo-transfer SFP actor observation from 3149D to 3151D. Older 3149D
+  artifacts remain the wrapper default.
+- The 3151D metadata PPO run improved early but regressed by iteration 104 while
+  mean reward kept rising. Treat this as reward hacking: depth was over-rewarded
+  without strict final alignment.
+- The final packaged SFP artifact is the tightened Gazebo-transfer checkpoint
+  `step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`. It is legal and gives
+  partial official Gazebo credit, but it does not reliably trigger insertion.
 
-Current Step 8 best result:
+Submission packaging status:
 
-- Best detached SFP eval so far is
-  `step8_sfp_ppo_progressgate_a79737c/model_50.pt`: `1/64` coarse successes.
-- Latest coupled-bias PPO checkpoint
-  `step8_sfp_ppo_coupledbias_6c3fbf2/model_50.pt` evaluated at `0/64`.
-- The SFP policy can often stay within the temporary lateral/orientation gate,
-  but it does not reliably cross the final insertion-depth threshold.
+- The repo contains the policy artifacts used by the Docker image:
+  `aic_model/artifacts/step6_sc_policy.pt` and
+  `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`.
+- The default Docker runtime policy is `aic_model.RslRlCheckpointPolicy`.
+- The final local package candidate is built and verified on the host as
+  `my-solution:v1` / `my-solution:fc7fb3a-0e6e100`.
+- The runtime uses official `Task` metadata, official camera/joint observations,
+  previous legal actions, and internal command state only. It does not use
+  scoring internals, hidden Gazebo transforms, or ground-truth topics.
+- Final submission still needs the team ECR repository URI or team slug for
+  tagging and pushing the verified image.
 
 Current blocker:
 
-- The final SFP insertion motion is not yet controllable enough for PPO. The
-  forced-action diagnostic shows raw `tz-` increases signed insertion depth, but
-  it also creates lateral drift. Reward shaping and fixed actor bias have not
-  yet produced a stable depth-advancing, laterally centered insertion policy.
+- The packaged policy is valid, legal, and is the current submission candidate,
+  but it is not a fully solved insertion policy. SFP reaches the port mouth and
+  scores tier 2/tier 3 partial credit; SC can reach partial insertion in some
+  official trials. Full insertion remains unreliable.
+- The highest-risk remaining assumptions are the final millimeter-scale SFP
+  approach under official mount distributions and the official-start SC approach
+  before actor handoff.
 
 Next recommended work:
 
-- Extend `scripts/check_sfp_action_frame.py` with a custom action-vector mode.
-  Use it to test combined pushes such as the estimated `x/y/z` compensation
-  vector from the forced-action diagnostic.
-- If a combined action can insert without lateral drift, use that measurement to
-  design the next PPO reset/curriculum or action-shaping term.
-- If no combined action inserts from the current reset, adjust the SFP reset
-  preset or action frame before running more PPO.
-- After SFP has a reliable specialist checkpoint, revisit Step 9 distillation
-  and final Gazebo routing.
+- For SFP, retrain the tightened 3151D `AIC-SFP-Gazebo-Transfer-Task-v0`,
+  export with `--obs-dim 3151`, and run the official Gazebo eval with
+  `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
+- For SC, improve the official-start approach path before actor handoff. The
+  current legal prepose is not close enough even without actor handoff.
+- Compare one Isaac actor observation and one reconstructed Gazebo actor
+  observation around a near-port pose to find semantic mismatches.
 
 ## Key Code References
 
@@ -78,6 +147,8 @@ Next recommended work:
   `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_cfg.py`
 - SFP PPO config:
   `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_cfg.py`
+- SFP Gazebo-transfer PPO config:
+  `aic_utils/aic_isaac/aic_isaaclab/source/aic_task/aic_task/tasks/manager_based/aic_task/agents/rsl_rl_ppo_sfp_gazebo_transfer_cfg.py`
 - Evaluation script:
   `aic_utils/aic_isaac/aic_isaaclab/scripts/rsl_rl/evaluate.py`
 - SFP action-frame diagnostic:
@@ -96,6 +167,9 @@ Next recommended work:
 - Step 6 SC training and accepted checkpoint: `detailed/step6.md`
 - Step 7 SFP task extension: `detailed/step7.md`
 - Step 8 SFP specialist PPO work: `detailed/step8.md`
+- Step 9 distillation/export blocker: `detailed/step9.md`
+- Step 10 Gazebo transfer audit: `detailed/step10.md`
+- Step 11 Gazebo-compatible SFP retraining: `detailed/step11.md`
 
 ## Per-Step Workflow
 

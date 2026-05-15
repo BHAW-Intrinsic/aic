@@ -244,6 +244,9 @@ def _new_target_stats() -> dict[str, float | int]:
         "sum_lateral_z": 0.0,
         "sum_orientation": 0.0,
         "sum_depth": 0.0,
+        "sum_port_entry_y": 0.0,
+        "min_port_entry_y": float("inf"),
+        "max_port_entry_y": float("-inf"),
     }
 
 
@@ -344,6 +347,7 @@ def main(
         terminal_lateral_z: list[float] = []
         terminal_orientation: list[float] = []
         terminal_depth: list[float] = []
+        active_port_entry_y: list[float] = []
         success_lateral: list[float] = []
         success_depth: list[float] = []
         terminal_action_error: list[float] = []
@@ -362,8 +366,12 @@ def main(
             )
             if _is_sfp_task():
                 target_ids = mdp.active_sfp_target_ids(base_env).detach().clone()
+                entry_pos_w, _ = mdp.sfp_port_entry_pose(base_env)
             else:
                 target_ids = mdp.active_sc_target_ids(base_env).detach().clone()
+                entry_pos_w, _ = mdp.sc_port_entry_pose(base_env)
+            entry_pos_env = entry_pos_w - base_env.scene.env_origins
+            reset_port_entry_y = entry_pos_env[:, 1].detach().clone()
 
             while bool(active.any().item()) and completed < args_cli.num_eval_episodes:
                 with torch.inference_mode():
@@ -424,6 +432,7 @@ def main(
                     lat_z = float(lateral_z[env_id].detach().cpu().item())
                     ori = float(orientation[env_id].detach().cpu().item())
                     dep = float(depth[env_id].detach().cpu().item())
+                    port_y = float(reset_port_entry_y[env_id].detach().cpu().item())
                     succeeded = bool(success[env_id].detach().cpu().item())
                     act_err = float("nan")
                     if action_error is not None:
@@ -436,11 +445,19 @@ def main(
                     terminal_lateral_z.append(lat_z)
                     terminal_orientation.append(ori)
                     terminal_depth.append(dep)
+                    active_port_entry_y.append(port_y)
                     per_target[target_name]["sum_lateral"] += lat
                     per_target[target_name]["sum_lateral_x"] += lat_x
                     per_target[target_name]["sum_lateral_z"] += lat_z
                     per_target[target_name]["sum_orientation"] += ori
                     per_target[target_name]["sum_depth"] += dep
+                    per_target[target_name]["sum_port_entry_y"] += port_y
+                    per_target[target_name]["min_port_entry_y"] = min(
+                        float(per_target[target_name]["min_port_entry_y"]), port_y
+                    )
+                    per_target[target_name]["max_port_entry_y"] = max(
+                        float(per_target[target_name]["max_port_entry_y"]), port_y
+                    )
 
                     if succeeded:
                         success_count += 1
@@ -464,6 +481,7 @@ def main(
                                 f"steps={step_count} lateral={lat:.6f} "
                                 f"lateral_x={lat_x:.6f} lateral_z={lat_z:.6f} "
                                 f"orientation={ori:.6f} depth={dep:.6f} "
+                                f"port_entry_y={port_y:.6f} "
                                 f"action_error={act_err:.6f}"
                             )
 
@@ -499,6 +517,14 @@ def main(
             f"{_mean_or_nan(terminal_orientation):.6f}"
         )
         report.line(f"mean_insertion_depth_at_termination: {_mean_or_nan(terminal_depth):.6f}")
+        if active_port_entry_y:
+            min_port_y = min(active_port_entry_y)
+            max_port_y = max(active_port_entry_y)
+            report.line(
+                "active_port_entry_y_range_env: "
+                f"min={min_port_y:.6f} max={max_port_y:.6f} "
+                f"span={max_port_y - min_port_y:.6f}"
+            )
         report.line(f"mean_success_lateral_error: {_mean_or_nan(success_lateral):.6f}")
         report.line(f"mean_success_insertion_depth: {_mean_or_nan(success_depth):.6f}")
         if args_cli.action_error_diagnostics:
@@ -531,13 +557,25 @@ def main(
                 float(stats["sum_orientation"]) / episodes if episodes else float("nan")
             )
             mean_depth = float(stats["sum_depth"]) / episodes if episodes else float("nan")
+            mean_port_y = (
+                float(stats["sum_port_entry_y"]) / episodes if episodes else float("nan")
+            )
+            min_port_y = (
+                float(stats["min_port_entry_y"]) if episodes else float("nan")
+            )
+            max_port_y = (
+                float(stats["max_port_entry_y"]) if episodes else float("nan")
+            )
             report.line(
                 f"  {target_name}: episodes={episodes} "
                 f"successes={successes} success_rate={rate:.6f} "
                 f"mean_lateral={mean_lat:.6f} "
                 f"mean_lateral_x={mean_lat_x:.6f} "
                 f"mean_lateral_z={mean_lat_z:.6f} "
-                f"mean_orientation={mean_ori:.6f} mean_depth={mean_depth:.6f}"
+                f"mean_orientation={mean_ori:.6f} mean_depth={mean_depth:.6f} "
+                f"mean_port_entry_y={mean_port_y:.6f} "
+                f"port_entry_y_min={min_port_y:.6f} "
+                f"port_entry_y_max={max_port_y:.6f}"
             )
     finally:
         if wrapped_env is not None:
