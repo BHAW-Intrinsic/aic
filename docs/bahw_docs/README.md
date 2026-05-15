@@ -108,6 +108,11 @@ Completed work so far:
 - The final packaged SFP artifact is the tightened Gazebo-transfer checkpoint
   `step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`. It is legal and gives
   partial official Gazebo credit, but it does not reliably trigger insertion.
+- [2026-05-16] [7fa976c] Calibrated SFP terminal target (single-waypoint per mount):
+  total=80.55, trial_1 SFP mount_0 0.03m (closest yet!), trial_2 SFP mount_1
+  force penalty (22.4N 1.38s) but no insertion (large Y jump hits card body),
+  trial_3 SC 0.32m. Worse than default terminal target because of force penalty.
+  Log: logs/gazebo_eval/20260516_035523/scoring.yaml
 - [2026-05-16] [7e69e51] Distrobox baseline (3151D SFP, INCLUDE_MOUNT_METADATA=true):
   total=66.39, SFP 0.10m/0.06m from port, SC 0.28m. No insertion.
   Log: logs/gazebo_eval/20260516_033917/scoring.yaml
