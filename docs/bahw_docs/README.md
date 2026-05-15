@@ -44,35 +44,30 @@ Completed work so far:
 - The SFP Gazebo adapter reconstructs the 3149D Isaac actor observation from
   official `Task`/`Observation` fields and reaches partial tier-2/tier-3 scores
   in official Gazebo, but it still misses insertion.
-- The final host-packaged Docker submission candidate is `my-solution:v1`,
-  also tagged `my-solution:fc7fb3a-0e6e100`, from source commit `0e6e100`.
-  Image ID:
-  `sha256:fc7fb3a897d19d072553ae089f72e973160fa2dc4b6d1c4a370a3c975ec66a1f`
-  (`40.6 GB` reported by Docker).
-- Final Docker Compose verification completed legally from
-  `docker/docker-compose.yaml` with `--no-build`. The package starts through
-  `/entrypoint.sh`, loads `aic_model.RslRlCheckpointPolicy`, and completes all
-  three official trials with `ground_truth:=false`. Compose score:
-  `154.62729379313998`.
-- Final Compose artifacts are saved on the host under
-  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/`, including
-  `results/scoring.yaml`, `results/bag_trial_1_20260515_010628_258/`,
-  `results/bag_trial_2_20260515_010646_972/`, and
-  `results/bag_trial_3_20260515_010701_870/`.
-- Final review videos are from a separate legal wrapper run that recorded the
-  `/observations` camera stream consumed by the policy:
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/`.
-  That run scored `138.8247978715018`; use it for qualitative inspection, not
-  as the final package score.
-- The previous best legal official Gazebo run with videos was
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/scoring.yaml`, total
-  `154.67836105930783`, with review videos under
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/videos/`.
-- The current best legal official Gazebo score observed without video is
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
-  `155.11221437038648`.
-- Earlier Docker/package attempts from commit `ebb57a2` and image `406a86a04849`
-  are superseded by the `fc7fb3a897d1` image above.
+- The current final host-packaged Docker submission candidate is
+  `my-solution:v1`, also tagged `my-solution:final-best-trace9` and
+  `my-solution:68f0603-trace9`. Image ID: `98114f1ab0aa` (`40.4 GB` reported
+  by Docker). This supersedes the earlier `fc7fb3a-0e6e100` candidate.
+- The best legal Docker Compose verification for this image was run from
+  `docker/docker-compose.yaml` with `--no-build` and `ground_truth:=false`.
+  It starts through `/entrypoint.sh`, loads `aic_model.RslRlCheckpointPolicy`,
+  and completed all three official trials. Compose score:
+  `278.63988222183474`.
+- Best Compose artifacts are saved on the host under
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_68f0603_pkg2/`, including
+  `results/scoring.yaml` and three `results/bag_trial_*` directories.
+- Repeat verification of the same image showed stochastic instability:
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_68f0603_pkg3_repeat/results/scoring.yaml`
+  scored `192.85410759116198`, with trial 1 missing insertion and trial 3 only
+  partial. Treat the `278.64` run as the best observed local evidence, not a
+  guarantee for the hosted evaluator.
+- The official Compose scoring bags do not contain `/observations`, so camera
+  videos could not be exported from the best Compose run. Attempts to make a
+  source-wrapper `/observations` video run failed tier 1 due host lifecycle
+  startup timing and should not be used as package evidence.
+- Earlier Docker/package attempts from commit `ebb57a2`, image `406a86a04849`,
+  and the `fc7fb3a897d1` image are superseded by the `98114f1ab0aa` trace9
+  image above.
 - Controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
   TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
   SFP `gripper/tcp` command-frame replay and zeroed joint observations were also
@@ -104,22 +99,24 @@ Submission packaging status:
   `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`.
 - The default Docker runtime policy is `aic_model.RslRlCheckpointPolicy`.
 - The final local package candidate is built and verified on the host as
-  `my-solution:v1` / `my-solution:fc7fb3a-0e6e100`.
+  `my-solution:v1` / `my-solution:final-best-trace9` /
+  `my-solution:68f0603-trace9`.
 - The runtime uses official `Task` metadata, official camera/joint observations,
   previous legal actions, and internal command state only. It does not use
   scoring internals, hidden Gazebo transforms, or ground-truth topics.
-- Final submission still needs the team ECR repository URI or team slug for
-  tagging and pushing the verified image.
+- The team ECR repository is
+  `973918476471.dkr.ecr.us-east-1.amazonaws.com/aic-team/bha`. The current
+  immutable submission tag being pushed is
+  `trace9-68f0603-20260515-final`.
 
 Current blocker:
 
 - The packaged policy is valid, legal, and is the current submission candidate,
-  but it is not a fully solved insertion policy. SFP reaches the port mouth and
-  scores tier 2/tier 3 partial credit; SC can reach partial insertion in some
-  official trials. Full insertion remains unreliable.
-- The highest-risk remaining assumptions are the final millimeter-scale SFP
-  approach under official mount distributions and the official-start SC approach
-  before actor handoff.
+  but final hosted performance is not guaranteed. The same local Docker image
+  produced one all-success run (`278.64`) and one lower repeat (`192.85`).
+- The previous hosted submission scored much lower than local, so the final
+  risk is evaluation stochasticity and local-vs-host mismatch, especially in
+  the last millimeters of SFP/SC insertion.
 
 Next recommended work:
 
