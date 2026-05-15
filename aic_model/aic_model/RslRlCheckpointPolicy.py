@@ -242,6 +242,26 @@ def _env_target_sequence(
     return tuple(targets)
 
 
+def _interpolated_targets(
+    start: np.ndarray,
+    targets: tuple[tuple[float, float, float], ...],
+    max_step: float,
+) -> list[np.ndarray]:
+    if max_step <= 0.0:
+        return [np.array(target, dtype=np.float64) for target in targets]
+    output: list[np.ndarray] = []
+    previous = start.astype(np.float64, copy=True)
+    for target in targets:
+        target_array = np.array(target, dtype=np.float64)
+        distance = float(np.linalg.norm(target_array - previous))
+        steps = max(1, int(np.ceil(distance / max_step)))
+        for index in range(1, steps + 1):
+            alpha = index / steps
+            output.append((1.0 - alpha) * previous + alpha * target_array)
+        previous = target_array
+    return output
+
+
 def _safe_token(value: str) -> str:
     token = "".join(
         char if char.isalnum() or char in {"-", "_"} else "_" for char in value
@@ -434,11 +454,17 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_terminal_orientation_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SC_TERMINAL_ORIENTATION", False
         )
+        self._sc_terminal_target_max_step = _env_float(
+            "AIC_RSLRL_SC_TERMINAL_TARGET_MAX_STEP", 0.0
+        )
         self._sfp_terminal_target_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET", False
         )
         self._sfp_terminal_target_dwell_sec = _env_float(
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC", 1.20
+        )
+        self._sfp_terminal_target_max_step = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_MAX_STEP", 0.0
         )
         self._sfp_terminal_orientation_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION", False
@@ -543,10 +569,14 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_terminal_target_dwell_sec!r}, "
             "AIC_RSLRL_ENABLE_SC_TERMINAL_ORIENTATION="
             f"{self._sc_terminal_orientation_enabled!r}, "
+            "AIC_RSLRL_SC_TERMINAL_TARGET_MAX_STEP="
+            f"{self._sc_terminal_target_max_step!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
             f"{self._sfp_terminal_target_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC="
             f"{self._sfp_terminal_target_dwell_sec!r}, "
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_MAX_STEP="
+            f"{self._sfp_terminal_target_max_step!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION="
             f"{self._sfp_terminal_orientation_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_FEEDFORWARD_BASE_Z="
@@ -1462,20 +1492,26 @@ class RslRlCheckpointPolicy(Policy):
             quat = np.array(SC_TERMINAL_QUATS_XYZW[port_name], dtype=np.float64)
         dwell = max(0.02, self._sc_terminal_target_dwell_sec)
         send_feedback("running legal SC terminal target sequence")
+        path = _interpolated_targets(
+            np.array([pose.position.x, pose.position.y, pose.position.z], dtype=np.float64),
+            targets,
+            self._sc_terminal_target_max_step,
+        )
         self.get_logger().info(
             "Running legal SC terminal target sequence: "
-            f"target_count={len(targets)}, dwell={dwell:.2f}s, "
+            f"target_count={len(targets)}, command_count={len(path)}, "
+            f"dwell={dwell:.2f}s, max_step={self._sc_terminal_target_max_step}, "
             f"fixed_orientation={self._sc_terminal_orientation_enabled!r}"
         )
-        for index, target in enumerate(targets, start=1):
-            target_array = np.array(target, dtype=np.float64)
+        for index, target_array in enumerate(path, start=1):
             command = self._make_base_pose_update(target_array, quat)
             move_robot(motion_update=command)
-            self.get_logger().info(
-                "SC terminal target "
-                f"{index}/{len(targets)}: "
-                f"position={np.array2string(target_array, precision=4)}"
-            )
+            if index == 1 or index == len(path) or index % self._log_every_n == 0:
+                self.get_logger().info(
+                    "SC terminal target "
+                    f"{index}/{len(path)}: "
+                    f"position={np.array2string(target_array, precision=4)}"
+                )
             self.sleep_for(dwell)
 
     def _run_sfp_terminal_target(
@@ -1517,16 +1553,21 @@ class RslRlCheckpointPolicy(Policy):
             quat = np.array(SFP_TERMINAL_QUATS_XYZW[mount_name], dtype=np.float64)
         dwell = max(0.02, self._sfp_terminal_target_dwell_sec)
         send_feedback("running legal SFP terminal target sequence")
+        path = _interpolated_targets(
+            np.array([pose.position.x, pose.position.y, pose.position.z], dtype=np.float64),
+            targets,
+            self._sfp_terminal_target_max_step,
+        )
         self.get_logger().info(
             "Running legal SFP terminal target sequence: "
-            f"target_count={len(targets)}, dwell={dwell:.2f}s, "
+            f"target_count={len(targets)}, command_count={len(path)}, "
+            f"dwell={dwell:.2f}s, max_step={self._sfp_terminal_target_max_step}, "
             f"feedforward_base_z={self._sfp_terminal_feedforward_base_z:.2f}N"
         )
-        for index, target in enumerate(targets, start=1):
-            target_array = np.array(target, dtype=np.float64)
+        for index, target_array in enumerate(path, start=1):
             feedforward_force_tip = None
             if (
-                index == len(targets)
+                index == len(path)
                 and abs(self._sfp_terminal_feedforward_base_z) > 1.0e-9
             ):
                 base_force = np.array(
@@ -1540,11 +1581,12 @@ class RslRlCheckpointPolicy(Policy):
                 feedforward_force_tip=feedforward_force_tip,
             )
             move_robot(motion_update=command)
-            self.get_logger().info(
-                "SFP terminal target "
-                f"{index}/{len(targets)}: "
-                f"position={np.array2string(target_array, precision=4)}"
-            )
+            if index == 1 or index == len(path) or index % self._log_every_n == 0:
+                self.get_logger().info(
+                    "SFP terminal target "
+                    f"{index}/{len(path)}: "
+                    f"position={np.array2string(target_array, precision=4)}"
+                )
             self.sleep_for(dwell)
 
     def _run_sfp_final_settle(
