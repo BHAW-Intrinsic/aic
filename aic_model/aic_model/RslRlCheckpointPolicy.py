@@ -1964,7 +1964,10 @@ class RslRlCheckpointPolicy(Policy):
 
     def _run_public_scripted_trace_replay(
         self,
+        task: Task,
+        task_kind: str,
         target_key: str,
+        get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
     ) -> bool:
@@ -2012,6 +2015,17 @@ class RslRlCheckpointPolicy(Policy):
             target_key, move_robot, send_feedback
         ):
             return False
+
+        if task_kind == "sfp":
+            self._run_sfp_guarded_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            observation = get_observation()
+            if observation is not None:
+                self._run_sfp_final_settle(observation, move_robot, send_feedback)
+            self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
+        elif task_kind == "sc":
+            self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
 
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
@@ -2075,6 +2089,7 @@ class RslRlCheckpointPolicy(Policy):
         observation,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
+        get_observation: GetObservationCallback | None = None,
     ) -> bool:
         target_key = self._public_scripted_target_key(task, task_kind)
         if not target_key or target_key not in PUBLIC_SCRIPTED_FINAL_POSES:
@@ -2085,8 +2100,13 @@ class RslRlCheckpointPolicy(Policy):
             return False
 
         if self._public_scripted_trace_replay_enabled:
+            if get_observation is None:
+                self.get_logger().error(
+                    "Observation callback unavailable for public scripted trace replay."
+                )
+                return False
             return self._run_public_scripted_trace_replay(
-                target_key, move_robot, send_feedback
+                task, task_kind, target_key, get_observation, move_robot, send_feedback
             )
 
         final_position_raw, final_quat_raw = PUBLIC_SCRIPTED_FINAL_POSES[target_key]
@@ -2207,7 +2227,12 @@ class RslRlCheckpointPolicy(Policy):
         if self._public_scripted_insert_enabled:
             self._start_trace(task, task_kind)
             ok = self._run_public_scripted_insert(
-                task, task_kind, observation, move_robot, send_feedback
+                task,
+                task_kind,
+                observation,
+                move_robot,
+                send_feedback,
+                get_observation,
             )
             self._finish_trace("public_scripted_completed" if ok else "public_scripted_failed")
             return ok
