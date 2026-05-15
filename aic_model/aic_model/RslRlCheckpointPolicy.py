@@ -842,6 +842,14 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._public_scripted_insert_enabled!r}, "
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_JOINTS="
             f"{self._public_scripted_final_joints_enabled!r}, "
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_POSE_HOLD="
+            f"{self._public_scripted_final_pose_hold_enabled!r}, "
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_POSE_HOLD_STEPS="
+            f"{self._public_scripted_final_pose_hold_steps!r}, "
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_POSE_HOLD_DT="
+            f"{self._public_scripted_final_pose_hold_dt!r}, "
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_POSE_HOLD_Z_THRESHOLD="
+            f"{self._public_scripted_final_pose_hold_z_threshold!r}, "
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_STEPS="
             f"{self._public_scripted_final_joint_steps!r}, "
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_TARGETS="
@@ -2303,7 +2311,11 @@ class RslRlCheckpointPolicy(Policy):
             return False
 
         self._run_public_scripted_final_pose_hold(
-            target_key, get_observation, move_robot, send_feedback
+            target_key,
+            get_observation,
+            move_robot,
+            send_feedback,
+            delta_env_prefix="TRACE",
         )
 
         self._run_public_scripted_post_trace_refinements(
@@ -2371,6 +2383,7 @@ class RslRlCheckpointPolicy(Policy):
         get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
+        delta_env_prefix: str,
     ) -> None:
         if not self._public_scripted_final_pose_hold_enabled:
             return
@@ -2379,10 +2392,11 @@ class RslRlCheckpointPolicy(Policy):
             return
         position_raw, quat_raw = final_pose
         default_delta = _env_vector3(
-            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA", (0.0, 0.0, 0.0)
+            f"AIC_RSLRL_PUBLIC_SCRIPTED_{delta_env_prefix}_DELTA",
+            (0.0, 0.0, 0.0),
         )
         target_delta = _env_vector3(
-            f"AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA_{target_key.upper()}",
+            f"AIC_RSLRL_PUBLIC_SCRIPTED_{delta_env_prefix}_DELTA_{target_key.upper()}",
             tuple(float(item) for item in default_delta),
         )
         position = np.array(position_raw, dtype=np.float64) + target_delta
@@ -2397,6 +2411,7 @@ class RslRlCheckpointPolicy(Policy):
             "Running public final pose hold: "
             f"target_key={target_key}, steps={steps}, min_steps={min_steps}, "
             f"dt={dt:.3f}s, z_threshold={z_threshold:.4f}, "
+            f"delta_env_prefix={delta_env_prefix!r}, "
             f"position={np.array2string(position, precision=4)}"
         )
         for step in range(steps):
@@ -2541,7 +2556,11 @@ class RslRlCheckpointPolicy(Policy):
 
         if get_observation is not None:
             self._run_public_scripted_final_pose_hold(
-                target_key, get_observation, move_robot, send_feedback
+                target_key,
+                get_observation,
+                move_robot,
+                send_feedback,
+                delta_env_prefix="FINAL",
             )
 
         if task_kind == "sc" and get_observation is not None:
