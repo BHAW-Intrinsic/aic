@@ -597,6 +597,15 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_guarded_insert_angular_damping = _env_float(
             "AIC_RSLRL_SC_GUARDED_INSERT_ANGULAR_DAMPING", 6.0
         )
+        self._sc_guarded_insert_joint_hold_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SC_GUARDED_INSERT_JOINT_HOLD", False
+        )
+        self._sc_guarded_insert_joint_hold_sec = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_JOINT_HOLD_SEC", 0.30
+        )
+        self._sc_guarded_insert_joint_hold_dt = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_JOINT_HOLD_DT", 0.05
+        )
         self._sc_tcp_z_recovery_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SC_TCP_Z_RECOVERY", False
         )
@@ -904,6 +913,10 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_guarded_insert_linear_stiffness!r}, "
             "AIC_RSLRL_SC_GUARDED_INSERT_LINEAR_DAMPING="
             f"{self._sc_guarded_insert_linear_damping!r}, "
+            "AIC_RSLRL_ENABLE_SC_GUARDED_INSERT_JOINT_HOLD="
+            f"{self._sc_guarded_insert_joint_hold_enabled!r}, "
+            "AIC_RSLRL_SC_GUARDED_INSERT_JOINT_HOLD_SEC="
+            f"{self._sc_guarded_insert_joint_hold_sec!r}, "
             "AIC_RSLRL_SFP_GUARDED_INSERT_TARGETS="
             f"{self._sfp_guarded_insert_targets!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
@@ -1176,6 +1189,18 @@ class RslRlCheckpointPolicy(Policy):
         )
         joint_vel_rel[: len(ARM_JOINT_NAMES)] = isaac_joint_vel
         return joint_pos_rel, joint_vel_rel
+
+    def _gazebo_arm_joint_positions(self, observation) -> np.ndarray:
+        pos_by_name = dict(
+            zip(observation.joint_states.name, observation.joint_states.position)
+        )
+        return np.array(
+            [
+                pos_by_name.get(name, float(GAZEBO_DEFAULT_ARM_JOINT_POS[index]))
+                for index, name in enumerate(ARM_JOINT_NAMES)
+            ],
+            dtype=np.float64,
+        )
 
     def _eef_pose(self, observation) -> np.ndarray:
         pose = observation.controller_state.tcp_pose
@@ -2012,6 +2037,32 @@ class RslRlCheckpointPolicy(Policy):
                     f"z_step={z_step:.5f}"
                 )
             self.sleep_for(dt)
+        if not self._sc_guarded_insert_joint_hold_enabled:
+            return
+        observation = get_observation()
+        if observation is None:
+            self.get_logger().error(
+                "Observation unavailable before SC guarded insert joint hold."
+            )
+            return
+        target = self._gazebo_arm_joint_positions(observation)
+        hold_steps = max(
+            1,
+            int(
+                self._sc_guarded_insert_joint_hold_sec
+                / max(self._sc_guarded_insert_joint_hold_dt, 1.0e-6)
+            ),
+        )
+        hold_dt = max(0.01, self._sc_guarded_insert_joint_hold_dt)
+        command = self._make_joint_position_update(target, mirror_shoulder=False)
+        self.get_logger().info(
+            "Running legal SC guarded insert joint hold: "
+            f"steps={hold_steps}, dt={hold_dt:.3f}s, "
+            f"target={np.array2string(target, precision=4)}"
+        )
+        for _ in range(hold_steps):
+            move_robot(joint_motion_update=command)
+            self.sleep_for(hold_dt)
 
     def _run_sfp_terminal_target(
         self,
