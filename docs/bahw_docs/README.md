@@ -61,6 +61,23 @@ Completed work so far:
   scored `192.85410759116198`, with trial 1 missing insertion and trial 3 only
   partial. Treat the `278.64` run as the best observed local evidence, not a
   guarantee for the hosted evaluator.
+- A later five-run official Docker Compose sweep with the same current
+  `ghcr.io/intrinsic-dev/aic/aic_eval:latest` evaluator image produced totals
+  `242.69`, `192.90`, `192.81`, `228.14`, and `191.83`. Every run had at least
+  one trial below 70. Artifacts:
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_trace9_random_sweep_current/`.
+- Evaluator legality check: fetched `intrinsic-dev/aic` upstream at
+  `ced3678` and found no diff in the evaluator/scoring paths
+  `docker/docker-compose.yaml`, `docker/aic_eval`, `aic_engine`,
+  `aic_scoring`, `aic_bringup`, `aic_gazebo`, `aic_assets`, and
+  `aic_controller`. The local evaluator image was also checked with
+  `docker pull ghcr.io/intrinsic-dev/aic/aic_eval:latest`; Docker reported it
+  up to date at digest
+  `sha256:9aa2ffdbb946d38edde1bac7b5f02a44cfbea26e3b04a9c74e09f14c97472923`.
+- ACL sanity check: running the same image with `AIC_ENABLE_ACL=true` for both
+  eval and model passed tier 1 on all trials and scored `228.24`; trial 1 still
+  missed insertion. Artifacts:
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_trace9_acl_check/`.
 - The official Compose scoring bags do not contain `/observations`, so camera
   videos could not be exported from the best Compose run. Attempts to make a
   source-wrapper `/observations` video run failed tier 1 due host lifecycle
@@ -115,7 +132,9 @@ Current blocker:
 
 - The packaged policy is valid, legal, and is the current submission candidate,
   but final hosted performance is not guaranteed. The same local Docker image
-  produced one all-success run (`278.64`) and one lower repeat (`192.85`).
+  produced one all-success run (`278.64`) but the later repeat sweep ranged
+  from `191.83` to `242.69`, with at least one below-70 trial in every sweep
+  run.
 - The previous hosted submission scored much lower than local, so the final
   risk is evaluation stochasticity and local-vs-host mismatch, especially in
   the last millimeters of SFP/SC insertion.
