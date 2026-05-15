@@ -585,6 +585,18 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_guarded_insert_force_limit = _env_float(
             "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT", 18.0
         )
+        self._sc_guarded_insert_linear_stiffness = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_LINEAR_STIFFNESS", 25.0
+        )
+        self._sc_guarded_insert_angular_stiffness = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_ANGULAR_STIFFNESS", 8.0
+        )
+        self._sc_guarded_insert_linear_damping = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_LINEAR_DAMPING", 18.0
+        )
+        self._sc_guarded_insert_angular_damping = _env_float(
+            "AIC_RSLRL_SC_GUARDED_INSERT_ANGULAR_DAMPING", 6.0
+        )
         self._sc_tcp_z_recovery_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SC_TCP_Z_RECOVERY", False
         )
@@ -612,6 +624,18 @@ class RslRlCheckpointPolicy(Policy):
         )
         self._sfp_terminal_feedforward_base_z = _env_float(
             "AIC_RSLRL_SFP_TERMINAL_FEEDFORWARD_BASE_Z", 0.0
+        )
+        self._sfp_terminal_target_linear_stiffness = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_LINEAR_STIFFNESS", 85.0
+        )
+        self._sfp_terminal_target_angular_stiffness = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_ANGULAR_STIFFNESS", 45.0
+        )
+        self._sfp_terminal_target_linear_damping = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_LINEAR_DAMPING", 38.0
+        )
+        self._sfp_terminal_target_angular_damping = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_ANGULAR_DAMPING", 14.0
         )
         self._sfp_tcp_z_recovery_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TCP_Z_RECOVERY", False
@@ -668,6 +692,18 @@ class RslRlCheckpointPolicy(Policy):
         )
         self._sfp_guarded_insert_force_limit = _env_float(
             "AIC_RSLRL_SFP_GUARDED_INSERT_FORCE_LIMIT", 18.0
+        )
+        self._sfp_guarded_insert_linear_stiffness = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LINEAR_STIFFNESS", 35.0
+        )
+        self._sfp_guarded_insert_angular_stiffness = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_ANGULAR_STIFFNESS", 12.0
+        )
+        self._sfp_guarded_insert_linear_damping = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LINEAR_DAMPING", 18.0
+        )
+        self._sfp_guarded_insert_angular_damping = _env_float(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_ANGULAR_DAMPING", 6.0
         )
         sfp_guarded_targets = os.environ.get(
             "AIC_RSLRL_SFP_GUARDED_INSERT_TARGETS", ""
@@ -864,6 +900,10 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_guarded_insert_down_step!r}, "
             "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT="
             f"{self._sc_guarded_insert_force_limit!r}, "
+            "AIC_RSLRL_SC_GUARDED_INSERT_LINEAR_STIFFNESS="
+            f"{self._sc_guarded_insert_linear_stiffness!r}, "
+            "AIC_RSLRL_SC_GUARDED_INSERT_LINEAR_DAMPING="
+            f"{self._sc_guarded_insert_linear_damping!r}, "
             "AIC_RSLRL_SFP_GUARDED_INSERT_TARGETS="
             f"{self._sfp_guarded_insert_targets!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
@@ -876,6 +916,10 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_terminal_orientation_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_FEEDFORWARD_BASE_Z="
             f"{self._sfp_terminal_feedforward_base_z!r}, "
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_LINEAR_STIFFNESS="
+            f"{self._sfp_terminal_target_linear_stiffness!r}, "
+            "AIC_RSLRL_SFP_TERMINAL_TARGET_LINEAR_DAMPING="
+            f"{self._sfp_terminal_target_linear_damping!r}, "
             f"AIC_RSLRL_SC_MAX_CONTROL_SEC={self._sc_max_control_sec!r}, "
             f"AIC_RSLRL_SFP_MAX_CONTROL_SEC={self._sfp_max_control_sec!r}, "
             f"AIC_RSLRL_SC_POSITION_SCALE={self._sc_position_scale!r}, "
@@ -897,6 +941,10 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_guarded_insert_lateral_step!r}, "
             "AIC_RSLRL_SFP_GUARDED_INSERT_FORCE_LIMIT="
             f"{self._sfp_guarded_insert_force_limit!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LINEAR_STIFFNESS="
+            f"{self._sfp_guarded_insert_linear_stiffness!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LINEAR_DAMPING="
+            f"{self._sfp_guarded_insert_linear_damping!r}, "
             "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH="
             f"{self._sfp_local_search_enabled!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_TARGETS="
@@ -1609,6 +1657,11 @@ class RslRlCheckpointPolicy(Policy):
         position: np.ndarray,
         quat_xyzw: np.ndarray,
         feedforward_force_tip: np.ndarray | None = None,
+        *,
+        linear_stiffness: float = 85.0,
+        angular_stiffness: float = 45.0,
+        linear_damping: float = 38.0,
+        angular_damping: float = 14.0,
     ) -> MotionUpdate:
         target = Pose()
         target.position.x = float(position[0])
@@ -1629,10 +1682,24 @@ class RslRlCheckpointPolicy(Policy):
             angular=Vector3(x=0.0, y=0.0, z=0.0),
         )
         motion_update.target_stiffness = np.diag(
-            [85.0, 85.0, 85.0, 45.0, 45.0, 45.0]
+            [
+                linear_stiffness,
+                linear_stiffness,
+                linear_stiffness,
+                angular_stiffness,
+                angular_stiffness,
+                angular_stiffness,
+            ]
         ).flatten()
         motion_update.target_damping = np.diag(
-            [38.0, 38.0, 38.0, 14.0, 14.0, 14.0]
+            [
+                linear_damping,
+                linear_damping,
+                linear_damping,
+                angular_damping,
+                angular_damping,
+                angular_damping,
+            ]
         ).flatten()
         if feedforward_force_tip is None:
             feedforward_force_tip = np.zeros(3, dtype=np.float64)
@@ -1656,6 +1723,8 @@ class RslRlCheckpointPolicy(Policy):
         *,
         linear_stiffness: float = 35.0,
         angular_stiffness: float = 12.0,
+        linear_damping: float = 18.0,
+        angular_damping: float = 6.0,
     ) -> MotionUpdate:
         target = Pose()
         target.position.x = float(delta_position[0])
@@ -1685,7 +1754,14 @@ class RslRlCheckpointPolicy(Policy):
             ]
         ).flatten()
         motion_update.target_damping = np.diag(
-            [18.0, 18.0, 18.0, 6.0, 6.0, 6.0]
+            [
+                linear_damping,
+                linear_damping,
+                linear_damping,
+                angular_damping,
+                angular_damping,
+                angular_damping,
+            ]
         ).flatten()
         motion_update.feedforward_wrench_at_tip = Wrench(
             force=Vector3(x=0.0, y=0.0, z=0.0),
@@ -1904,7 +1980,9 @@ class RslRlCheckpointPolicy(Policy):
             "Running legal SC guarded insertion: "
             f"steps={steps}, down_step={self._sc_guarded_insert_down_step}, "
             f"retract_step={self._sc_guarded_insert_retract_step}, "
-            f"force_limit={self._sc_guarded_insert_force_limit}"
+            f"force_limit={self._sc_guarded_insert_force_limit}, "
+            f"linear_stiffness={self._sc_guarded_insert_linear_stiffness}, "
+            f"linear_damping={self._sc_guarded_insert_linear_damping}"
         )
         for step in range(steps):
             observation = get_observation()
@@ -1921,8 +1999,10 @@ class RslRlCheckpointPolicy(Policy):
             )
             command = self._make_tcp_delta_update(
                 np.array([0.0, 0.0, z_step], dtype=np.float64),
-                linear_stiffness=25.0,
-                angular_stiffness=8.0,
+                linear_stiffness=self._sc_guarded_insert_linear_stiffness,
+                angular_stiffness=self._sc_guarded_insert_angular_stiffness,
+                linear_damping=self._sc_guarded_insert_linear_damping,
+                angular_damping=self._sc_guarded_insert_angular_damping,
             )
             move_robot(motion_update=command)
             if step % self._log_every_n == 0:
@@ -1998,6 +2078,10 @@ class RslRlCheckpointPolicy(Policy):
                 target_array,
                 quat,
                 feedforward_force_tip=feedforward_force_tip,
+                linear_stiffness=self._sfp_terminal_target_linear_stiffness,
+                angular_stiffness=self._sfp_terminal_target_angular_stiffness,
+                linear_damping=self._sfp_terminal_target_linear_damping,
+                angular_damping=self._sfp_terminal_target_angular_damping,
             )
             move_robot(motion_update=command)
             if index == 1 or index == len(path) or index % self._log_every_n == 0:
@@ -2139,7 +2223,9 @@ class RslRlCheckpointPolicy(Policy):
             f"target={mount_name}, "
             f"steps={steps}, down_step={self._sfp_guarded_insert_down_step}, "
             f"lateral_step={self._sfp_guarded_insert_lateral_step}, "
-            f"force_limit={self._sfp_guarded_insert_force_limit}"
+            f"force_limit={self._sfp_guarded_insert_force_limit}, "
+            f"linear_stiffness={self._sfp_guarded_insert_linear_stiffness}, "
+            f"linear_damping={self._sfp_guarded_insert_linear_damping}"
         )
         golden_angle = 2.399963229728653
         for step in range(steps):
@@ -2170,7 +2256,13 @@ class RslRlCheckpointPolicy(Policy):
                     ],
                     dtype=np.float64,
                 )
-            command = self._make_tcp_delta_update(delta)
+            command = self._make_tcp_delta_update(
+                delta,
+                linear_stiffness=self._sfp_guarded_insert_linear_stiffness,
+                angular_stiffness=self._sfp_guarded_insert_angular_stiffness,
+                linear_damping=self._sfp_guarded_insert_linear_damping,
+                angular_damping=self._sfp_guarded_insert_angular_damping,
+            )
             move_robot(motion_update=command)
             if step % self._log_every_n == 0:
                 self.get_logger().info(
