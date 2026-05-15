@@ -2695,9 +2695,6 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sfp_guarded_insert(
                 task, get_observation, move_robot, send_feedback
             )
-            self._run_public_grid_search(
-                task_kind, target_key, get_observation, move_robot, send_feedback
-            )
             terminal = self._run_sfp_terminal_target(
                 task, get_observation, move_robot, send_feedback
             )
@@ -2705,6 +2702,9 @@ class RslRlCheckpointPolicy(Policy):
                 self._run_sfp_tcp_z_recovery(
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
+            self._run_public_grid_search(
+                task_kind, target_key, get_observation, move_robot, send_feedback
+            )
             self._run_sfp_terminal_fallback_trace_suffix(
                 target_key, get_observation, move_robot, send_feedback
             )
@@ -3488,6 +3488,11 @@ class RslRlCheckpointPolicy(Policy):
             if terminal is not None:
                 self._run_sfp_tcp_z_recovery(
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
+            target_key = self._public_scripted_target_key(task, task_kind)
+            if target_key:
+                self._run_public_grid_search(
+                    task_kind, target_key, get_observation, move_robot, send_feedback
                 )
             observation = get_observation()
             if observation is not None:
