@@ -489,6 +489,8 @@ class RslRlCheckpointPolicy(Policy):
       ``[x, y, z]`` offsets for the public-sample scripted final pose.
     - ``AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_JOINTS``: optional final
       joint-space finish using offline public-sample calibration targets.
+    - ``AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY``: optional replay of
+      offline public-sample Cartesian command traces keyed by official target.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -642,6 +644,23 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_final_joint_dt = _env_float(
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_DT", 0.05
         )
+        self._public_scripted_trace_replay_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY", False
+        )
+        self._public_scripted_trace_dt = _env_float(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DT", 0.05
+        )
+        self._public_scripted_trace_path = Path(
+            os.environ.get(
+                "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PATH",
+                str(
+                    Path(__file__).resolve().parents[1]
+                    / "artifacts"
+                    / "public_scripted_traces.json"
+                ),
+            )
+        )
+        self._public_scripted_traces: dict[str, list[list[float]]] | None = None
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
         self._trace_dir = os.environ.get("AIC_RSLRL_TRACE_DIR", "")
@@ -727,6 +746,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._public_scripted_final_joints_enabled!r}, "
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_STEPS="
             f"{self._public_scripted_final_joint_steps!r}, "
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY="
+            f"{self._public_scripted_trace_replay_enabled!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
             f"AIC_RSLRL_TRACE_DIR={self._trace_dir!r}, "
             f"AIC_RSLRL_TRACE_EVERY_N={self._trace_every_n!r}, "
@@ -1903,6 +1924,69 @@ class RslRlCheckpointPolicy(Policy):
             return self._sc_port_name(task)
         return None
 
+    def _load_public_scripted_traces(self) -> dict[str, list[list[float]]]:
+        if self._public_scripted_traces is not None:
+            return self._public_scripted_traces
+        with self._public_scripted_trace_path.open("r", encoding="utf-8") as infile:
+            traces = json.load(infile)
+        if not isinstance(traces, dict):
+            raise ValueError(
+                f"{self._public_scripted_trace_path} must contain a JSON object"
+            )
+        for target_key, samples in traces.items():
+            if not isinstance(samples, list) or not samples:
+                raise ValueError(f"Trace {target_key!r} must be a non-empty list")
+            for index, sample in enumerate(samples):
+                if not isinstance(sample, list) or len(sample) != 7:
+                    raise ValueError(
+                        f"Trace {target_key!r}[{index}] must be "
+                        "[x, y, z, qx, qy, qz, qw]"
+                    )
+        self._public_scripted_traces = traces
+        return traces
+
+    def _run_public_scripted_trace_replay(
+        self,
+        target_key: str,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> bool:
+        try:
+            traces = self._load_public_scripted_traces()
+        except Exception as exc:
+            self.get_logger().error(f"Failed to load public scripted traces: {exc}")
+            return False
+        trace = traces.get(target_key)
+        if trace is None:
+            self.get_logger().error(
+                "No public scripted trace for "
+                f"{target_key!r} in {self._public_scripted_trace_path}"
+            )
+            return False
+
+        dt = max(0.01, self._public_scripted_trace_dt)
+        send_feedback("running public-sample scripted trace replay")
+        self.get_logger().info(
+            "Running public-sample scripted trace replay: "
+            f"target_key={target_key}, commands={len(trace)}, dt={dt:.3f}s, "
+            f"path={self._public_scripted_trace_path}"
+        )
+        for index, sample in enumerate(trace, start=1):
+            target = np.array(sample[:3], dtype=np.float64)
+            quat = np.array(sample[3:], dtype=np.float64)
+            move_robot(motion_update=self._make_base_pose_update(target, quat))
+            if index == 1 or index == len(trace) or index % self._log_every_n == 0:
+                self.get_logger().info(
+                    "Public scripted trace command "
+                    f"{index}/{len(trace)}: "
+                    f"position={np.array2string(target, precision=4)}"
+                )
+            self.sleep_for(dt)
+
+        if self._public_scripted_dwell_sec > 0.0:
+            self.sleep_for(self._public_scripted_dwell_sec)
+        return True
+
     def _run_public_scripted_insert(
         self,
         task: Task,
@@ -1918,6 +2002,11 @@ class RslRlCheckpointPolicy(Policy):
                 f"task_kind={task_kind!r}, target_key={target_key!r}"
             )
             return False
+
+        if self._public_scripted_trace_replay_enabled:
+            return self._run_public_scripted_trace_replay(
+                target_key, move_robot, send_feedback
+            )
 
         final_position_raw, final_quat_raw = PUBLIC_SCRIPTED_FINAL_POSES[target_key]
         default_delta = _env_vector3(
