@@ -264,6 +264,13 @@ def _env_int(name: str, default: int) -> int:
     return int(value)
 
 
+def _env_name_set(name: str) -> set[str] | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    return {item.strip() for item in value.split(",") if item.strip()}
+
+
 def _env_target_sequence(
     name: str,
     default: tuple[tuple[float, float, float], ...] | None,
@@ -657,6 +664,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_terminal_fallback_trace_suffix_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_FALLBACK_TRACE_SUFFIX", False
         )
+        self._sfp_terminal_fallback_trace_targets = _env_name_set(
+            "AIC_RSLRL_SFP_TERMINAL_FALLBACK_TRACE_TARGETS"
+        )
         self._sfp_terminal_fallback_trace_start_index = _env_int(
             "AIC_RSLRL_SFP_TERMINAL_FALLBACK_TRACE_START_INDEX", 350
         )
@@ -711,28 +721,14 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_final_joint_dt = _env_float(
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_DT", 0.05
         )
-        final_joint_targets = os.environ.get(
-            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_TARGETS", ""
-        ).strip()
-        self._public_scripted_final_joint_targets = (
-            {
-                item.strip()
-                for item in final_joint_targets.split(",")
-                if item.strip()
-            }
-            if final_joint_targets
-            else None
+        self._public_scripted_final_joint_targets = _env_name_set(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_TARGETS"
         )
         self._public_scripted_trace_replay_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY", False
         )
-        trace_targets = os.environ.get(
-            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_TARGETS", ""
-        ).strip()
-        self._public_scripted_trace_targets = (
-            {item.strip() for item in trace_targets.split(",") if item.strip()}
-            if trace_targets
-            else None
+        self._public_scripted_trace_targets = _env_name_set(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_TARGETS"
         )
         self._public_scripted_trace_dt = _env_float(
             "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DT", 0.05
@@ -2217,6 +2213,16 @@ class RslRlCheckpointPolicy(Policy):
         send_feedback: SendFeedbackCallback,
     ) -> None:
         if not self._sfp_terminal_fallback_trace_suffix_enabled:
+            return
+        if (
+            self._sfp_terminal_fallback_trace_targets is not None
+            and target_key not in self._sfp_terminal_fallback_trace_targets
+        ):
+            self.get_logger().info(
+                "Skipping SFP terminal fallback trace suffix: "
+                f"target_key={target_key!r} not in "
+                f"{sorted(self._sfp_terminal_fallback_trace_targets)!r}"
+            )
             return
         if not self._sfp_terminal_fallback_needed(
             target_key, get_observation, "trace suffix"
