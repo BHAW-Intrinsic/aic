@@ -177,6 +177,21 @@ SC_TERMINAL_QUATS_XYZW = {
     "sc_port_2": (0.97127, -0.06051, -0.01121, 0.22987),
 }
 
+PUBLIC_SCRIPTED_FINAL_POSES = {
+    "nic_card_mount_0": (
+        (-0.390284, 0.205366, 0.060553),
+        (0.982508, -0.027752, -0.004932, 0.184076),
+    ),
+    "nic_card_mount_1": (
+        (-0.391832, 0.245366, 0.063497),
+        (0.982520, -0.027774, -0.005042, 0.184003),
+    ),
+    "sc_port_2": (
+        (-0.486034, 0.286927, -0.020947),
+        (0.971273, -0.060505, -0.011211, 0.229874),
+    ),
+}
+
 SC_PORT_ALIASES = {
     # Isaac uses sc_port/sc_port_2 for the two available SC targets. The official
     # Gazebo task metadata names the mounted modules as sc_port_0/sc_port_1.
@@ -353,6 +368,25 @@ def _normalize_quat_xyzw(quat: np.ndarray) -> np.ndarray:
     if norm < 1.0e-9:
         return np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
     return quat / norm
+
+
+def _slerp_quat_xyzw(q0: np.ndarray, q1: np.ndarray, alpha: float) -> np.ndarray:
+    q0 = _normalize_quat_xyzw(q0)
+    q1 = _normalize_quat_xyzw(q1)
+    dot = float(np.dot(q0, q1))
+    if dot < 0.0:
+        q1 = -q1
+        dot = -dot
+    alpha = float(np.clip(alpha, 0.0, 1.0))
+    if dot > 0.9995:
+        return _normalize_quat_xyzw((1.0 - alpha) * q0 + alpha * q1)
+    theta_0 = float(np.arccos(np.clip(dot, -1.0, 1.0)))
+    theta = theta_0 * alpha
+    sin_theta = float(np.sin(theta))
+    sin_theta_0 = float(np.sin(theta_0))
+    scale0 = np.cos(theta) - dot * sin_theta / sin_theta_0
+    scale1 = sin_theta / sin_theta_0
+    return _normalize_quat_xyzw(scale0 * q0 + scale1 * q1)
 
 
 class RslRlCheckpointPolicy(Policy):
@@ -541,6 +575,22 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_include_mount_metadata = _env_bool(
             "AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA", False
         )
+        self._public_scripted_insert_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_INSERT", False
+        )
+        self._public_scripted_approach_steps = _env_int(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_APPROACH_STEPS", 100
+        )
+        self._public_scripted_descent_steps = _env_int(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_DESCENT_STEPS", 430
+        )
+        self._public_scripted_dt = _env_float("AIC_RSLRL_PUBLIC_SCRIPTED_DT", 0.05)
+        self._public_scripted_above_z = _env_float(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_ABOVE_Z", 0.215
+        )
+        self._public_scripted_dwell_sec = _env_float(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_DWELL_SEC", 5.0
+        )
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
         self._trace_dir = os.environ.get("AIC_RSLRL_TRACE_DIR", "")
@@ -620,6 +670,8 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_ZERO_BODY_FORCES={self._zero_body_forces!r}, "
             "AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA="
             f"{self._sfp_include_mount_metadata!r}, "
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_INSERT="
+            f"{self._public_scripted_insert_enabled!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
             f"AIC_RSLRL_TRACE_DIR={self._trace_dir!r}, "
             f"AIC_RSLRL_TRACE_EVERY_N={self._trace_every_n!r}, "
@@ -1789,6 +1841,90 @@ class RslRlCheckpointPolicy(Policy):
         # the socket.
         self.sleep_for(1.0)
 
+    def _public_scripted_target_key(self, task: Task, task_kind: str) -> str | None:
+        if task_kind == "sfp":
+            return self._sfp_mount_name(task)
+        if task_kind == "sc":
+            return self._sc_port_name(task)
+        return None
+
+    def _run_public_scripted_insert(
+        self,
+        task: Task,
+        task_kind: str,
+        observation,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> bool:
+        target_key = self._public_scripted_target_key(task, task_kind)
+        if not target_key or target_key not in PUBLIC_SCRIPTED_FINAL_POSES:
+            self.get_logger().error(
+                "No public scripted final pose for "
+                f"task_kind={task_kind!r}, target_key={target_key!r}"
+            )
+            return False
+
+        final_position_raw, final_quat_raw = PUBLIC_SCRIPTED_FINAL_POSES[target_key]
+        final_position = np.array(final_position_raw, dtype=np.float64)
+        final_quat = np.array(final_quat_raw, dtype=np.float64)
+        start_pose = observation.controller_state.tcp_pose
+        start_position = np.array(
+            [start_pose.position.x, start_pose.position.y, start_pose.position.z],
+            dtype=np.float64,
+        )
+        start_quat = np.array(
+            [
+                start_pose.orientation.x,
+                start_pose.orientation.y,
+                start_pose.orientation.z,
+                start_pose.orientation.w,
+            ],
+            dtype=np.float64,
+        )
+        approach_position = final_position + np.array(
+            [0.0, 0.0, self._public_scripted_above_z], dtype=np.float64
+        )
+        approach_steps = max(1, self._public_scripted_approach_steps)
+        descent_steps = max(1, self._public_scripted_descent_steps)
+        dt = max(0.01, self._public_scripted_dt)
+
+        send_feedback("running public-geometry scripted insert")
+        self.get_logger().info(
+            "Running public-geometry scripted insert: "
+            f"task_kind={task_kind}, target_key={target_key}, "
+            f"approach_steps={approach_steps}, descent_steps={descent_steps}, "
+            f"dt={dt:.3f}s, final_position={np.array2string(final_position, precision=4)}"
+        )
+
+        for step in range(approach_steps):
+            alpha = (step + 1) / approach_steps
+            position = (1.0 - alpha) * start_position + alpha * approach_position
+            quat = _slerp_quat_xyzw(start_quat, final_quat, alpha)
+            move_robot(motion_update=self._make_base_pose_update(position, quat))
+            if step == 0 or step + 1 == approach_steps or step % self._log_every_n == 0:
+                self.get_logger().info(
+                    "Public scripted approach "
+                    f"{step + 1}/{approach_steps}: "
+                    f"position={np.array2string(position, precision=4)}"
+                )
+            self.sleep_for(dt)
+
+        for step in range(descent_steps):
+            alpha = (step + 1) / descent_steps
+            position = (1.0 - alpha) * approach_position + alpha * final_position
+            move_robot(motion_update=self._make_base_pose_update(position, final_quat))
+            if step == 0 or step + 1 == descent_steps or step % self._log_every_n == 0:
+                self.get_logger().info(
+                    "Public scripted descent "
+                    f"{step + 1}/{descent_steps}: "
+                    f"position={np.array2string(position, precision=4)}"
+                )
+            self.sleep_for(dt)
+
+        if self._public_scripted_dwell_sec > 0.0:
+            self.sleep_for(self._public_scripted_dwell_sec)
+        return True
+
     def insert_cable(
         self,
         task: Task,
@@ -1805,7 +1941,6 @@ class RslRlCheckpointPolicy(Policy):
             return False
 
         task_kind = self._task_kind_from_task(task)
-        actor = self._actor_for_task(task_kind)
         self.get_logger().info(
             "Task metadata: "
             f"task_kind={task_kind!r}, "
@@ -1830,6 +1965,15 @@ class RslRlCheckpointPolicy(Policy):
             self.get_logger().error(reason)
             send_feedback(reason)
             return False
+        if self._public_scripted_insert_enabled:
+            self._start_trace(task, task_kind)
+            ok = self._run_public_scripted_insert(
+                task, task_kind, observation, move_robot, send_feedback
+            )
+            self._finish_trace("public_scripted_completed" if ok else "public_scripted_failed")
+            return ok
+
+        actor = self._actor_for_task(task_kind)
         if actor is None:
             reason = (
                 f"No {task_kind.upper()}/default TorchScript actor loaded. Export the "
