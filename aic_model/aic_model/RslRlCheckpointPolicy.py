@@ -257,6 +257,16 @@ def _env_target_sequence(
     return tuple(targets)
 
 
+def _env_vector3(name: str, default: tuple[float, float, float]) -> np.ndarray:
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return np.array(default, dtype=np.float64)
+    parsed = json.loads(value)
+    if not isinstance(parsed, list) or len(parsed) != 3:
+        raise ValueError(f"{name} must be a JSON list of exactly 3 floats")
+    return np.array([float(item) for item in parsed], dtype=np.float64)
+
+
 def _interpolated_targets(
     start: np.ndarray,
     targets: tuple[tuple[float, float, float], ...],
@@ -447,6 +457,9 @@ class RslRlCheckpointPolicy(Policy):
       legal ``Task``/``Observation`` inputs and emitted ``MotionUpdate`` targets.
     - ``AIC_RSLRL_TRACE_FULL_OBS``: optional compressed dump of full actor
       observations/actions next to the JSONL trace. Defaults false.
+    - ``AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_DELTA`` and
+      ``AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_DELTA_<TARGET>``: optional JSON
+      ``[x, y, z]`` offsets for the public-sample scripted final pose.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -1865,7 +1878,14 @@ class RslRlCheckpointPolicy(Policy):
             return False
 
         final_position_raw, final_quat_raw = PUBLIC_SCRIPTED_FINAL_POSES[target_key]
-        final_position = np.array(final_position_raw, dtype=np.float64)
+        default_delta = _env_vector3(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_DELTA", (0.0, 0.0, 0.0)
+        )
+        target_delta = _env_vector3(
+            f"AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_DELTA_{target_key.upper()}",
+            tuple(float(item) for item in default_delta),
+        )
+        final_position = np.array(final_position_raw, dtype=np.float64) + target_delta
         final_quat = np.array(final_quat_raw, dtype=np.float64)
         start_pose = observation.controller_state.tcp_pose
         start_position = np.array(
@@ -1893,7 +1913,9 @@ class RslRlCheckpointPolicy(Policy):
             "Running public-geometry scripted insert: "
             f"task_kind={task_kind}, target_key={target_key}, "
             f"approach_steps={approach_steps}, descent_steps={descent_steps}, "
-            f"dt={dt:.3f}s, final_position={np.array2string(final_position, precision=4)}"
+            f"dt={dt:.3f}s, "
+            f"target_delta={np.array2string(target_delta, precision=4)}, "
+            f"final_position={np.array2string(final_position, precision=4)}"
         )
 
         for step in range(approach_steps):
