@@ -491,6 +491,8 @@ class RslRlCheckpointPolicy(Policy):
       joint-space finish using offline public-sample calibration targets.
     - ``AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY``: optional replay of
       offline public-sample Cartesian command traces keyed by official target.
+    - ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_TARGETS``: optional comma-separated
+      target keys that should use trace replay when it is enabled.
     - ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA`` and
       ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA_<TARGET>``: optional JSON
       ``[dx, dy, dz]`` base-frame offsets applied to replayed traces.
@@ -667,6 +669,14 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_trace_replay_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY", False
         )
+        trace_targets = os.environ.get(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_TARGETS", ""
+        ).strip()
+        self._public_scripted_trace_targets = (
+            {item.strip() for item in trace_targets.split(",") if item.strip()}
+            if trace_targets
+            else None
+        )
         self._public_scripted_trace_dt = _env_float(
             "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DT", 0.05
         )
@@ -790,6 +800,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._public_scripted_final_joint_targets!r}, "
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY="
             f"{self._public_scripted_trace_replay_enabled!r}, "
+            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_TARGETS="
+            f"{self._public_scripted_trace_targets!r}, "
             "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS="
             f"{self._public_scripted_trace_prepend_steps!r}, "
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_JOINT_TRACE_REPLAY="
@@ -2261,7 +2273,11 @@ class RslRlCheckpointPolicy(Policy):
             )
             return False
 
-        if self._public_scripted_trace_replay_enabled:
+        trace_target_enabled = (
+            self._public_scripted_trace_targets is None
+            or target_key in self._public_scripted_trace_targets
+        )
+        if self._public_scripted_trace_replay_enabled and trace_target_enabled:
             if get_observation is None:
                 self.get_logger().error(
                     "Observation callback unavailable for public scripted trace replay."
@@ -2278,6 +2294,10 @@ class RslRlCheckpointPolicy(Policy):
                 )
             return self._run_public_scripted_trace_replay(
                 task, task_kind, target_key, get_observation, move_robot, send_feedback
+            )
+        if self._public_scripted_trace_replay_enabled and not trace_target_enabled:
+            self.get_logger().info(
+                f"Skipping public scripted trace replay for target_key={target_key!r}"
             )
 
         final_position_raw, final_quat_raw = PUBLIC_SCRIPTED_FINAL_POSES[target_key]
