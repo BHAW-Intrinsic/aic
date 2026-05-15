@@ -680,6 +680,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_local_search_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH", False
         )
+        self._sfp_local_search_targets = _env_name_set(
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_TARGETS"
+        )
         self._sfp_local_search_radius = _env_float(
             "AIC_RSLRL_SFP_LOCAL_SEARCH_RADIUS", 0.065
         )
@@ -892,6 +895,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sfp_guarded_insert_force_limit!r}, "
             "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH="
             f"{self._sfp_local_search_enabled!r}, "
+            "AIC_RSLRL_SFP_LOCAL_SEARCH_TARGETS="
+            f"{self._sfp_local_search_targets!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_RADIUS="
             f"{self._sfp_local_search_radius!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_STEP="
@@ -2174,6 +2179,15 @@ class RslRlCheckpointPolicy(Policy):
     ) -> None:
         if not self._sfp_local_search_enabled:
             return
+        mount_name = self._sfp_mount_name(task) or ""
+        if (
+            self._sfp_local_search_targets is not None
+            and mount_name not in self._sfp_local_search_targets
+        ):
+            self.get_logger().info(
+                f"Skipping legal SFP local search for {mount_name!r}"
+            )
+            return
         observation = get_observation()
         if observation is None:
             self.get_logger().error("Observation unavailable before SFP local search.")
@@ -2213,7 +2227,7 @@ class RslRlCheckpointPolicy(Policy):
         priority_offsets = ()
         if self._sfp_local_search_priority_enabled:
             priority_offsets = SFP_LOCAL_SEARCH_PRIORITY_OFFSETS.get(
-                self._sfp_mount_name(task) or "",
+                mount_name,
                 (),
             )
 
@@ -2221,6 +2235,7 @@ class RslRlCheckpointPolicy(Policy):
         self.get_logger().info(
             "Running legal SFP local search: "
             f"anchor={np.array2string(anchor, precision=4)}, "
+            f"target={mount_name}, "
             f"radius={self._sfp_local_search_radius}, "
             f"step={self._sfp_local_search_step}, "
             f"tcp_z={tcp_z:.4f}, "
