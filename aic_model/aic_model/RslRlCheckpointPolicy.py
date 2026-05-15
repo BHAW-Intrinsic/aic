@@ -644,6 +644,18 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_final_joint_dt = _env_float(
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_DT", 0.05
         )
+        final_joint_targets = os.environ.get(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_TARGETS", ""
+        ).strip()
+        self._public_scripted_final_joint_targets = (
+            {
+                item.strip()
+                for item in final_joint_targets.split(",")
+                if item.strip()
+            }
+            if final_joint_targets
+            else None
+        )
         self._public_scripted_trace_replay_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY", False
         )
@@ -746,6 +758,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._public_scripted_final_joints_enabled!r}, "
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_STEPS="
             f"{self._public_scripted_final_joint_steps!r}, "
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_TARGETS="
+            f"{self._public_scripted_final_joint_targets!r}, "
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY="
             f"{self._public_scripted_trace_replay_enabled!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
@@ -1983,8 +1997,64 @@ class RslRlCheckpointPolicy(Policy):
                 )
             self.sleep_for(dt)
 
+        if not self._run_public_scripted_joint_finish(
+            target_key, move_robot, send_feedback
+        ):
+            return False
+
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
+        return True
+
+    def _run_public_scripted_joint_finish(
+        self,
+        target_key: str,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> bool:
+        if not self._public_scripted_final_joints_enabled:
+            return True
+        if (
+            self._public_scripted_final_joint_targets is not None
+            and target_key not in self._public_scripted_final_joint_targets
+        ):
+            self.get_logger().info(
+                f"Skipping public scripted joint finish for {target_key!r}"
+            )
+            return True
+
+        final_joint_raw = PUBLIC_SCRIPTED_FINAL_JOINTS.get(target_key)
+        if final_joint_raw is None:
+            self.get_logger().error(
+                f"No public scripted final joint target for {target_key!r}"
+            )
+            return False
+        final_joint_target = np.array(final_joint_raw, dtype=np.float64)
+        final_joint_steps = max(1, self._public_scripted_final_joint_steps)
+        final_joint_dt = max(0.01, self._public_scripted_final_joint_dt)
+        joint_command = self._make_joint_position_update(
+            final_joint_target,
+            mirror_shoulder=False,
+        )
+        send_feedback("running public-geometry scripted joint finish")
+        self.get_logger().info(
+            "Running public-geometry scripted joint finish: "
+            f"target_key={target_key}, steps={final_joint_steps}, "
+            f"dt={final_joint_dt:.3f}s, "
+            f"target={np.array2string(final_joint_target, precision=4)}"
+        )
+        for step in range(final_joint_steps):
+            move_robot(joint_motion_update=joint_command)
+            if (
+                step == 0
+                or step + 1 == final_joint_steps
+                or step % self._log_every_n == 0
+            ):
+                self.get_logger().info(
+                    "Public scripted joint finish "
+                    f"{step + 1}/{final_joint_steps}"
+                )
+            self.sleep_for(final_joint_dt)
         return True
 
     def _run_public_scripted_insert(
@@ -2074,39 +2144,10 @@ class RslRlCheckpointPolicy(Policy):
                 )
             self.sleep_for(dt)
 
-        if self._public_scripted_final_joints_enabled:
-            final_joint_raw = PUBLIC_SCRIPTED_FINAL_JOINTS.get(target_key)
-            if final_joint_raw is None:
-                self.get_logger().error(
-                    f"No public scripted final joint target for {target_key!r}"
-                )
-                return False
-            final_joint_target = np.array(final_joint_raw, dtype=np.float64)
-            final_joint_steps = max(1, self._public_scripted_final_joint_steps)
-            final_joint_dt = max(0.01, self._public_scripted_final_joint_dt)
-            joint_command = self._make_joint_position_update(
-                final_joint_target,
-                mirror_shoulder=False,
-            )
-            send_feedback("running public-geometry scripted joint finish")
-            self.get_logger().info(
-                "Running public-geometry scripted joint finish: "
-                f"target_key={target_key}, steps={final_joint_steps}, "
-                f"dt={final_joint_dt:.3f}s, "
-                f"target={np.array2string(final_joint_target, precision=4)}"
-            )
-            for step in range(final_joint_steps):
-                move_robot(joint_motion_update=joint_command)
-                if (
-                    step == 0
-                    or step + 1 == final_joint_steps
-                    or step % self._log_every_n == 0
-                ):
-                    self.get_logger().info(
-                        "Public scripted joint finish "
-                        f"{step + 1}/{final_joint_steps}"
-                    )
-                self.sleep_for(final_joint_dt)
+        if not self._run_public_scripted_joint_finish(
+            target_key, move_robot, send_feedback
+        ):
+            return False
 
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
