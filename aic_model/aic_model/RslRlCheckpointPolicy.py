@@ -494,6 +494,9 @@ class RslRlCheckpointPolicy(Policy):
     - ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA`` and
       ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA_<TARGET>``: optional JSON
       ``[dx, dy, dz]`` base-frame offsets applied to replayed traces.
+    - ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS`` and
+      ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS_<TARGET>``: optional
+      interpolation from the observed TCP pose into the first replay sample.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -665,6 +668,9 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_trace_dt = _env_float(
             "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DT", 0.05
         )
+        self._public_scripted_trace_prepend_steps = _env_int(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS", 0
+        )
         self._public_scripted_trace_path = Path(
             os.environ.get(
                 "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PATH",
@@ -765,6 +771,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._public_scripted_final_joint_targets!r}, "
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_TRACE_REPLAY="
             f"{self._public_scripted_trace_replay_enabled!r}, "
+            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS="
+            f"{self._public_scripted_trace_prepend_steps!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
             f"AIC_RSLRL_TRACE_DIR={self._trace_dir!r}, "
             f"AIC_RSLRL_TRACE_EVERY_N={self._trace_every_n!r}, "
@@ -1992,13 +2000,62 @@ class RslRlCheckpointPolicy(Policy):
             f"AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA_{target_key.upper()}",
             tuple(float(item) for item in default_delta),
         )
+        prepend_steps = max(
+            0,
+            _env_int(
+                f"AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS_{target_key.upper()}",
+                self._public_scripted_trace_prepend_steps,
+            ),
+        )
         send_feedback("running public-sample scripted trace replay")
         self.get_logger().info(
             "Running public-sample scripted trace replay: "
             f"target_key={target_key}, commands={len(trace)}, dt={dt:.3f}s, "
             f"trace_delta={np.array2string(target_delta, precision=4)}, "
+            f"prepend_steps={prepend_steps}, "
             f"path={self._public_scripted_trace_path}"
         )
+        if prepend_steps > 0:
+            observation = get_observation()
+            if observation is None:
+                self.get_logger().error(
+                    "Observation unavailable before public scripted trace prepend."
+                )
+                return False
+            pose = observation.controller_state.tcp_pose
+            start_position = np.array(
+                [pose.position.x, pose.position.y, pose.position.z],
+                dtype=np.float64,
+            )
+            start_quat = np.array(
+                [
+                    pose.orientation.x,
+                    pose.orientation.y,
+                    pose.orientation.z,
+                    pose.orientation.w,
+                ],
+                dtype=np.float64,
+            )
+            first_sample = trace[0]
+            first_position = np.array(first_sample[:3], dtype=np.float64) + target_delta
+            first_quat = np.array(first_sample[3:], dtype=np.float64)
+            for step in range(prepend_steps):
+                alpha = (step + 1) / prepend_steps
+                target = (1.0 - alpha) * start_position + alpha * first_position
+                quat = _slerp_quat_xyzw(start_quat, first_quat, alpha)
+                move_robot(motion_update=self._make_base_pose_update(target, quat))
+                if (
+                    step == 0
+                    or step + 1 == prepend_steps
+                    or step % self._log_every_n == 0
+                ):
+                    self.get_logger().info(
+                        "Public scripted trace prepend "
+                        f"{step + 1}/{prepend_steps}: "
+                        f"position={np.array2string(target, precision=4)}"
+                    )
+                self.sleep_for(dt)
+
         for index, sample in enumerate(trace, start=1):
             target = np.array(sample[:3], dtype=np.float64) + target_delta
             quat = np.array(sample[3:], dtype=np.float64)
