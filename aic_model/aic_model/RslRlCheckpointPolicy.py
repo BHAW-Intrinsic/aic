@@ -257,6 +257,14 @@ def _env_float(name: str, default: float) -> float:
     return float(value)
 
 
+def _env_float_for_key(prefix: str, key: str, default: float) -> float:
+    if key:
+        value = os.environ.get(f"{prefix}_{key.upper()}")
+        if value is not None and value != "":
+            return float(value)
+    return _env_float(prefix, default)
+
+
 def _env_int(name: str, default: int) -> int:
     value = os.environ.get(name)
     if value is None or value == "":
@@ -2403,17 +2411,52 @@ class RslRlCheckpointPolicy(Policy):
                 f"Skipping legal SFP guarded insertion for {mount_name!r}"
             )
             return
-        steps = max(1, int(self._sfp_guarded_insert_sec * self._control_hz))
+        guarded_sec = _env_float_for_key(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_SEC",
+            mount_name,
+            self._sfp_guarded_insert_sec,
+        )
+        down_step = _env_float_for_key(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_DOWN_STEP",
+            mount_name,
+            self._sfp_guarded_insert_down_step,
+        )
+        lateral_step = _env_float_for_key(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LATERAL_STEP",
+            mount_name,
+            self._sfp_guarded_insert_lateral_step,
+        )
+        retract_step = _env_float_for_key(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_RETRACT_STEP",
+            mount_name,
+            self._sfp_guarded_insert_retract_step,
+        )
+        force_limit = _env_float_for_key(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_FORCE_LIMIT",
+            mount_name,
+            self._sfp_guarded_insert_force_limit,
+        )
+        linear_stiffness = _env_float_for_key(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LINEAR_STIFFNESS",
+            mount_name,
+            self._sfp_guarded_insert_linear_stiffness,
+        )
+        linear_damping = _env_float_for_key(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_LINEAR_DAMPING",
+            mount_name,
+            self._sfp_guarded_insert_linear_damping,
+        )
+        steps = max(1, int(guarded_sec * self._control_hz))
         dt = 1.0 / max(self._control_hz, 1e-6)
         send_feedback("running legal SFP guarded insertion")
         self.get_logger().info(
             "Running legal SFP guarded insertion: "
             f"target={mount_name}, "
-            f"steps={steps}, down_step={self._sfp_guarded_insert_down_step}, "
-            f"lateral_step={self._sfp_guarded_insert_lateral_step}, "
-            f"force_limit={self._sfp_guarded_insert_force_limit}, "
-            f"linear_stiffness={self._sfp_guarded_insert_linear_stiffness}, "
-            f"linear_damping={self._sfp_guarded_insert_linear_damping}"
+            f"steps={steps}, guarded_sec={guarded_sec}, "
+            f"down_step={down_step}, lateral_step={lateral_step}, "
+            f"force_limit={force_limit}, "
+            f"linear_stiffness={linear_stiffness}, "
+            f"linear_damping={linear_damping}"
         )
         golden_angle = 2.399963229728653
         for step in range(steps):
@@ -2425,13 +2468,12 @@ class RslRlCheckpointPolicy(Policy):
                 return
             force_norm = self._force_norm(observation)
             angle = step * golden_angle
-            lateral_step = self._sfp_guarded_insert_lateral_step
-            if force_norm > self._sfp_guarded_insert_force_limit:
+            if force_norm > force_limit:
                 delta = np.array(
                     [
                         -0.5 * lateral_step * np.cos(angle),
                         -0.5 * lateral_step * np.sin(angle),
-                        self._sfp_guarded_insert_retract_step,
+                        retract_step,
                     ],
                     dtype=np.float64,
                 )
@@ -2440,15 +2482,15 @@ class RslRlCheckpointPolicy(Policy):
                     [
                         lateral_step * np.cos(angle),
                         lateral_step * np.sin(angle),
-                        self._sfp_guarded_insert_down_step,
+                        down_step,
                     ],
                     dtype=np.float64,
                 )
             command = self._make_tcp_delta_update(
                 delta,
-                linear_stiffness=self._sfp_guarded_insert_linear_stiffness,
+                linear_stiffness=linear_stiffness,
                 angular_stiffness=self._sfp_guarded_insert_angular_stiffness,
-                linear_damping=self._sfp_guarded_insert_linear_damping,
+                linear_damping=linear_damping,
                 angular_damping=self._sfp_guarded_insert_angular_damping,
             )
             move_robot(motion_update=command)
