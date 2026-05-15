@@ -613,6 +613,14 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_guarded_insert_force_limit = _env_float(
             "AIC_RSLRL_SFP_GUARDED_INSERT_FORCE_LIMIT", 18.0
         )
+        sfp_guarded_targets = os.environ.get(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_TARGETS", ""
+        ).strip()
+        self._sfp_guarded_insert_targets = (
+            {item.strip() for item in sfp_guarded_targets.split(",") if item.strip()}
+            if sfp_guarded_targets
+            else None
+        )
         self._sfp_local_search_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH", False
         )
@@ -764,6 +772,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_guarded_insert_down_step!r}, "
             "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT="
             f"{self._sc_guarded_insert_force_limit!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_TARGETS="
+            f"{self._sfp_guarded_insert_targets!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
             f"{self._sfp_terminal_target_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC="
@@ -1903,17 +1913,28 @@ class RslRlCheckpointPolicy(Policy):
 
     def _run_sfp_guarded_insert(
         self,
+        task: Task,
         get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
     ) -> None:
         if not self._sfp_guarded_insert_enabled:
             return
+        mount_name = self._sfp_mount_name(task) or ""
+        if (
+            self._sfp_guarded_insert_targets is not None
+            and mount_name not in self._sfp_guarded_insert_targets
+        ):
+            self.get_logger().info(
+                f"Skipping legal SFP guarded insertion for {mount_name!r}"
+            )
+            return
         steps = max(1, int(self._sfp_guarded_insert_sec * self._control_hz))
         dt = 1.0 / max(self._control_hz, 1e-6)
         send_feedback("running legal SFP guarded insertion")
         self.get_logger().info(
             "Running legal SFP guarded insertion: "
+            f"target={mount_name}, "
             f"steps={steps}, down_step={self._sfp_guarded_insert_down_step}, "
             f"lateral_step={self._sfp_guarded_insert_lateral_step}, "
             f"force_limit={self._sfp_guarded_insert_force_limit}"
@@ -2100,7 +2121,9 @@ class RslRlCheckpointPolicy(Policy):
         send_feedback: SendFeedbackCallback,
     ) -> None:
         if task_kind == "sfp":
-            self._run_sfp_guarded_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_guarded_insert(
+                task, get_observation, move_robot, send_feedback
+            )
             self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
             observation = get_observation()
             if observation is not None:
@@ -2635,7 +2658,9 @@ class RslRlCheckpointPolicy(Policy):
 
         if task_kind == "sfp":
             observation = get_observation()
-            self._run_sfp_guarded_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_guarded_insert(
+                task, get_observation, move_robot, send_feedback
+            )
             self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
             observation = get_observation()
             if observation is not None:
