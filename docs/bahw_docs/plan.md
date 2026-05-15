@@ -47,30 +47,28 @@ Scope:
   tier-2/tier-3 scores. The SC adapter routes to the exported SC actor and can
   reach partial insertion in some official trials, but full insertion remains
   unreliable.
-- Submission packaging status: the Docker candidate `my-solution:v1` was built
-  on the host from commit `ebb57a2` as image `406a86a04849` and verified with
-  `docker/docker-compose.yaml --no-build`. The image includes branch-local
-  SC/SFP policy artifacts and pre-cached ResNet18 weights. The final Compose
-  verification log is `/tmp/aic_docker_compose_eval_ebb57a2.log`, total
-  `137.19207522758077`, with all trials passing tier 1 but no full insertion.
-  Compose scoring artifacts are under
-  `~/ws_aic/src/aic/logs/docker_compose_eval/20260514_214210_ebb57a2/`.
-- Best legal official eval artifacts: the fresh verification-video run is
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/`, total
-  `154.38066039880212`, with videos under its `videos/` directory. The previous
-  best video run was `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/`,
-  total `154.67836105930783`; the best observed non-video score is
+- Submission packaging status: the final host-packaged Docker candidate is
+  `my-solution:v1`, also tagged `my-solution:fc7fb3a-0e6e100`, from source
+  commit `0e6e100` as image
+  `sha256:fc7fb3a897d19d072553ae089f72e973160fa2dc4b6d1c4a370a3c975ec66a1f`.
+  It includes branch-local SC/SFP policy artifacts and pre-cached ResNet18
+  weights. Final Docker Compose verification from `docker/docker-compose.yaml`
+  with `--no-build` scored `154.62729379313998`.
+  Compose artifacts are under
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/`.
+- Best legal official eval artifacts: the final package score evidence is
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/results/scoring.yaml`.
+  Final review videos are from the separate legal `/observations` wrapper run
+  at `~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/`.
+  The best observed non-video wrapper score remains
   `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
   `155.11221437038648`.
 - Step 10 transfer-audit result: ResNet18 camera features are available, and
   the Gazebo Cartesian controller follows emitted SFP `MotionUpdate` commands
-  to about `1-2 mm`. The remaining SFP miss is dominated by target/distribution
-  mismatch: official Gazebo asks for `sfp_port_0` on different
-  `nic_card_mount_*` modules, while the selected Isaac checkpoint was trained
-  to choose between `sfp_port_0` and `sfp_port_1` on one NIC with only
-  `+/-0.002 m` y randomization. The next implementation pass is a separate
-  Gazebo-transfer SFP Isaac task with `sfp_port_0` fixed and mount-scale NIC y
-  randomization, keeping actor observations eval-compatible.
+  to about `1-2 mm`. Step 11 added a separate Gazebo-transfer SFP Isaac task
+  with `sfp_port_0` fixed and legal `target_module_name` metadata for
+  `nic_card_mount_*` choices. That produced the current package artifact, but
+  full Gazebo insertion remains unreliable.
 
 ## Relevant Files
 
@@ -1418,7 +1416,7 @@ Work:
   `aic_sfp_gazebo_transfer`.
 - [x] Verify the new task is discoverable/runnable in Isaac Lab.
 - [x] Smoke-test the new task config with `num_envs=1` and `max_iterations=0`.
-- [ ] Train PPO on `AIC-SFP-Gazebo-Transfer-Task-v0`.
+- [x] Train PPO on `AIC-SFP-Gazebo-Transfer-Task-v0`.
   - Started scratch PPO in tmux `isaac-step11-sfp-gazebo-train-d9ff95e`.
     Iteration `0/1500` reported `sfp_insertion_success=0.0692` under the wider
     mount-shift distribution.
@@ -1431,17 +1429,26 @@ Work:
   - Started metadata PPO in tmux
     `isaac-step11-sfp-gazebo-meta-train-3bd2119`. Early success improved over
     the first run: iteration 5 reached `0.4409`, and iteration 36 was `0.4110`.
-    Continue to at least iteration 100 before changing the curriculum again.
   - Stopped the metadata run after iteration 104 because success regressed to
     `0.04-0.08` while mean reward kept rising. This exposed a reward shortcut:
     deep misaligned pushes were over-rewarded.
   - Tightened the Gazebo-transfer reward/curriculum so depth progress only pays
     near alignment, sparse success is much larger, lateral penalties are
     stronger, and deep overshoot terminates.
+  - Exported the tightened run checkpoint used by the final package as
+    `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`.
 - [ ] Evaluate the resulting checkpoint on randomized Isaac SFP port-0 mount
   shifts.
-- [ ] Export the actor artifact and run official Gazebo eval.
-- [ ] Save videos on the host for user review.
+- [x] Export the actor artifact and run official Gazebo eval.
+  - Final packaged candidate uses
+    `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`
+    with `AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true`.
+  - Final Docker Compose verification from the official compose file scored
+    `154.62729379313998` and saved artifacts under
+    `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/`.
+- [x] Save videos on the host for user review.
+  - Review videos from a separate legal `/observations` wrapper run are under
+    `~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/`.
 
 Done when:
 

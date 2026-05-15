@@ -623,3 +623,159 @@ The next useful technical work is not more packaging. It is improving the final
 Gazebo approach/control mapping or retraining a policy whose terminal behavior
 matches the official Gazebo mount distribution closely enough to trigger the
 contact/insertion detectors.
+
+## Final Host Package Candidate
+
+After the first Docker package pass, the source default was restored to the
+better-performing terminal dwell:
+
+```text
+commit: 0e6e100 Restore package SFP dwell default
+Dockerfile default: AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC=1.30
+```
+
+The host image was retagged by committing the corrected environment into
+`my-solution:v1`. The first retag accidentally inherited a temporary
+`/bin/true` entrypoint from a smoke container, so a second `docker commit`
+restored the intended runtime:
+
+```text
+Entrypoint=["/entrypoint.sh"]
+Cmd=["--ros-args","-p","policy:=aic_model.RslRlCheckpointPolicy","-p","use_sim_time:=true"]
+AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC=1.30
+```
+
+Final image verification on the host:
+
+```text
+my-solution:fc7fb3a-0e6e100 fc7fb3a897d1 40.6GB
+my-solution:v1                 fc7fb3a897d1 40.6GB
+ID=sha256:fc7fb3a897d19d072553ae089f72e973160fa2dc4b6d1c4a370a3c975ec66a1f
+CHECK_FINAL_IMAGE_EXIT:0
+```
+
+This image is the current local submission candidate. It is package-valid and
+legal: the runtime policy uses official `Task` metadata, official
+`Observation` images/joints/wrench/controller fields, previous legal actions,
+and internal command state. It does not use scoring TF, hidden Gazebo state, or
+ground-truth topics.
+
+## Final Docker Compose Verification
+
+The final image was verified from the official Compose file with no rebuild:
+
+```bash
+cd ~/ws_aic/src/aic
+docker compose -f docker/docker-compose.yaml down
+docker compose -f docker/docker-compose.yaml up --no-build \
+  --abort-on-container-exit --exit-code-from eval
+```
+
+Log:
+
+```text
+~/ws_aic/src/aic/logs/docker_build/docker_compose_eval_fc7fb_final.log
+```
+
+Result:
+
+```text
+COMPOSE_EXIT:0
+total: 154.62729379313998
+trial_1: tier_1=1, tier_2=21.349914814607473, tier_3=24.664026275345606
+trial_2: tier_1=1, tier_2=21.822713523265058, tier_3=24.936866484798827
+trial_3: tier_1=1, tier_2=18.26616459376131, tier_3=40.587608101361681
+```
+
+Trial notes:
+
+```text
+trial_1: no insertion, final distance 0.05 m
+trial_2: no insertion, final distance 0.05 m
+trial_3: partial insertion, final distance 0.01 m
+```
+
+Final Compose artifacts were copied to:
+
+```text
+~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/compose.log
+~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/results/scoring.yaml
+~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/results/bag_trial_1_20260515_010628_258/
+~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/results/bag_trial_2_20260515_010646_972/
+~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/results/bag_trial_3_20260515_010701_870/
+```
+
+Compose shutdown still produced known ROS/container shutdown noise in some
+runs, including `ExternalShutdownException` and a killed component container
+after scoring finished. The final run exited with `COMPOSE_EXIT:0` and wrote a
+complete `scoring.yaml`, so the shutdown noise is not treated as model failure.
+
+## Final Review Videos
+
+The official Compose scoring bags do not contain `/observations`, so review
+videos come from a separate legal wrapper run that records the same
+`/observations` camera stream consumed by the policy:
+
+```bash
+cd ~/ws_aic/src/aic
+pixi run python aic_utils/aic_training_utils/scripts/run_gazebo_checkpoint_eval.py \
+  --policy aic_model.RslRlCheckpointPolicy \
+  --sc-policy-artifact logs/checkpoints/step6_sc_policy.pt \
+  --sfp-policy-artifact logs/checkpoints/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt \
+  --task-kind auto \
+  --record-camera-bag \
+  --camera-bag-duration-sec 240 \
+  --results-dir logs/gazebo_eval/20260515_final_fc7fb_video \
+  --session-prefix gazebo-video-final-fc7fb \
+  --replace \
+  --model-env AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true \
+  --model-env AIC_RSLRL_REQUIRE_RESNET18=true \
+  --model-env AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET=true \
+  --model-env AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC=1.30 \
+  --model-env AIC_RSLRL_ENABLE_SFP_TERMINAL_ORIENTATION=false \
+  --model-env AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH=false \
+  --model-env AIC_RSLRL_ENABLE_SC_TERMINAL_TARGET=true \
+  --model-env AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC=1.30
+```
+
+Video-run score:
+
+```text
+total: 138.8247978715018
+trial_1: no insertion, final distance 0.05 m
+trial_2: no insertion, final distance 0.03 m
+trial_3: no insertion, final distance 0.01 m
+```
+
+The score is lower than the final Compose run because the evaluation is
+stochastic; use the videos for qualitative review and the Compose run above for
+package score evidence.
+
+Generated videos:
+
+```text
+~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/left_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/center_image.mp4
+~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/right_image.mp4
+```
+
+Conversion output:
+
+```text
+wrote 1130 frames to .../left_image.mp4
+wrote 1130 frames to .../center_image.mp4
+wrote 1130 frames to .../right_image.mp4
+```
+
+## Final Step 11 Status
+
+The final package is legal, reproducible on the host, and ready to tag/push to
+the team ECR repository once the team slug or repository URI is provided. It is
+the best package-valid candidate currently available, but it is still a partial
+insertion solution rather than a solved policy:
+
+- SFP gets close enough for tier-2/tier-3 partial credit but does not reliably
+  trigger insertion.
+- SC can reach partial insertion in some official trials.
+- Further technical improvement should focus on terminal SFP insertion under
+  official mount metadata and the official-start SC approach.

@@ -44,11 +44,26 @@ Completed work so far:
 - The SFP Gazebo adapter reconstructs the 3149D Isaac actor observation from
   official `Task`/`Observation` fields and reaches partial tier-2/tier-3 scores
   in official Gazebo, but it still misses insertion.
-- The current best legal official Gazebo run with fresh verification videos is
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/scoring.yaml`,
-  total `154.38066039880212`, with review videos under
-  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_video_ebb57a2/videos/`.
-  Trials 1 and 2 were SFP near misses; trial 3 was an SC partial insertion.
+- The final host-packaged Docker submission candidate is `my-solution:v1`,
+  also tagged `my-solution:fc7fb3a-0e6e100`, from source commit `0e6e100`.
+  Image ID:
+  `sha256:fc7fb3a897d19d072553ae089f72e973160fa2dc4b6d1c4a370a3c975ec66a1f`
+  (`40.6 GB` reported by Docker).
+- Final Docker Compose verification completed legally from
+  `docker/docker-compose.yaml` with `--no-build`. The package starts through
+  `/entrypoint.sh`, loads `aic_model.RslRlCheckpointPolicy`, and completes all
+  three official trials with `ground_truth:=false`. Compose score:
+  `154.62729379313998`.
+- Final Compose artifacts are saved on the host under
+  `~/ws_aic/src/aic/logs/docker_compose_eval/20260515_fc7fb_final/`, including
+  `results/scoring.yaml`, `results/bag_trial_1_20260515_010628_258/`,
+  `results/bag_trial_2_20260515_010646_972/`, and
+  `results/bag_trial_3_20260515_010701_870/`.
+- Final review videos are from a separate legal wrapper run that recorded the
+  `/observations` camera stream consumed by the policy:
+  `~/ws_aic/src/aic/logs/gazebo_eval/20260515_final_fc7fb_video/videos/`.
+  That run scored `138.8247978715018`; use it for qualitative inspection, not
+  as the final package score.
 - The previous best legal official Gazebo run with videos was
   `~/ws_aic/src/aic/logs/gazebo_eval/20260515_000047/scoring.yaml`, total
   `154.67836105930783`, with review videos under
@@ -56,27 +71,8 @@ Completed work so far:
 - The current best legal official Gazebo score observed without video is
   `~/ws_aic/src/aic/logs/gazebo_eval/20260514_233839/scoring.yaml`, total
   `155.11221437038648`.
-- The current packaged Docker submission candidate is built on the host as
-  `my-solution:v1` from commit `ebb57a2` (`406a86a04849`, 40.6 GB). The image
-  includes the SC/SFP exported policy artifacts and pre-cached ResNet18 weights,
-  and the Docker runtime requires the cached ResNet18 weights so it does not
-  silently depend on network access for the vision encoder.
-- Docker image build log:
-  `/tmp/aic_model_build_ebb57a2_clean.log`.
-- Docker smoke-test log:
-  `/tmp/aic_model_smoke_ebb57a2.log`. This smoke test ran the image with
-  `--network none`, verified the cached ResNet18 checkpoint and both policy
-  artifacts, and imported `aic_model.RslRlCheckpointPolicy`.
-- Final Docker Compose verification completed from `docker/docker-compose.yaml`
-  with `--no-build`; log:
-  `/tmp/aic_docker_compose_eval_ebb57a2.log`. The package starts, loads the
-  model, and completes all three official trials legally. Compose score was
-  `137.19207522758077`: all trials passed tier 1, but none triggered full
-  insertion.
-- Compose scoring artifacts copied from the stopped eval container to:
-  `~/ws_aic/src/aic/logs/docker_compose_eval/20260514_214210_ebb57a2/`.
-  Those official scoring bags do not contain `/observations`, so the review
-  videos are from the separate legal wrapper run above.
+- Earlier Docker/package attempts from commit `ebb57a2` and image `406a86a04849`
+  are superseded by the `fc7fb3a897d1` image above.
 - Controlled runs rejected `AIC_RSLRL_CONTROL_HZ=30`, fixed-step replay,
   TCP/base-frame final-settle pushes, and SC prepose-only handoff as defaults.
   SFP `gripper/tcp` command-frame replay and zeroed joint observations were also
@@ -94,14 +90,12 @@ Completed work so far:
   adds legal official `Task.target_module_name` metadata, expanding only the
   Gazebo-transfer SFP actor observation from 3149D to 3151D. Older 3149D
   artifacts remain the wrapper default.
-- The 3151D metadata PPO run is live in tmux
-  `isaac-step11-sfp-gazebo-meta-train-3bd2119`. Early success improved over the
-  first run, but by iteration 104 it regressed to low true success while mean
-  reward kept rising. Treat this as reward hacking: depth was over-rewarded
+- The 3151D metadata PPO run improved early but regressed by iteration 104 while
+  mean reward kept rising. Treat this as reward hacking: depth was over-rewarded
   without strict final alignment.
-- The current local revision tightens Gazebo-transfer rewards so depth progress
-  is gated by near-success alignment, sparse success is much larger, and deep
-  overshoot terminates.
+- The final packaged SFP artifact is the tightened Gazebo-transfer checkpoint
+  `step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`. It is legal and gives
+  partial official Gazebo credit, but it does not reliably trigger insertion.
 
 Submission packaging status:
 
@@ -109,18 +103,20 @@ Submission packaging status:
   `aic_model/artifacts/step6_sc_policy.pt` and
   `aic_model/artifacts/step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`.
 - The default Docker runtime policy is `aic_model.RslRlCheckpointPolicy`.
+- The final local package candidate is built and verified on the host as
+  `my-solution:v1` / `my-solution:fc7fb3a-0e6e100`.
 - The runtime uses official `Task` metadata, official camera/joint observations,
   previous legal actions, and internal command state only. It does not use
   scoring internals, hidden Gazebo transforms, or ground-truth topics.
 - Final submission still needs the team ECR repository URI or team slug for
-  tagging and pushing `my-solution:v1`.
+  tagging and pushing the verified image.
 
 Current blocker:
 
-- The packaged policy is valid and legal, but it is not a solved insertion
-  submission yet. SFP reaches the port mouth and scores tier 2/tier 3 partial
-  credit; SC can reach partial insertion in some official trials. Full insertion
-  remains unreliable.
+- The packaged policy is valid, legal, and is the current submission candidate,
+  but it is not a fully solved insertion policy. SFP reaches the port mouth and
+  scores tier 2/tier 3 partial credit; SC can reach partial insertion in some
+  official trials. Full insertion remains unreliable.
 - The highest-risk remaining assumptions are the final millimeter-scale SFP
   approach under official mount distributions and the official-start SC approach
   before actor handoff.
