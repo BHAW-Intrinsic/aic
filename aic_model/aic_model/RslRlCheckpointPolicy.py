@@ -140,17 +140,23 @@ SFP_LOCAL_SEARCH_PRIORITY_OFFSETS = {
 SFP_TERMINAL_TARGETS = {
     "nic_card_mount_0": (
         (-0.383, 0.192, 0.233),
-        (-0.382, 0.196, 0.184),
+        (-0.384, 0.205, 0.190),
+        (-0.386, 0.205, 0.150),
+        (-0.388, 0.205, 0.110),
+        (-0.390, 0.205, 0.061),
     ),
     "nic_card_mount_1": (
         (-0.385, 0.232, 0.230),
-        (-0.385, 0.231, 0.184),
+        (-0.386, 0.245, 0.190),
+        (-0.388, 0.245, 0.150),
+        (-0.390, 0.245, 0.110),
+        (-0.392, 0.245, 0.063),
     ),
 }
 
 SFP_TERMINAL_QUATS_XYZW = {
-    "nic_card_mount_0": (0.97833, -0.02780, 0.00622, -0.20506),
-    "nic_card_mount_1": (0.97963, -0.02889, 0.01168, -0.19838),
+    "nic_card_mount_0": (0.98250, -0.02775, -0.00493, 0.18408),
+    "nic_card_mount_1": (0.98252, -0.02777, -0.00504, 0.18400),
 }
 
 SC_PORT_ONE_HOT = {
@@ -161,10 +167,14 @@ SC_PORT_ONE_HOT = {
 SC_TERMINAL_TARGETS = {
     "sc_port_2": (
         (-0.494, 0.267, 0.080),
-        (-0.503, 0.283, 0.045),
-        (-0.504, 0.284, 0.029),
-        (-0.504, 0.284, 0.020),
+        (-0.486, 0.287, 0.035),
+        (-0.486, 0.287, 0.010),
+        (-0.486, 0.287, -0.021),
     ),
+}
+
+SC_TERMINAL_QUATS_XYZW = {
+    "sc_port_2": (0.97127, -0.06051, -0.01121, 0.22987),
 }
 
 SC_PORT_ALIASES = {
@@ -346,6 +356,8 @@ class RslRlCheckpointPolicy(Policy):
       to the SC near-port curriculum pose selected by official task metadata.
     - ``AIC_RSLRL_SC_PREPOSE_MIRROR_SHOULDER``: whether to apply the
       Isaac-to-Gazebo shoulder-pan sign conversion to the SC warm-start preset.
+    - ``AIC_RSLRL_ENABLE_SC_TERMINAL_ORIENTATION``: use public-geometry SC
+      terminal orientation during the final approach.
     - ``AIC_RSLRL_ENABLE_SFP_PREPOSE``: optional legal joint-space warm start
       to the SFP curriculum pose selected by ``Task.port_name``. Defaults false
       because the official Gazebo task spawn already starts SFP close to target.
@@ -418,6 +430,9 @@ class RslRlCheckpointPolicy(Policy):
         )
         self._sc_terminal_target_dwell_sec = _env_float(
             "AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC", 1.20
+        )
+        self._sc_terminal_orientation_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SC_TERMINAL_ORIENTATION", False
         )
         self._sfp_terminal_target_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET", False
@@ -526,6 +541,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_terminal_target_enabled!r}, "
             "AIC_RSLRL_SC_TERMINAL_TARGET_DWELL_SEC="
             f"{self._sc_terminal_target_dwell_sec!r}, "
+            "AIC_RSLRL_ENABLE_SC_TERMINAL_ORIENTATION="
+            f"{self._sc_terminal_orientation_enabled!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
             f"{self._sfp_terminal_target_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC="
@@ -1438,11 +1455,17 @@ class RslRlCheckpointPolicy(Policy):
             ],
             dtype=np.float64,
         )
+        if (
+            self._sc_terminal_orientation_enabled
+            and port_name in SC_TERMINAL_QUATS_XYZW
+        ):
+            quat = np.array(SC_TERMINAL_QUATS_XYZW[port_name], dtype=np.float64)
         dwell = max(0.02, self._sc_terminal_target_dwell_sec)
         send_feedback("running legal SC terminal target sequence")
         self.get_logger().info(
             "Running legal SC terminal target sequence: "
-            f"target_count={len(targets)}, dwell={dwell:.2f}s"
+            f"target_count={len(targets)}, dwell={dwell:.2f}s, "
+            f"fixed_orientation={self._sc_terminal_orientation_enabled!r}"
         )
         for index, target in enumerate(targets, start=1):
             target_array = np.array(target, dtype=np.float64)
