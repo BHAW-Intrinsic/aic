@@ -108,6 +108,12 @@ Completed work so far:
 - The final packaged SFP artifact is the tightened Gazebo-transfer checkpoint
   `step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`. It is legal and gives
   partial official Gazebo credit, but it does not reliably trigger insertion.
+- [2026-05-16] [7e69e51] Distrobox baseline (3151D SFP, INCLUDE_MOUNT_METADATA=true):
+  total=66.39, SFP 0.10m/0.06m from port, SC 0.28m. No insertion.
+  Log: logs/gazebo_eval/20260516_033917/scoring.yaml
+- [2026-05-16] [7e69e51] SFP terminal target enabled (default multi-step targets z=0.061):
+  total=89.40, SFP 0.05m/0.06m, trial_2 shows 26N contact for 0.02s (touching port!).
+  +35% vs baseline. No sustained insertion. Log: logs/gazebo_eval/20260516_034753/scoring.yaml
 - [2026-05-16] INFRA FINDING: Local SFP artifact
   (step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt) requires 3151D obs
   (AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true). Docker image my-solution:v1 has
