@@ -1747,17 +1747,14 @@ class RslRlCheckpointPolicy(Policy):
         )
         for index, target_array in enumerate(path, start=1):
             command = self._make_base_pose_update(target_array, quat)
+            move_robot(motion_update=command)
             if index == 1 or index == len(path) or index % self._log_every_n == 0:
                 self.get_logger().info(
                     "SC terminal target "
                     f"{index}/{len(path)}: "
                     f"position={np.array2string(target_array, precision=4)}"
             )
-            repeat_dt = 1.0 / max(self._control_hz, 1e-6)
-            repeat_steps = max(1, int(dwell / repeat_dt))
-            for _ in range(repeat_steps):
-                move_robot(motion_update=command)
-                self.sleep_for(repeat_dt)
+            self.sleep_for(dwell)
 
     def _run_sc_guarded_insert(
         self,
@@ -1869,17 +1866,14 @@ class RslRlCheckpointPolicy(Policy):
                 quat,
                 feedforward_force_tip=feedforward_force_tip,
             )
+            move_robot(motion_update=command)
             if index == 1 or index == len(path) or index % self._log_every_n == 0:
                 self.get_logger().info(
                     "SFP terminal target "
                     f"{index}/{len(path)}: "
                     f"position={np.array2string(target_array, precision=4)}"
                 )
-            repeat_dt = 1.0 / max(self._control_hz, 1e-6)
-            repeat_steps = max(1, int(dwell / repeat_dt))
-            for _ in range(repeat_steps):
-                move_robot(motion_update=command)
-                self.sleep_for(repeat_dt)
+            self.sleep_for(dwell)
 
     def _run_sfp_final_settle(
         self,
