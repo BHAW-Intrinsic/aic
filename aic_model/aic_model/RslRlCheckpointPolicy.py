@@ -497,6 +497,8 @@ class RslRlCheckpointPolicy(Policy):
     - ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS`` and
       ``AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS_<TARGET>``: optional
       interpolation from the observed TCP pose into the first replay sample.
+    - ``AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_JOINT_TRACE_REPLAY``: optional replay
+      of offline public-sample joint trajectories keyed by official target.
 
     Raw Isaac/RSL-RL checkpoints still need to be exported to TorchScript first.
     """
@@ -682,6 +684,23 @@ class RslRlCheckpointPolicy(Policy):
             )
         )
         self._public_scripted_traces: dict[str, list[list[float]]] | None = None
+        self._public_scripted_joint_trace_replay_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_JOINT_TRACE_REPLAY", False
+        )
+        self._public_scripted_joint_trace_dt = _env_float(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_JOINT_TRACE_DT", 0.05
+        )
+        self._public_scripted_joint_trace_path = Path(
+            os.environ.get(
+                "AIC_RSLRL_PUBLIC_SCRIPTED_JOINT_TRACE_PATH",
+                str(
+                    Path(__file__).resolve().parents[1]
+                    / "artifacts"
+                    / "public_scripted_joint_traces.json"
+                ),
+            )
+        )
+        self._public_scripted_joint_traces: dict[str, list[list[float]]] | None = None
         self._require_resnet18 = _env_bool("AIC_RSLRL_REQUIRE_RESNET18", False)
         self._log_every_n = max(1, _env_int("AIC_RSLRL_LOG_EVERY_N", 20))
         self._trace_dir = os.environ.get("AIC_RSLRL_TRACE_DIR", "")
@@ -773,6 +792,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._public_scripted_trace_replay_enabled!r}, "
             "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_PREPEND_STEPS="
             f"{self._public_scripted_trace_prepend_steps!r}, "
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_JOINT_TRACE_REPLAY="
+            f"{self._public_scripted_joint_trace_replay_enabled!r}, "
             f"AIC_RSLRL_REQUIRE_RESNET18={self._require_resnet18!r}, "
             f"AIC_RSLRL_TRACE_DIR={self._trace_dir!r}, "
             f"AIC_RSLRL_TRACE_EVERY_N={self._trace_every_n!r}, "
@@ -1970,6 +1991,97 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_traces = traces
         return traces
 
+    def _load_public_scripted_joint_traces(self) -> dict[str, list[list[float]]]:
+        if self._public_scripted_joint_traces is not None:
+            return self._public_scripted_joint_traces
+        with self._public_scripted_joint_trace_path.open("r", encoding="utf-8") as infile:
+            traces = json.load(infile)
+        if not isinstance(traces, dict):
+            raise ValueError(
+                f"{self._public_scripted_joint_trace_path} must contain a JSON object"
+            )
+        for target_key, samples in traces.items():
+            if not isinstance(samples, list) or not samples:
+                raise ValueError(f"Joint trace {target_key!r} must be non-empty")
+            for index, sample in enumerate(samples):
+                if not isinstance(sample, list) or len(sample) != len(ARM_JOINT_NAMES):
+                    raise ValueError(
+                        f"Joint trace {target_key!r}[{index}] must contain "
+                        f"{len(ARM_JOINT_NAMES)} arm joint positions"
+                    )
+        self._public_scripted_joint_traces = traces
+        return traces
+
+    def _run_public_scripted_post_trace_refinements(
+        self,
+        task: Task,
+        task_kind: str,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if task_kind == "sfp":
+            self._run_sfp_guarded_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            observation = get_observation()
+            if observation is not None:
+                self._run_sfp_final_settle(observation, move_robot, send_feedback)
+            self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
+            self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
+        elif task_kind == "sc":
+            self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
+
+    def _run_public_scripted_joint_trace_replay(
+        self,
+        task: Task,
+        task_kind: str,
+        target_key: str,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> bool:
+        try:
+            traces = self._load_public_scripted_joint_traces()
+        except Exception as exc:
+            self.get_logger().error(f"Failed to load public scripted joint traces: {exc}")
+            return False
+        trace = traces.get(target_key)
+        if trace is None:
+            self.get_logger().error(
+                "No public scripted joint trace for "
+                f"{target_key!r} in {self._public_scripted_joint_trace_path}"
+            )
+            return False
+
+        dt = max(0.01, self._public_scripted_joint_trace_dt)
+        send_feedback("running public-sample scripted joint trace replay")
+        self.get_logger().info(
+            "Running public-sample scripted joint trace replay: "
+            f"target_key={target_key}, samples={len(trace)}, dt={dt:.3f}s, "
+            f"path={self._public_scripted_joint_trace_path}"
+        )
+        for index, sample in enumerate(trace, start=1):
+            target = np.array(sample, dtype=np.float64)
+            move_robot(
+                joint_motion_update=self._make_joint_position_update(
+                    target, mirror_shoulder=False
+                )
+            )
+            if index == 1 or index == len(trace) or index % self._log_every_n == 0:
+                self.get_logger().info(
+                    "Public scripted joint trace "
+                    f"{index}/{len(trace)}: "
+                    f"target={np.array2string(target, precision=4)}"
+                )
+            self.sleep_for(dt)
+
+        self._run_public_scripted_post_trace_refinements(
+            task, task_kind, get_observation, move_robot, send_feedback
+        )
+        if self._public_scripted_dwell_sec > 0.0:
+            self.sleep_for(self._public_scripted_dwell_sec)
+        return True
+
     def _run_public_scripted_trace_replay(
         self,
         task: Task,
@@ -2073,16 +2185,9 @@ class RslRlCheckpointPolicy(Policy):
         ):
             return False
 
-        if task_kind == "sfp":
-            self._run_sfp_guarded_insert(get_observation, move_robot, send_feedback)
-            self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
-            observation = get_observation()
-            if observation is not None:
-                self._run_sfp_final_settle(observation, move_robot, send_feedback)
-            self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
-            self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
-        elif task_kind == "sc":
-            self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
+        self._run_public_scripted_post_trace_refinements(
+            task, task_kind, get_observation, move_robot, send_feedback
+        )
 
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
@@ -2162,6 +2267,15 @@ class RslRlCheckpointPolicy(Policy):
                     "Observation callback unavailable for public scripted trace replay."
                 )
                 return False
+            if self._public_scripted_joint_trace_replay_enabled:
+                return self._run_public_scripted_joint_trace_replay(
+                    task,
+                    task_kind,
+                    target_key,
+                    get_observation,
+                    move_robot,
+                    send_feedback,
+                )
             return self._run_public_scripted_trace_replay(
                 task, task_kind, target_key, get_observation, move_robot, send_feedback
             )
