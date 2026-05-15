@@ -661,6 +661,9 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_terminal_fallback_joint_steps = _env_int(
             "AIC_RSLRL_SFP_TERMINAL_FALLBACK_JOINT_STEPS", 0
         )
+        self._sfp_terminal_fallback_joint_targets = _env_name_set(
+            "AIC_RSLRL_SFP_TERMINAL_FALLBACK_JOINT_TARGETS"
+        )
         self._sfp_terminal_fallback_trace_suffix_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_FALLBACK_TRACE_SUFFIX", False
         )
@@ -2273,6 +2276,16 @@ class RslRlCheckpointPolicy(Policy):
         if not self._sfp_terminal_fallback_joints_enabled:
             return
         if target_key not in PUBLIC_SCRIPTED_FINAL_JOINTS:
+            return
+        if (
+            self._sfp_terminal_fallback_joint_targets is not None
+            and target_key not in self._sfp_terminal_fallback_joint_targets
+        ):
+            self.get_logger().info(
+                "Skipping SFP terminal fallback joint finish: "
+                f"target_key={target_key!r} not in "
+                f"{sorted(self._sfp_terminal_fallback_joint_targets)!r}"
+            )
             return
         if not self._sfp_terminal_fallback_needed(
             target_key, get_observation, "joint finish"
