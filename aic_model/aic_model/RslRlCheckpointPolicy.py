@@ -2371,6 +2371,11 @@ class RslRlCheckpointPolicy(Policy):
         ):
             return False
 
+        if task_kind == "sc" and get_observation is not None:
+            self._run_sc_terminal_target(
+                task, get_observation, move_robot, send_feedback
+            )
+
         if self._public_scripted_dwell_sec > 0.0:
             self.sleep_for(self._public_scripted_dwell_sec)
         return True
