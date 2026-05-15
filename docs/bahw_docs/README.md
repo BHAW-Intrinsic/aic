@@ -108,11 +108,16 @@ Completed work so far:
 - The final packaged SFP artifact is the tightened Gazebo-transfer checkpoint
   `step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt`. It is legal and gives
   partial official Gazebo credit, but it does not reliably trigger insertion.
-- [2026-05-16] [58b725c] Tune SFP body-force scale AIC_RSLRL_BODY_FORCE_SCALE=0.5:
-  total=3 (all SFP actor_control_failed 0-steps; SC 0.29m from port).
-  body_force_last6_norm ~10 (5× baseline). Clear regression — infrastructure
-  controller contamination also present. Scale=0.5 rejected; 0.1 remains default.
-  Log: logs/gazebo_eval/20260516_031058/scoring.yaml
+- [2026-05-16] INFRA FINDING: Local SFP artifact
+  (step11_sfp_gazebo_tight_a23f1da_model_100_policy.pt) requires 3151D obs
+  (AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true). Docker image my-solution:v1 has
+  3149D artifact baked in. All distrobox evals MUST use
+  --model-env AIC_RSLRL_SFP_INCLUDE_MOUNT_METADATA=true.
+- [2026-05-16] [9046a24] Body-force scale=0.5 + first-slots evals: INVALID
+  (all SFP actor_control_failed due to 3149 vs 3151 mismatch, not scale issue).
+  SC data valid: scale=0.5 gives body_force_last6_norm~10, SC 0.29m (same as
+  baseline). first_slots=true gives body_force_last6_norm=0 in last 6, SC 0.28m.
+  Need to re-run with SFP_INCLUDE_MOUNT_METADATA=true for valid SFP results.
 
 Submission packaging status:
 
