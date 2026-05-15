@@ -671,6 +671,21 @@ class RslRlCheckpointPolicy(Policy):
         self._public_scripted_final_joints_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_JOINTS", False
         )
+        self._public_scripted_final_pose_hold_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_PUBLIC_SCRIPTED_FINAL_POSE_HOLD", False
+        )
+        self._public_scripted_final_pose_hold_steps = _env_int(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_POSE_HOLD_STEPS", 80
+        )
+        self._public_scripted_final_pose_hold_dt = _env_float(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_POSE_HOLD_DT", 0.05
+        )
+        self._public_scripted_final_pose_hold_z_threshold = _env_float(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_POSE_HOLD_Z_THRESHOLD", 0.0
+        )
+        self._public_scripted_final_pose_hold_min_steps = _env_int(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_POSE_HOLD_MIN_STEPS", 20
+        )
         self._public_scripted_final_joint_steps = _env_int(
             "AIC_RSLRL_PUBLIC_SCRIPTED_FINAL_JOINT_STEPS", 120
         )
@@ -2287,6 +2302,10 @@ class RslRlCheckpointPolicy(Policy):
         ):
             return False
 
+        self._run_public_scripted_final_pose_hold(
+            target_key, get_observation, move_robot, send_feedback
+        )
+
         self._run_public_scripted_post_trace_refinements(
             task, task_kind, get_observation, move_robot, send_feedback
         )
@@ -2345,6 +2364,65 @@ class RslRlCheckpointPolicy(Policy):
                 )
             self.sleep_for(final_joint_dt)
         return True
+
+    def _run_public_scripted_final_pose_hold(
+        self,
+        target_key: str,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._public_scripted_final_pose_hold_enabled:
+            return
+        final_pose = PUBLIC_SCRIPTED_FINAL_POSES.get(target_key)
+        if final_pose is None:
+            return
+        position_raw, quat_raw = final_pose
+        default_delta = _env_vector3(
+            "AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA", (0.0, 0.0, 0.0)
+        )
+        target_delta = _env_vector3(
+            f"AIC_RSLRL_PUBLIC_SCRIPTED_TRACE_DELTA_{target_key.upper()}",
+            tuple(float(item) for item in default_delta),
+        )
+        position = np.array(position_raw, dtype=np.float64) + target_delta
+        quat = np.array(quat_raw, dtype=np.float64)
+        steps = max(1, self._public_scripted_final_pose_hold_steps)
+        min_steps = max(0, min(self._public_scripted_final_pose_hold_min_steps, steps))
+        dt = max(0.01, self._public_scripted_final_pose_hold_dt)
+        z_threshold = self._public_scripted_final_pose_hold_z_threshold
+
+        send_feedback("holding public final pose with official TCP feedback")
+        self.get_logger().info(
+            "Running public final pose hold: "
+            f"target_key={target_key}, steps={steps}, min_steps={min_steps}, "
+            f"dt={dt:.3f}s, z_threshold={z_threshold:.4f}, "
+            f"position={np.array2string(position, precision=4)}"
+        )
+        for step in range(steps):
+            move_robot(motion_update=self._make_base_pose_update(position, quat))
+            observation = get_observation()
+            tcp_z = None
+            if observation is not None:
+                tcp_z = float(observation.controller_state.tcp_pose.position.z)
+            if (
+                tcp_z is not None
+                and z_threshold > 0.0
+                and step + 1 >= min_steps
+                and tcp_z <= z_threshold
+            ):
+                self.get_logger().info(
+                    "Public final pose hold reached TCP z threshold: "
+                    f"step={step + 1}/{steps}, tcp_z={tcp_z:.4f}"
+                )
+                self.sleep_for(dt)
+                return
+            if step == 0 or step + 1 == steps or step % self._log_every_n == 0:
+                suffix = "" if tcp_z is None else f", tcp_z={tcp_z:.4f}"
+                self.get_logger().info(
+                    f"Public final pose hold {step + 1}/{steps}{suffix}"
+                )
+            self.sleep_for(dt)
 
     def _run_public_scripted_insert(
         self,
@@ -2460,6 +2538,11 @@ class RslRlCheckpointPolicy(Policy):
             target_key, move_robot, send_feedback
         ):
             return False
+
+        if get_observation is not None:
+            self._run_public_scripted_final_pose_hold(
+                target_key, get_observation, move_robot, send_feedback
+            )
 
         if task_kind == "sc" and get_observation is not None:
             self._run_sc_terminal_target(
