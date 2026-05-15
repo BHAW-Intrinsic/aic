@@ -2226,9 +2226,9 @@ class RslRlCheckpointPolicy(Policy):
         priority_dwell = max(0.02, self._sfp_local_search_priority_dwell_sec)
         priority_offsets = ()
         if self._sfp_local_search_priority_enabled:
-            priority_offsets = SFP_LOCAL_SEARCH_PRIORITY_OFFSETS.get(
-                mount_name,
-                (),
+            priority_offsets = _env_vector3_sequence(
+                f"AIC_RSLRL_SFP_LOCAL_SEARCH_PRIORITY_OFFSETS_{mount_name.upper()}",
+                SFP_LOCAL_SEARCH_PRIORITY_OFFSETS.get(mount_name, ()),
             )
 
         send_feedback("running legal SFP local search")
