@@ -339,6 +339,34 @@ def _interpolated_targets(
     return output
 
 
+def _axis_offsets(radius: float, step: float) -> list[float]:
+    radius = max(0.0, float(radius))
+    step = max(1.0e-6, float(step))
+    count = int(np.floor(radius / step + 1.0e-9))
+    offsets = [0.0]
+    for index in range(1, count + 1):
+        value = index * step
+        offsets.extend((value, -value))
+    remainder = radius - count * step
+    if remainder > 1.0e-6:
+        offsets.extend((radius, -radius))
+    return offsets
+
+
+def _grid_offsets(
+    x_radius: float,
+    y_radius: float,
+    step: float,
+) -> list[tuple[float, float]]:
+    offsets = [
+        (float(dx), float(dy))
+        for dx in _axis_offsets(x_radius, step)
+        for dy in _axis_offsets(y_radius, step)
+    ]
+    offsets.sort(key=lambda item: (item[0] * item[0] + item[1] * item[1], abs(item[0]), abs(item[1])))
+    return offsets
+
+
 def _safe_token(value: str) -> str:
     token = "".join(
         char if char.isalnum() or char in {"-", "_"} else "_" for char in value
@@ -779,6 +807,62 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_terminal_fallback_trace_dt = _env_float(
             "AIC_RSLRL_SFP_TERMINAL_FALLBACK_TRACE_DT",
             0.05,
+        )
+        self._sc_grid_search_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SC_GRID_SEARCH", False
+        )
+        self._sc_grid_search_targets = _env_name_set(
+            "AIC_RSLRL_SC_GRID_SEARCH_TARGETS"
+        )
+        self._sc_grid_search_x_radius = _env_float(
+            "AIC_RSLRL_SC_GRID_SEARCH_X_RADIUS", 0.070
+        )
+        self._sc_grid_search_y_radius = _env_float(
+            "AIC_RSLRL_SC_GRID_SEARCH_Y_RADIUS", 0.070
+        )
+        self._sc_grid_search_step = _env_float(
+            "AIC_RSLRL_SC_GRID_SEARCH_STEP", 0.010
+        )
+        self._sc_grid_search_z_offsets = _env_vector3_sequence(
+            "AIC_RSLRL_SC_GRID_SEARCH_Z_OFFSETS",
+            ((0.0, 0.0, 0.006), (0.0, 0.0, 0.0), (0.0, 0.0, -0.006)),
+        )
+        self._sc_grid_search_dwell_sec = _env_float(
+            "AIC_RSLRL_SC_GRID_SEARCH_DWELL_SEC", 0.045
+        )
+        self._sc_grid_search_probe_steps = _env_int(
+            "AIC_RSLRL_SC_GRID_SEARCH_PROBE_STEPS", 2
+        )
+        self._sc_grid_search_probe_step = _env_float(
+            "AIC_RSLRL_SC_GRID_SEARCH_PROBE_STEP", -0.0008
+        )
+        self._sfp_grid_search_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_GRID_SEARCH", False
+        )
+        self._sfp_grid_search_targets = _env_name_set(
+            "AIC_RSLRL_SFP_GRID_SEARCH_TARGETS"
+        )
+        self._sfp_grid_search_x_radius = _env_float(
+            "AIC_RSLRL_SFP_GRID_SEARCH_X_RADIUS", 0.035
+        )
+        self._sfp_grid_search_y_radius = _env_float(
+            "AIC_RSLRL_SFP_GRID_SEARCH_Y_RADIUS", 0.110
+        )
+        self._sfp_grid_search_step = _env_float(
+            "AIC_RSLRL_SFP_GRID_SEARCH_STEP", 0.010
+        )
+        self._sfp_grid_search_z_offsets = _env_vector3_sequence(
+            "AIC_RSLRL_SFP_GRID_SEARCH_Z_OFFSETS",
+            ((0.0, 0.0, 0.006), (0.0, 0.0, 0.0), (0.0, 0.0, -0.006)),
+        )
+        self._sfp_grid_search_dwell_sec = _env_float(
+            "AIC_RSLRL_SFP_GRID_SEARCH_DWELL_SEC", 0.045
+        )
+        self._sfp_grid_search_probe_steps = _env_int(
+            "AIC_RSLRL_SFP_GRID_SEARCH_PROBE_STEPS", 2
+        )
+        self._sfp_grid_search_probe_step = _env_float(
+            "AIC_RSLRL_SFP_GRID_SEARCH_PROBE_STEP", -0.0007
         )
         self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
         self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
@@ -2436,6 +2520,119 @@ class RslRlCheckpointPolicy(Policy):
         # the socket.
         self.sleep_for(1.0)
 
+    def _run_public_grid_search(
+        self,
+        task_kind: str,
+        target_key: str,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if task_kind == "sc":
+            enabled = self._sc_grid_search_enabled
+            targets = self._sc_grid_search_targets
+            x_radius = self._sc_grid_search_x_radius
+            y_radius = self._sc_grid_search_y_radius
+            step = self._sc_grid_search_step
+            z_offsets = self._sc_grid_search_z_offsets
+            dwell = self._sc_grid_search_dwell_sec
+            probe_steps = self._sc_grid_search_probe_steps
+            probe_step = self._sc_grid_search_probe_step
+            probe_stiffness = self._sc_guarded_insert_linear_stiffness
+            probe_damping = self._sc_guarded_insert_linear_damping
+            angular_stiffness = self._sc_guarded_insert_angular_stiffness
+            angular_damping = self._sc_guarded_insert_angular_damping
+        elif task_kind == "sfp":
+            enabled = self._sfp_grid_search_enabled
+            targets = self._sfp_grid_search_targets
+            x_radius = self._sfp_grid_search_x_radius
+            y_radius = self._sfp_grid_search_y_radius
+            step = self._sfp_grid_search_step
+            z_offsets = self._sfp_grid_search_z_offsets
+            dwell = self._sfp_grid_search_dwell_sec
+            probe_steps = self._sfp_grid_search_probe_steps
+            probe_step = self._sfp_grid_search_probe_step
+            probe_stiffness = self._sfp_guarded_insert_linear_stiffness
+            probe_damping = self._sfp_guarded_insert_linear_damping
+            angular_stiffness = self._sfp_guarded_insert_angular_stiffness
+            angular_damping = self._sfp_guarded_insert_angular_damping
+        else:
+            return
+
+        if not enabled:
+            return
+        if targets is not None and target_key not in targets:
+            self.get_logger().info(
+                "Skipping public grid search: "
+                f"task_kind={task_kind}, target_key={target_key!r}, "
+                f"targets={sorted(targets)!r}"
+            )
+            return
+
+        observation = get_observation()
+        if observation is None:
+            self.get_logger().error("Observation unavailable before public grid search.")
+            return
+        pose = observation.controller_state.tcp_pose
+        anchor = np.array(
+            [pose.position.x, pose.position.y, pose.position.z],
+            dtype=np.float64,
+        )
+        quat = np.array(
+            [
+                pose.orientation.x,
+                pose.orientation.y,
+                pose.orientation.z,
+                pose.orientation.w,
+            ],
+            dtype=np.float64,
+        )
+        xy_offsets = _grid_offsets(x_radius, y_radius, step)
+        z_values = [float(offset[2]) for offset in z_offsets] or [0.0]
+        dwell = max(0.01, dwell)
+        probe_steps = max(0, probe_steps)
+        send_feedback(f"running legal {task_kind.upper()} public grid search")
+        self.get_logger().info(
+            "Running legal public grid search: "
+            f"task_kind={task_kind}, target_key={target_key}, "
+            f"anchor={np.array2string(anchor, precision=4)}, "
+            f"x_radius={x_radius:.4f}, y_radius={y_radius:.4f}, "
+            f"step={step:.4f}, xy_points={len(xy_offsets)}, "
+            f"z_offsets={z_values!r}, dwell={dwell:.3f}s, "
+            f"probe_steps={probe_steps}, probe_step={probe_step:.5f}"
+        )
+
+        command_count = 0
+        for dx, dy in xy_offsets:
+            for dz in z_values:
+                target = anchor + np.array([dx, dy, dz], dtype=np.float64)
+                move_robot(motion_update=self._make_base_pose_update(target, quat))
+                command_count += 1
+                if command_count == 1 or command_count % self._log_every_n == 0:
+                    observation = get_observation()
+                    force_norm = (
+                        self._force_norm(observation)
+                        if observation is not None
+                        else float("nan")
+                    )
+                    self.get_logger().info(
+                        "Public grid search command "
+                        f"{command_count}: dx={dx:.4f}, dy={dy:.4f}, "
+                        f"dz={dz:.4f}, force_norm={force_norm:.2f}"
+                    )
+                self.sleep_for(dwell)
+
+            for _ in range(probe_steps):
+                command = self._make_tcp_delta_update(
+                    np.array([0.0, 0.0, probe_step], dtype=np.float64),
+                    linear_stiffness=probe_stiffness,
+                    angular_stiffness=angular_stiffness,
+                    linear_damping=probe_damping,
+                    angular_damping=angular_damping,
+                )
+                move_robot(motion_update=command)
+                self.sleep_for(dwell)
+
     def _public_scripted_target_key(self, task: Task, task_kind: str) -> str | None:
         if task_kind == "sfp":
             return self._sfp_mount_name(task)
@@ -2498,6 +2695,9 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sfp_guarded_insert(
                 task, get_observation, move_robot, send_feedback
             )
+            self._run_public_grid_search(
+                task_kind, target_key, get_observation, move_robot, send_feedback
+            )
             terminal = self._run_sfp_terminal_target(
                 task, get_observation, move_robot, send_feedback
             )
@@ -2524,6 +2724,9 @@ class RslRlCheckpointPolicy(Policy):
                 self._run_sc_tcp_z_recovery(
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
+            self._run_public_grid_search(
+                task_kind, target_key, get_observation, move_robot, send_feedback
+            )
 
     def _sfp_terminal_fallback_needed(
         self,
@@ -3080,6 +3283,9 @@ class RslRlCheckpointPolicy(Policy):
                 self._run_sc_tcp_z_recovery(
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
+            self._run_public_grid_search(
+                task_kind, target_key, get_observation, move_robot, send_feedback
+            )
             self._run_sc_guarded_insert(get_observation, move_robot, send_feedback)
 
         if self._public_scripted_dwell_sec > 0.0:
