@@ -301,6 +301,24 @@ def _env_vector3(name: str, default: tuple[float, float, float]) -> np.ndarray:
     return np.array([float(item) for item in parsed], dtype=np.float64)
 
 
+def _env_vector3_sequence(
+    name: str,
+    default: tuple[tuple[float, float, float], ...],
+) -> tuple[tuple[float, float, float], ...]:
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        raise ValueError(f"{name} must be a JSON list of [x, y, z] vectors")
+    vectors = []
+    for index, item in enumerate(parsed):
+        if not isinstance(item, list) or len(item) != 3:
+            raise ValueError(f"{name}[{index}] must be a JSON list of 3 floats")
+        vectors.append(tuple(float(value) for value in item))
+    return tuple(vectors)
+
+
 def _interpolated_targets(
     start: np.ndarray,
     targets: tuple[tuple[float, float, float], ...],
@@ -567,6 +585,19 @@ class RslRlCheckpointPolicy(Policy):
         self._sc_guarded_insert_force_limit = _env_float(
             "AIC_RSLRL_SC_GUARDED_INSERT_FORCE_LIMIT", 18.0
         )
+        self._sc_tcp_z_recovery_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SC_TCP_Z_RECOVERY", False
+        )
+        self._sc_tcp_z_recovery_threshold = _env_float(
+            "AIC_RSLRL_SC_TCP_Z_RECOVERY_THRESHOLD", 0.040
+        )
+        self._sc_tcp_z_recovery_dwell_sec = _env_float(
+            "AIC_RSLRL_SC_TCP_Z_RECOVERY_DWELL_SEC", 0.25
+        )
+        self._sc_tcp_z_recovery_offsets = _env_vector3_sequence(
+            "AIC_RSLRL_SC_TCP_Z_RECOVERY_OFFSETS",
+            ((0.0, 0.0, -0.010),),
+        )
         self._sfp_terminal_target_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET", False
         )
@@ -581,6 +612,24 @@ class RslRlCheckpointPolicy(Policy):
         )
         self._sfp_terminal_feedforward_base_z = _env_float(
             "AIC_RSLRL_SFP_TERMINAL_FEEDFORWARD_BASE_Z", 0.0
+        )
+        self._sfp_tcp_z_recovery_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_TCP_Z_RECOVERY", False
+        )
+        self._sfp_tcp_z_recovery_threshold = _env_float(
+            "AIC_RSLRL_SFP_TCP_Z_RECOVERY_THRESHOLD", 0.210
+        )
+        self._sfp_tcp_z_recovery_dwell_sec = _env_float(
+            "AIC_RSLRL_SFP_TCP_Z_RECOVERY_DWELL_SEC", 0.25
+        )
+        self._sfp_tcp_z_recovery_offsets = _env_vector3_sequence(
+            "AIC_RSLRL_SFP_TCP_Z_RECOVERY_OFFSETS",
+            (
+                (0.0, 0.0, -0.020),
+                (0.0, 0.0, -0.040),
+                (0.002, -0.002, -0.020),
+                (-0.002, 0.002, -0.020),
+            ),
         )
         self._sc_position_scale = _env_float("AIC_RSLRL_SC_POSITION_SCALE", 0.05)
         self._sc_rotation_scale = _env_float(
@@ -1719,9 +1768,9 @@ class RslRlCheckpointPolicy(Policy):
         get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
-    ) -> None:
+    ) -> tuple[np.ndarray, np.ndarray] | None:
         if not self._sc_terminal_target_enabled:
-            return
+            return None
         targets = SC_TERMINAL_TARGETS.get(self._sc_port_name(task) or "")
         port_name = self._sc_port_name(task) or ""
         targets = _env_target_sequence(
@@ -1729,11 +1778,11 @@ class RslRlCheckpointPolicy(Policy):
             targets,
         )
         if not targets:
-            return
+            return None
         observation = get_observation()
         if observation is None:
             self.get_logger().error("Observation unavailable before SC terminal target.")
-            return
+            return None
 
         pose = observation.controller_state.tcp_pose
         quat = np.array(
@@ -1773,6 +1822,52 @@ class RslRlCheckpointPolicy(Policy):
                     f"position={np.array2string(target_array, precision=4)}"
             )
             self.sleep_for(dwell)
+        return np.array(targets[-1], dtype=np.float64), quat
+
+    def _run_sc_tcp_z_recovery(
+        self,
+        base_target: np.ndarray | None,
+        quat: np.ndarray | None,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sc_tcp_z_recovery_enabled or base_target is None or quat is None:
+            return
+        observation = get_observation()
+        if observation is None:
+            return
+        tcp_z = float(observation.controller_state.tcp_pose.position.z)
+        if tcp_z <= self._sc_tcp_z_recovery_threshold:
+            self.get_logger().info(
+                "Skipping SC TCP-z recovery: "
+                f"tcp_z={tcp_z:.4f}, threshold={self._sc_tcp_z_recovery_threshold:.4f}"
+            )
+            return
+        dwell = max(0.02, self._sc_tcp_z_recovery_dwell_sec)
+        send_feedback("running legal SC TCP-z recovery")
+        self.get_logger().info(
+            "Running SC TCP-z recovery: "
+            f"tcp_z={tcp_z:.4f}, threshold={self._sc_tcp_z_recovery_threshold:.4f}, "
+            f"offsets={self._sc_tcp_z_recovery_offsets!r}, dwell={dwell:.2f}s"
+        )
+        for index, offset in enumerate(self._sc_tcp_z_recovery_offsets, start=1):
+            target = base_target + np.array(offset, dtype=np.float64)
+            move_robot(motion_update=self._make_base_pose_update(target, quat))
+            self.sleep_for(dwell)
+            observation = get_observation()
+            tcp_z = (
+                float(observation.controller_state.tcp_pose.position.z)
+                if observation is not None
+                else float("inf")
+            )
+            self.get_logger().info(
+                "SC TCP-z recovery "
+                f"{index}/{len(self._sc_tcp_z_recovery_offsets)}: "
+                f"target={np.array2string(target, precision=4)}, tcp_z={tcp_z:.4f}"
+            )
+            if tcp_z <= self._sc_tcp_z_recovery_threshold:
+                return
 
     def _run_sc_guarded_insert(
         self,
@@ -1824,9 +1919,9 @@ class RslRlCheckpointPolicy(Policy):
         get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
         send_feedback: SendFeedbackCallback,
-    ) -> None:
+    ) -> tuple[np.ndarray, np.ndarray] | None:
         if not self._sfp_terminal_target_enabled:
-            return
+            return None
         mount_name = self._sfp_mount_name(task) or ""
         targets = SFP_TERMINAL_TARGETS.get(mount_name)
         targets = _env_target_sequence(
@@ -1834,11 +1929,11 @@ class RslRlCheckpointPolicy(Policy):
             targets,
         )
         if not targets:
-            return
+            return None
         observation = get_observation()
         if observation is None:
             self.get_logger().error("Observation unavailable before SFP terminal target.")
-            return
+            return None
 
         pose = observation.controller_state.tcp_pose
         quat = np.array(
@@ -1892,6 +1987,52 @@ class RslRlCheckpointPolicy(Policy):
                     f"position={np.array2string(target_array, precision=4)}"
                 )
             self.sleep_for(dwell)
+        return np.array(targets[-1], dtype=np.float64), quat
+
+    def _run_sfp_tcp_z_recovery(
+        self,
+        base_target: np.ndarray | None,
+        quat: np.ndarray | None,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sfp_tcp_z_recovery_enabled or base_target is None or quat is None:
+            return
+        observation = get_observation()
+        if observation is None:
+            return
+        tcp_z = float(observation.controller_state.tcp_pose.position.z)
+        if tcp_z <= self._sfp_tcp_z_recovery_threshold:
+            self.get_logger().info(
+                "Skipping SFP TCP-z recovery: "
+                f"tcp_z={tcp_z:.4f}, threshold={self._sfp_tcp_z_recovery_threshold:.4f}"
+            )
+            return
+        dwell = max(0.02, self._sfp_tcp_z_recovery_dwell_sec)
+        send_feedback("running legal SFP TCP-z recovery")
+        self.get_logger().info(
+            "Running SFP TCP-z recovery: "
+            f"tcp_z={tcp_z:.4f}, threshold={self._sfp_tcp_z_recovery_threshold:.4f}, "
+            f"offsets={self._sfp_tcp_z_recovery_offsets!r}, dwell={dwell:.2f}s"
+        )
+        for index, offset in enumerate(self._sfp_tcp_z_recovery_offsets, start=1):
+            target = base_target + np.array(offset, dtype=np.float64)
+            move_robot(motion_update=self._make_base_pose_update(target, quat))
+            self.sleep_for(dwell)
+            observation = get_observation()
+            tcp_z = (
+                float(observation.controller_state.tcp_pose.position.z)
+                if observation is not None
+                else float("inf")
+            )
+            self.get_logger().info(
+                "SFP TCP-z recovery "
+                f"{index}/{len(self._sfp_tcp_z_recovery_offsets)}: "
+                f"target={np.array2string(target, precision=4)}, tcp_z={tcp_z:.4f}"
+            )
+            if tcp_z <= self._sfp_tcp_z_recovery_threshold:
+                return
 
     def _run_sfp_final_settle(
         self,
@@ -2166,7 +2307,13 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sfp_guarded_insert(
                 task, get_observation, move_robot, send_feedback
             )
-            self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            terminal = self._run_sfp_terminal_target(
+                task, get_observation, move_robot, send_feedback
+            )
+            if terminal is not None:
+                self._run_sfp_tcp_z_recovery(
+                    terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
             self._run_sfp_terminal_fallback_trace_suffix(
                 target_key, get_observation, move_robot, send_feedback
             )
@@ -2179,7 +2326,13 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
         elif task_kind == "sc":
-            self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
+            terminal = self._run_sc_terminal_target(
+                task, get_observation, move_robot, send_feedback
+            )
+            if terminal is not None:
+                self._run_sc_tcp_z_recovery(
+                    terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
 
     def _sfp_terminal_fallback_needed(
         self,
@@ -2729,9 +2882,13 @@ class RslRlCheckpointPolicy(Policy):
             )
 
         if task_kind == "sc" and get_observation is not None:
-            self._run_sc_terminal_target(
+            terminal = self._run_sc_terminal_target(
                 task, get_observation, move_robot, send_feedback
             )
+            if terminal is not None:
+                self._run_sc_tcp_z_recovery(
+                    terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
             self._run_sc_guarded_insert(get_observation, move_robot, send_feedback)
 
         if self._public_scripted_dwell_sec > 0.0:
@@ -2928,14 +3085,26 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sfp_guarded_insert(
                 task, get_observation, move_robot, send_feedback
             )
-            self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            terminal = self._run_sfp_terminal_target(
+                task, get_observation, move_robot, send_feedback
+            )
+            if terminal is not None:
+                self._run_sfp_tcp_z_recovery(
+                    terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
             observation = get_observation()
             if observation is not None:
                 self._run_sfp_final_settle(observation, move_robot, send_feedback)
             self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
         elif task_kind == "sc":
-            self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
+            terminal = self._run_sc_terminal_target(
+                task, get_observation, move_robot, send_feedback
+            )
+            if terminal is not None:
+                self._run_sc_tcp_z_recovery(
+                    terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
 
         self.get_logger().info(
             f"RslRlCheckpointPolicy {task_kind.upper()} control loop completed."
