@@ -106,8 +106,10 @@ Submission packaging status:
   scoring internals, hidden Gazebo transforms, or ground-truth topics.
 - The team ECR repository is
   `973918476471.dkr.ecr.us-east-1.amazonaws.com/aic-team/bha`. The current
-  immutable submission tag being pushed is
-  `trace9-68f0603-20260515-final`.
+  immutable pushed submission image is
+  `973918476471.dkr.ecr.us-east-1.amazonaws.com/aic-team/bha:trace9-68f0603-20260515-final`.
+  ECR digest:
+  `sha256:98114f1ab0aa121ac81ee88d039c74082c5539c9e411907835f4066e8e32975d`.
 
 Current blocker:
 
