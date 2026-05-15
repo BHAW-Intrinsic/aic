@@ -1898,10 +1898,11 @@ class RslRlCheckpointPolicy(Policy):
 
         if task_kind == "sfp":
             observation = get_observation()
-            if observation is not None:
-                self._run_sfp_final_settle(observation, move_robot, send_feedback)
             self._run_sfp_guarded_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            observation = get_observation()
+            if observation is not None:
+                self._run_sfp_final_settle(observation, move_robot, send_feedback)
             self._run_sfp_base_insert(get_observation, move_robot, send_feedback)
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
         elif task_kind == "sc":
