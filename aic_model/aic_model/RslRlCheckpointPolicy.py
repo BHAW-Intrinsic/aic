@@ -212,6 +212,26 @@ def _env_int(name: str, default: int) -> int:
     return int(value)
 
 
+def _env_target_sequence(
+    name: str,
+    default: tuple[tuple[float, float, float], ...] | None,
+) -> tuple[tuple[float, float, float], ...] | None:
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        raise ValueError(f"{name} must be a JSON list of [x, y, z] targets")
+    targets = []
+    for index, target in enumerate(parsed):
+        if not isinstance(target, list) or len(target) != 3:
+            raise ValueError(
+                f"{name}[{index}] must be a JSON list of exactly 3 floats"
+            )
+        targets.append(tuple(float(value) for value in target))
+    return tuple(targets)
+
+
 def _safe_token(value: str) -> str:
     token = "".join(
         char if char.isalnum() or char in {"-", "_"} else "_" for char in value
@@ -1396,6 +1416,11 @@ class RslRlCheckpointPolicy(Policy):
         if not self._sc_terminal_target_enabled:
             return
         targets = SC_TERMINAL_TARGETS.get(self._sc_port_name(task) or "")
+        port_name = self._sc_port_name(task) or ""
+        targets = _env_target_sequence(
+            f"AIC_RSLRL_SC_TERMINAL_TARGETS_{port_name.upper()}",
+            targets,
+        )
         if not targets:
             return
         observation = get_observation()
@@ -1441,6 +1466,10 @@ class RslRlCheckpointPolicy(Policy):
             return
         mount_name = self._sfp_mount_name(task) or ""
         targets = SFP_TERMINAL_TARGETS.get(mount_name)
+        targets = _env_target_sequence(
+            f"AIC_RSLRL_SFP_TERMINAL_TARGETS_{mount_name.upper()}",
+            targets,
+        )
         if not targets:
             return
         observation = get_observation()
