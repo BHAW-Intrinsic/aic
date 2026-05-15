@@ -654,6 +654,16 @@ class RslRlCheckpointPolicy(Policy):
         self._sfp_terminal_fallback_joint_steps = _env_int(
             "AIC_RSLRL_SFP_TERMINAL_FALLBACK_JOINT_STEPS", 0
         )
+        self._sfp_terminal_fallback_trace_suffix_enabled = _env_bool(
+            "AIC_RSLRL_ENABLE_SFP_TERMINAL_FALLBACK_TRACE_SUFFIX", False
+        )
+        self._sfp_terminal_fallback_trace_start_index = _env_int(
+            "AIC_RSLRL_SFP_TERMINAL_FALLBACK_TRACE_START_INDEX", 350
+        )
+        self._sfp_terminal_fallback_trace_dt = _env_float(
+            "AIC_RSLRL_SFP_TERMINAL_FALLBACK_TRACE_DT",
+            0.05,
+        )
         self._sc_actor_enabled = _env_bool("AIC_RSLRL_SC_ACTOR_ENABLED", True)
         self._fixed_step_replay = _env_bool("AIC_RSLRL_FIXED_STEP_REPLAY", False)
         self._zero_joint_obs = _env_bool("AIC_RSLRL_ZERO_JOINT_OBS", False)
@@ -2158,6 +2168,9 @@ class RslRlCheckpointPolicy(Policy):
                 task, get_observation, move_robot, send_feedback
             )
             self._run_sfp_terminal_target(task, get_observation, move_robot, send_feedback)
+            self._run_sfp_terminal_fallback_trace_suffix(
+                target_key, get_observation, move_robot, send_feedback
+            )
             self._run_sfp_terminal_fallback_joint_finish(
                 target_key, get_observation, move_robot, send_feedback
             )
@@ -2168,6 +2181,81 @@ class RslRlCheckpointPolicy(Policy):
             self._run_sfp_local_search(task, get_observation, move_robot, send_feedback)
         elif task_kind == "sc":
             self._run_sc_terminal_target(task, get_observation, move_robot, send_feedback)
+
+    def _sfp_terminal_fallback_needed(
+        self,
+        target_key: str,
+        get_observation: GetObservationCallback,
+        label: str,
+    ) -> bool:
+        observation = get_observation()
+        if observation is None:
+            self.get_logger().error(
+                f"Observation unavailable before SFP terminal fallback {label}."
+            )
+            return False
+        tcp_z = float(observation.controller_state.tcp_pose.position.z)
+        threshold = self._sfp_terminal_fallback_tcp_z_threshold
+        if tcp_z <= threshold:
+            self.get_logger().info(
+                f"Skipping SFP terminal fallback {label}: "
+                f"target_key={target_key}, tcp_z={tcp_z:.4f}, "
+                f"threshold={threshold:.4f}"
+            )
+            return False
+        self.get_logger().info(
+            f"SFP terminal fallback {label} needed: "
+            f"target_key={target_key}, tcp_z={tcp_z:.4f}, threshold={threshold:.4f}"
+        )
+        return True
+
+    def _run_sfp_terminal_fallback_trace_suffix(
+        self,
+        target_key: str,
+        get_observation: GetObservationCallback,
+        move_robot: MoveRobotCallback,
+        send_feedback: SendFeedbackCallback,
+    ) -> None:
+        if not self._sfp_terminal_fallback_trace_suffix_enabled:
+            return
+        if not self._sfp_terminal_fallback_needed(
+            target_key, get_observation, "trace suffix"
+        ):
+            return
+        try:
+            traces = self._load_public_scripted_traces()
+        except Exception as exc:
+            self.get_logger().error(
+                f"Failed to load public scripted traces for fallback: {exc}"
+            )
+            return
+        trace = traces.get(target_key)
+        if not trace:
+            self.get_logger().error(f"No public scripted fallback trace for {target_key!r}")
+            return
+        start_index = min(
+            max(0, self._sfp_terminal_fallback_trace_start_index),
+            len(trace) - 1,
+        )
+        suffix = trace[start_index:]
+        dt = max(0.01, self._sfp_terminal_fallback_trace_dt)
+        send_feedback("running legal SFP terminal fallback trace suffix")
+        self.get_logger().info(
+            "Running SFP terminal fallback trace suffix: "
+            f"target_key={target_key}, start_index={start_index}, "
+            f"commands={len(suffix)}, dt={dt:.3f}s"
+        )
+        for index, sample in enumerate(suffix, start=1):
+            target = np.array(sample[:3], dtype=np.float64)
+            quat = np.array(sample[3:], dtype=np.float64)
+            move_robot(motion_update=self._make_base_pose_update(target, quat))
+            if index == 1 or index == len(suffix) or index % self._log_every_n == 0:
+                self.get_logger().info(
+                    "SFP fallback trace suffix "
+                    f"{index}/{len(suffix)}: "
+                    f"position={np.array2string(target, precision=4)}"
+                )
+            self.sleep_for(dt)
 
     def _run_sfp_terminal_fallback_joint_finish(
         self,
@@ -2180,20 +2268,9 @@ class RslRlCheckpointPolicy(Policy):
             return
         if target_key not in PUBLIC_SCRIPTED_FINAL_JOINTS:
             return
-        observation = get_observation()
-        if observation is None:
-            self.get_logger().error(
-                "Observation unavailable before SFP terminal fallback joint finish."
-            )
-            return
-        tcp_z = float(observation.controller_state.tcp_pose.position.z)
-        threshold = self._sfp_terminal_fallback_tcp_z_threshold
-        if tcp_z <= threshold:
-            self.get_logger().info(
-                "Skipping SFP terminal fallback joint finish: "
-                f"target_key={target_key}, tcp_z={tcp_z:.4f}, "
-                f"threshold={threshold:.4f}"
-            )
+        if not self._sfp_terminal_fallback_needed(
+            target_key, get_observation, "joint finish"
+        ):
             return
 
         steps_override = (
@@ -2204,8 +2281,7 @@ class RslRlCheckpointPolicy(Policy):
         send_feedback("running legal SFP terminal fallback joint finish")
         self.get_logger().info(
             "Running SFP terminal fallback joint finish: "
-            f"target_key={target_key}, tcp_z={tcp_z:.4f}, "
-            f"threshold={threshold:.4f}, steps_override={steps_override}"
+            f"target_key={target_key}, steps_override={steps_override}"
         )
         self._run_public_scripted_joint_finish(
             target_key,
