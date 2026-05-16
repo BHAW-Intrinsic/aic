@@ -277,6 +277,17 @@ def _env_float_for_key(prefix: str, key: str, default: float) -> float:
     return _env_float(prefix, default)
 
 
+def _env_str_for_key(prefix: str, key: str, default: str) -> str:
+    if key:
+        value = os.environ.get(f"{prefix}_{key.upper()}")
+        if value is not None and value.strip() != "":
+            return value.strip()
+    value = os.environ.get(prefix)
+    if value is not None and value.strip() != "":
+        return value.strip()
+    return default
+
+
 def _env_int(name: str, default: int) -> int:
     value = os.environ.get(name)
     if value is None or value == "":
@@ -1799,9 +1810,19 @@ class RslRlCheckpointPolicy(Policy):
             int(xs.size),
         )
 
+    def _visual_alignment_target_key(self, task_kind: str, task: Task | None) -> str:
+        if task is None:
+            return ""
+        if task_kind == "sfp":
+            return self._sfp_mount_name(task) or self._sfp_port_name(task) or ""
+        if task_kind == "sc":
+            return self._sc_port_name(task) or ""
+        return ""
+
     def _detect_visual_alignment(
         self,
         task_kind: str,
+        task: Task | None,
         observation,
     ) -> VisualAlignment | None:
         try:
@@ -1814,14 +1835,20 @@ class RslRlCheckpointPolicy(Policy):
         red = image[..., 0].astype(np.int16)
         green = image[..., 1].astype(np.int16)
         blue = image[..., 2].astype(np.int16)
+        target_key = self._visual_alignment_target_key(task_kind, task)
 
         if task_kind == "sc":
+            target_mode = _env_str_for_key(
+                "AIC_RSLRL_VISUAL_ALIGNMENT_SC_TARGET_MODE",
+                target_key,
+                self._visual_alignment_sc_target_mode,
+            )
             roi = np.zeros((height, width), dtype=bool)
             roi[
                 int(0.40 * height) : int(0.88 * height),
                 int(0.25 * width) : int(0.75 * width),
             ] = True
-            if self._visual_alignment_sc_target_mode == "magenta_label":
+            if target_mode == "magenta_label":
                 mask = roi & (red > 150) & (blue > 120) & (green < 90)
             else:
                 mask = (
@@ -1837,19 +1864,32 @@ class RslRlCheckpointPolicy(Policy):
                 return None
             x0, y0, x1, y1, count = bbox
             target_u = 0.5 * (x0 + x1)
-            if self._visual_alignment_sc_target_mode == "magenta_label":
+            if target_mode == "magenta_label":
                 target_v = 0.5 * (y0 + y1)
             else:
                 target_v = float(y1)
             reference = (
-                self._visual_alignment_sc_reference_u,
-                self._visual_alignment_sc_reference_v,
+                _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_SC_REFERENCE_U",
+                    target_key,
+                    self._visual_alignment_sc_reference_u,
+                ),
+                _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_SC_REFERENCE_V",
+                    target_key,
+                    self._visual_alignment_sc_reference_v,
+                ),
             )
             confidence = min(1.0, count / max(1.0, 0.003 * width * height))
         elif task_kind == "sfp":
+            target_mode = _env_str_for_key(
+                "AIC_RSLRL_VISUAL_ALIGNMENT_SFP_TARGET_MODE",
+                target_key,
+                self._visual_alignment_sfp_target_mode,
+            )
             roi = np.zeros((height, width), dtype=bool)
             roi[int(0.30 * height) :, int(0.20 * width) : int(0.82 * width)] = True
-            if self._visual_alignment_sfp_target_mode == "socket_band":
+            if target_mode == "socket_band":
                 band = np.zeros((height, width), dtype=bool)
                 band[
                     int(0.50 * height) : int(0.76 * height),
@@ -1879,7 +1919,7 @@ class RslRlCheckpointPolicy(Policy):
                 return None
             x0, y0, x1, y1, count = bbox
             target_u = 0.5 * (x0 + x1)
-            if self._visual_alignment_sfp_target_mode == "socket_band":
+            if target_mode == "socket_band":
                 target_v = 0.5 * (y0 + y1)
             else:
                 # The SFP sockets sit at the lower lip of the visible NIC area
@@ -1887,12 +1927,20 @@ class RslRlCheckpointPolicy(Policy):
                 # silhouette as a public-image proxy.
                 target_v = float(y1)
             reference = (
-                self._visual_alignment_sfp_reference_u,
-                self._visual_alignment_sfp_reference_v,
+                _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_SFP_REFERENCE_U",
+                    target_key,
+                    self._visual_alignment_sfp_reference_u,
+                ),
+                _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_SFP_REFERENCE_V",
+                    target_key,
+                    self._visual_alignment_sfp_reference_v,
+                ),
             )
             confidence_scale = (
                 0.004
-                if self._visual_alignment_sfp_target_mode == "socket_band"
+                if target_mode == "socket_band"
                 else 0.006
             )
             confidence = min(1.0, count / max(1.0, confidence_scale * width * height))
@@ -1912,6 +1960,7 @@ class RslRlCheckpointPolicy(Policy):
 
     def _run_visual_alignment(
         self,
+        task: Task,
         task_kind: str,
         get_observation: GetObservationCallback,
         move_robot: MoveRobotCallback,
@@ -1925,6 +1974,7 @@ class RslRlCheckpointPolicy(Policy):
         ):
             return
 
+        target_key = self._visual_alignment_target_key(task_kind, task)
         dwell = max(0.02, self._visual_alignment_dwell_sec)
         send_feedback(f"running legal {task_kind.upper()} visual alignment")
         for index in range(self._visual_alignment_repeat):
@@ -1932,32 +1982,57 @@ class RslRlCheckpointPolicy(Policy):
             if observation is None:
                 self.get_logger().error("Observation unavailable before visual alignment.")
                 return
-            alignment = self._detect_visual_alignment(task_kind, observation)
+            alignment = self._detect_visual_alignment(task_kind, task, observation)
             if alignment is None:
                 self.get_logger().info(
-                    f"Visual alignment skipped: task_kind={task_kind}, no target"
+                    "Visual alignment skipped: "
+                    f"task_kind={task_kind}, target_key={target_key!r}, no target"
                 )
                 return
             if alignment.confidence < self._visual_alignment_min_confidence:
                 self.get_logger().info(
                     "Visual alignment skipped: "
-                    f"task_kind={task_kind}, confidence={alignment.confidence:.3f}, "
+                    f"task_kind={task_kind}, target_key={target_key!r}, "
+                    f"confidence={alignment.confidence:.3f}, "
                     f"min={self._visual_alignment_min_confidence:.3f}, "
                     f"bbox={alignment.bbox}"
                 )
                 return
 
             dx = (
-                self._visual_alignment_x_sign
+                _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_X_SIGN",
+                    target_key,
+                    self._visual_alignment_x_sign,
+                )
                 * alignment.offset_px[0]
-                * self._visual_alignment_gain_x
+                * _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_GAIN_X",
+                    target_key,
+                    self._visual_alignment_gain_x,
+                )
             )
             dy = (
-                self._visual_alignment_y_sign
+                _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_Y_SIGN",
+                    target_key,
+                    self._visual_alignment_y_sign,
+                )
                 * alignment.offset_px[1]
-                * self._visual_alignment_gain_y
+                * _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_GAIN_Y",
+                    target_key,
+                    self._visual_alignment_gain_y,
+                )
             )
-            max_step = max(0.0, self._visual_alignment_max_step)
+            max_step = max(
+                0.0,
+                _env_float_for_key(
+                    "AIC_RSLRL_VISUAL_ALIGNMENT_MAX_STEP",
+                    target_key,
+                    self._visual_alignment_max_step,
+                ),
+            )
             delta = np.array(
                 [
                     float(np.clip(dx, -max_step, max_step)),
@@ -1969,6 +2044,7 @@ class RslRlCheckpointPolicy(Policy):
             self.get_logger().info(
                 "Visual alignment command: "
                 f"task_kind={task_kind}, repeat={index + 1}/{self._visual_alignment_repeat}, "
+                f"target_key={target_key!r}, "
                 f"target_px=({alignment.target_px[0]:.1f}, {alignment.target_px[1]:.1f}), "
                 f"reference_px=({alignment.center_px[0]:.1f}, {alignment.center_px[1]:.1f}), "
                 f"offset_px=({alignment.offset_px[0]:.1f}, {alignment.offset_px[1]:.1f}), "
@@ -3113,7 +3189,7 @@ class RslRlCheckpointPolicy(Policy):
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
             self._run_visual_alignment(
-                task_kind, get_observation, move_robot, send_feedback
+                task, task_kind, get_observation, move_robot, send_feedback
             )
             if "post_terminal" in self._sfp_guarded_insert_phases:
                 self._run_sfp_guarded_insert(
@@ -3142,7 +3218,7 @@ class RslRlCheckpointPolicy(Policy):
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
             self._run_visual_alignment(
-                task_kind, get_observation, move_robot, send_feedback
+                task, task_kind, get_observation, move_robot, send_feedback
             )
             self._run_public_grid_search(
                 task_kind, target_key, get_observation, move_robot, send_feedback
@@ -3912,7 +3988,7 @@ class RslRlCheckpointPolicy(Policy):
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
             self._run_visual_alignment(
-                task_kind, get_observation, move_robot, send_feedback
+                task, task_kind, get_observation, move_robot, send_feedback
             )
             if "post_terminal" in self._sfp_guarded_insert_phases:
                 self._run_sfp_guarded_insert(
@@ -3937,7 +4013,7 @@ class RslRlCheckpointPolicy(Policy):
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
             self._run_visual_alignment(
-                task_kind, get_observation, move_robot, send_feedback
+                task, task_kind, get_observation, move_robot, send_feedback
             )
 
         self.get_logger().info(
