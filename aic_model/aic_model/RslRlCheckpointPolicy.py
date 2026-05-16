@@ -524,6 +524,9 @@ class RslRlCheckpointPolicy(Policy):
     - ``AIC_RSLRL_ENABLE_SFP_GUARDED_INSERT``: optional TCP-frame guarded
       close-range insertion. It uses only the official wrist wrench observation
       to back off on contact.
+    - ``AIC_RSLRL_SFP_GUARDED_INSERT_PHASES``: comma-separated set of
+      ``pre_terminal`` and/or ``post_terminal`` phases. Defaults to
+      ``pre_terminal`` to preserve the existing behavior.
     - ``AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH``: optional legal SFP terminal search
       after actor replay. It uses only the official TCP observation and emitted
       Cartesian commands, not TF/scoring internals.
@@ -763,6 +766,9 @@ class RslRlCheckpointPolicy(Policy):
             if sfp_guarded_targets
             else None
         )
+        self._sfp_guarded_insert_phases = _env_name_set(
+            "AIC_RSLRL_SFP_GUARDED_INSERT_PHASES"
+        ) or {"pre_terminal"}
         self._sfp_local_search_enabled = _env_bool(
             "AIC_RSLRL_ENABLE_SFP_LOCAL_SEARCH", False
         )
@@ -1018,6 +1024,8 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._sc_guarded_insert_joint_hold_sec!r}, "
             "AIC_RSLRL_SFP_GUARDED_INSERT_TARGETS="
             f"{self._sfp_guarded_insert_targets!r}, "
+            "AIC_RSLRL_SFP_GUARDED_INSERT_PHASES="
+            f"{self._sfp_guarded_insert_phases!r}, "
             "AIC_RSLRL_ENABLE_SFP_TERMINAL_TARGET="
             f"{self._sfp_terminal_target_enabled!r}, "
             "AIC_RSLRL_SFP_TERMINAL_TARGET_DWELL_SEC="
@@ -2789,15 +2797,20 @@ class RslRlCheckpointPolicy(Policy):
         send_feedback: SendFeedbackCallback,
     ) -> None:
         if task_kind == "sfp":
-            self._run_sfp_guarded_insert(
-                task, get_observation, move_robot, send_feedback
-            )
+            if "pre_terminal" in self._sfp_guarded_insert_phases:
+                self._run_sfp_guarded_insert(
+                    task, get_observation, move_robot, send_feedback
+                )
             terminal = self._run_sfp_terminal_target(
                 task, get_observation, move_robot, send_feedback
             )
             if terminal is not None:
                 self._run_sfp_tcp_z_recovery(
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
+            if "post_terminal" in self._sfp_guarded_insert_phases:
+                self._run_sfp_guarded_insert(
+                    task, get_observation, move_robot, send_feedback
                 )
             self._run_public_grid_search(
                 task_kind, target_key, get_observation, move_robot, send_feedback
@@ -3577,15 +3590,20 @@ class RslRlCheckpointPolicy(Policy):
 
         if task_kind == "sfp":
             observation = get_observation()
-            self._run_sfp_guarded_insert(
-                task, get_observation, move_robot, send_feedback
-            )
+            if "pre_terminal" in self._sfp_guarded_insert_phases:
+                self._run_sfp_guarded_insert(
+                    task, get_observation, move_robot, send_feedback
+                )
             terminal = self._run_sfp_terminal_target(
                 task, get_observation, move_robot, send_feedback
             )
             if terminal is not None:
                 self._run_sfp_tcp_z_recovery(
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
+                )
+            if "post_terminal" in self._sfp_guarded_insert_phases:
+                self._run_sfp_guarded_insert(
+                    task, get_observation, move_robot, send_feedback
                 )
             target_key = self._public_scripted_target_key(task, task_kind)
             if target_key:
