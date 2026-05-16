@@ -3779,6 +3779,9 @@ class RslRlCheckpointPolicy(Policy):
                 self._run_sc_tcp_z_recovery(
                     terminal[0], terminal[1], get_observation, move_robot, send_feedback
                 )
+            self._run_visual_alignment(
+                task, task_kind, get_observation, move_robot, send_feedback
+            )
             self._run_public_grid_search(
                 task_kind, target_key, get_observation, move_robot, send_feedback
             )
