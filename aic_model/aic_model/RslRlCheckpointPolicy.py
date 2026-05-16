@@ -799,6 +799,12 @@ class RslRlCheckpointPolicy(Policy):
         self._visual_alignment_frame = os.environ.get(
             "AIC_RSLRL_VISUAL_ALIGNMENT_FRAME", "gripper/tcp"
         )
+        self._visual_alignment_sfp_target_mode = os.environ.get(
+            "AIC_RSLRL_VISUAL_ALIGNMENT_SFP_TARGET_MODE", "green_board"
+        )
+        self._visual_alignment_sc_target_mode = os.environ.get(
+            "AIC_RSLRL_VISUAL_ALIGNMENT_SC_TARGET_MODE", "blue_port"
+        )
         self._visual_alignment_gain_x = _env_float(
             "AIC_RSLRL_VISUAL_ALIGNMENT_GAIN_X", 0.00005
         )
@@ -1135,6 +1141,10 @@ class RslRlCheckpointPolicy(Policy):
             f"{self._visual_alignment_repeat!r}, "
             "AIC_RSLRL_VISUAL_ALIGNMENT_FRAME="
             f"{self._visual_alignment_frame!r}, "
+            "AIC_RSLRL_VISUAL_ALIGNMENT_SFP_TARGET_MODE="
+            f"{self._visual_alignment_sfp_target_mode!r}, "
+            "AIC_RSLRL_VISUAL_ALIGNMENT_SC_TARGET_MODE="
+            f"{self._visual_alignment_sc_target_mode!r}, "
             "AIC_RSLRL_VISUAL_ALIGNMENT_MIN_CONFIDENCE="
             f"{self._visual_alignment_min_confidence!r}, "
             "AIC_RSLRL_SFP_LOCAL_SEARCH_TARGETS="
@@ -1806,41 +1816,86 @@ class RslRlCheckpointPolicy(Policy):
         blue = image[..., 2].astype(np.int16)
 
         if task_kind == "sc":
-            mask = (red > 150) & (blue > 120) & (green < 90)
+            roi = np.zeros((height, width), dtype=bool)
+            roi[
+                int(0.40 * height) : int(0.88 * height),
+                int(0.25 * width) : int(0.75 * width),
+            ] = True
+            if self._visual_alignment_sc_target_mode == "magenta_label":
+                mask = roi & (red > 150) & (blue > 120) & (green < 90)
+            else:
+                mask = (
+                    roi
+                    & (blue > 130)
+                    & (green > 90)
+                    & (red < 90)
+                    & (blue > red * 1.6)
+                    & (green > red * 1.3)
+                )
             bbox = self._largest_mask_bbox(mask)
             if bbox is None:
                 return None
             x0, y0, x1, y1, count = bbox
             target_u = 0.5 * (x0 + x1)
-            target_v = 0.5 * (y0 + y1)
+            if self._visual_alignment_sc_target_mode == "magenta_label":
+                target_v = 0.5 * (y0 + y1)
+            else:
+                target_v = float(y1)
             reference = (
                 self._visual_alignment_sc_reference_u,
                 self._visual_alignment_sc_reference_v,
             )
-            confidence = min(1.0, count / max(1.0, 0.015 * width * height))
+            confidence = min(1.0, count / max(1.0, 0.003 * width * height))
         elif task_kind == "sfp":
-            lower_half = np.zeros((height, width), dtype=bool)
-            lower_half[int(0.30 * height) :, int(0.20 * width) : int(0.82 * width)] = True
-            mask = (
-                lower_half
-                & (green > 55)
-                & (green > red * 1.18)
-                & (green > blue * 1.05)
-            )
+            roi = np.zeros((height, width), dtype=bool)
+            roi[int(0.30 * height) :, int(0.20 * width) : int(0.82 * width)] = True
+            if self._visual_alignment_sfp_target_mode == "socket_band":
+                band = np.zeros((height, width), dtype=bool)
+                band[
+                    int(0.50 * height) : int(0.76 * height),
+                    int(0.28 * width) : int(0.78 * width),
+                ] = True
+                mask = (
+                    band
+                    & (red > 105)
+                    & (red < 210)
+                    & (green > 105)
+                    & (green < 210)
+                    & (blue > 105)
+                    & (blue < 210)
+                    & (np.abs(red - green) < 28)
+                    & (np.abs(green - blue) < 28)
+                    & (np.abs(red - blue) < 28)
+                )
+            else:
+                mask = (
+                    roi
+                    & (green > 55)
+                    & (green > red * 1.18)
+                    & (green > blue * 1.05)
+                )
             bbox = self._largest_mask_bbox(mask)
             if bbox is None:
                 return None
             x0, y0, x1, y1, count = bbox
-            # The SFP sockets sit at the lower lip of the visible NIC area in
-            # the terminal view. Use the bottom-center of the green card
-            # silhouette as a stable proxy from official images.
             target_u = 0.5 * (x0 + x1)
-            target_v = float(y1)
+            if self._visual_alignment_sfp_target_mode == "socket_band":
+                target_v = 0.5 * (y0 + y1)
+            else:
+                # The SFP sockets sit at the lower lip of the visible NIC area
+                # in the terminal view. Use the bottom-center of the green card
+                # silhouette as a public-image proxy.
+                target_v = float(y1)
             reference = (
                 self._visual_alignment_sfp_reference_u,
                 self._visual_alignment_sfp_reference_v,
             )
-            confidence = min(1.0, count / max(1.0, 0.006 * width * height))
+            confidence_scale = (
+                0.004
+                if self._visual_alignment_sfp_target_mode == "socket_band"
+                else 0.006
+            )
+            confidence = min(1.0, count / max(1.0, confidence_scale * width * height))
         else:
             return None
 
